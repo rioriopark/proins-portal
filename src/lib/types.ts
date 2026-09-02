@@ -55,3 +55,15 @@ export interface Contract {
   commission: number
   created_at: string
 }
+
+export interface Incentive {
+  id: string
+  company: string
+  month: string
+  title: string
+  period: string
+  target: string
+  content: string
+  created_at: string
+  updated_at: string
+}

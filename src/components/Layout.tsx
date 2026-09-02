@@ -7,6 +7,7 @@ const NAV = [
   { to: '/contracts', label: '계약관리' },
   { to: '/bulk-import', label: '계약 일괄등록', adminOnly: true },
   { to: '/statement', label: '수수료명세서' },
+  { to: '/incentives', label: '보험사 시상안' },
   { to: '/orgs', label: '조직관리', adminOnly: true },
 ]
 
