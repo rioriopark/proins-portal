@@ -18,6 +18,33 @@ function thisMonth() {
 }
 
 const emptyForm = { company: '', month: thisMonth(), title: '', period: '', target: '', content: '' }
+const BULK_HEADER_HINT = '보험사\t지급월\t제목\t기간\t대상\t내용'
+const BULK_EXAMPLE = '삼성화재\t2026-07\t인보험 시상 (월간 누계 100%)\t2026.07.01 ~ 07.31\t인보험\t월간 누계 실적 × 100% 시상.'
+
+interface BulkRow {
+  company: string
+  month: string
+  title: string
+  period: string
+  target: string
+  content: string
+  error?: string
+}
+
+function parseBulk(text: string): BulkRow[] {
+  return text
+    .trim()
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0)
+    .map((line) => {
+      const [company, month, title, period, target, content] = line.split('\t').map((c) => c?.trim() ?? '')
+      let error: string | undefined
+      if (!company) error = '보험사 없음'
+      else if (!month || !/^\d{4}-\d{2}$/.test(month)) error = '지급월 형식 오류 (YYYY-MM)'
+      else if (!title) error = '제목 없음'
+      return { company, month, title, period: period ?? '', target: target ?? '', content: content ?? '', error }
+    })
+}
 
 export default function Incentives() {
   const { profile } = useAuth()
@@ -27,6 +54,9 @@ export default function Incentives() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
+  const [showBulk, setShowBulk] = useState(false)
+  const [bulkText, setBulkText] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   const canWrite = !!profile && profile.role !== 'agent'
 
@@ -54,6 +84,7 @@ export default function Incentives() {
     setForm(emptyForm)
     setEditingId(null)
     setShowForm(true)
+    setShowBulk(false)
   }
 
   function startEdit(i: Incentive) {
@@ -76,6 +107,23 @@ export default function Incentives() {
     load()
   }
 
+  const bulkRows = useMemo(() => (bulkText.trim() ? parseBulk(bulkText) : []), [bulkText])
+  const bulkValidCount = bulkRows.filter((r) => !r.error).length
+
+  async function handleBulkImport() {
+    setBulkBusy(true)
+    const payload = bulkRows.filter((r) => !r.error).map(({ error: _error, ...r }) => ({ ...r, created_by: profile?.id }))
+    const { error } = await supabase.from('incentives').insert(payload)
+    setBulkBusy(false)
+    if (error) {
+      alert('일괄 등록 실패: ' + error.message)
+      return
+    }
+    setBulkText('')
+    setShowBulk(false)
+    load()
+  }
+
   async function remove(id: string) {
     if (!confirm('이 시상안을 삭제할까요?')) return
     const { error } = await supabase.from('incentives').delete().eq('id', id)
@@ -91,11 +139,78 @@ export default function Incentives() {
           <p className="text-sm text-slate-500 mt-1">보험사별 월별 시상안(프로모션) 게시판입니다.</p>
         </div>
         {canWrite && (
-          <button onClick={startCreate} className="bg-rose-600 text-white rounded-md px-4 py-2 text-sm font-medium">
-            + 시상안 등록
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setShowBulk((v) => !v); setShowForm(false) }}
+              className="border border-slate-300 text-slate-600 rounded-md px-4 py-2 text-sm font-medium bg-white"
+            >
+              엑셀 일괄등록
+            </button>
+            <button onClick={startCreate} className="bg-rose-600 text-white rounded-md px-4 py-2 text-sm font-medium">
+              + 시상안 등록
+            </button>
+          </div>
         )}
       </div>
+
+      {showBulk && (
+        <div className="bg-white rounded-xl shadow p-5 space-y-3">
+          <p className="text-xs font-mono text-slate-500 whitespace-pre-wrap break-all">
+            열 순서: {BULK_HEADER_HINT}
+            {'\n'}예시: {BULK_EXAMPLE}
+          </p>
+          <textarea
+            value={bulkText}
+            onChange={(e) => setBulkText(e.target.value)}
+            rows={8}
+            placeholder="엑셀에서 복사한 내용을 여기에 붙여넣으세요"
+            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono"
+          />
+          {bulkRows.length > 0 && (
+            <>
+              <p className="text-sm text-slate-600">총 {bulkRows.length}행 · 유효 {bulkValidCount}행</p>
+              <div className="overflow-x-auto max-h-64 overflow-y-auto border border-slate-100 rounded-md">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="text-left px-3 py-1.5">보험사</th>
+                      <th className="text-left px-3 py-1.5">지급월</th>
+                      <th className="text-left px-3 py-1.5">제목</th>
+                      <th className="text-left px-3 py-1.5">기간</th>
+                      <th className="text-left px-3 py-1.5">대상</th>
+                      <th className="text-left px-3 py-1.5">상태</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkRows.map((r, i) => (
+                      <tr key={i} className={`border-t border-slate-100 ${r.error ? 'bg-red-50' : ''}`}>
+                        <td className="px-3 py-1.5">{r.company}</td>
+                        <td className="px-3 py-1.5">{r.month}</td>
+                        <td className="px-3 py-1.5">{r.title}</td>
+                        <td className="px-3 py-1.5">{r.period}</td>
+                        <td className="px-3 py-1.5">{r.target}</td>
+                        <td className="px-3 py-1.5 text-red-600">{r.error ?? ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+          <div className="flex gap-2">
+            <button
+              disabled={bulkBusy || bulkValidCount === 0}
+              onClick={handleBulkImport}
+              className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium disabled:opacity-40"
+            >
+              {bulkBusy ? '등록 중…' : `${bulkValidCount}건 일괄 등록`}
+            </button>
+            <button onClick={() => { setShowBulk(false); setBulkText('') }} className="text-sm text-slate-500 px-4 py-2">
+              취소
+            </button>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-5 grid grid-cols-2 md:grid-cols-3 gap-3 items-end">
