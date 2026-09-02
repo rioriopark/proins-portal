@@ -151,6 +151,29 @@ export default function Contracts() {
     })
   }
 
+  const canReassign = profile?.role === 'hq_admin'
+  const agentOptions = [
+    ...agents.map((a) => ({ value: `p:${a.id}`, label: a.name })),
+    ...invites.map((i) => ({ value: `e:${i.email}`, label: `${i.name} (미가입)` })),
+  ].sort((a, b) => a.label.localeCompare(b.label, 'ko'))
+
+  function currentAgentValue(c: Contract) {
+    if (c.agent_id) return `p:${c.agent_id}`
+    if (c.agent_email) return `e:${c.agent_email}`
+    return ''
+  }
+
+  async function reassignAgent(contractId: string, value: string) {
+    const [kind, key] = value.split(/:(.+)/)
+    const patch =
+      kind === 'p'
+        ? { agent_id: key, agent_email: agents.find((a) => a.id === key)?.email ?? null }
+        : { agent_id: null, agent_email: key }
+    const { error } = await supabase.from('contracts').update(patch).eq('id', contractId)
+    if (error) alert('담당자 변경 실패: ' + error.message)
+    else load()
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold text-slate-800">계약관리</h1>
@@ -300,6 +323,7 @@ export default function Contracts() {
                                       <th className="text-left px-3 py-1.5">영수일</th>
                                       <th className="text-right px-3 py-1.5">보험료</th>
                                       <th className="text-right px-3 py-1.5">건별수수료(지급률 {Math.round(rateFor(cg.rows[0], agentInfo(cg.rows[0])) * 100)}% 적용)</th>
+                                      {canReassign && <th className="text-left px-3 py-1.5">담당자</th>}
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -312,6 +336,19 @@ export default function Contracts() {
                                           <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
                                           <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
                                           <td className="px-3 py-1.5 text-right">{Math.round(c.commission * rate).toLocaleString('ko-KR')}</td>
+                                          {canReassign && (
+                                            <td className="px-3 py-1.5">
+                                              <select
+                                                value={currentAgentValue(c)}
+                                                onChange={(e) => reassignAgent(c.id, e.target.value)}
+                                                className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
+                                              >
+                                                {agentOptions.map((o) => (
+                                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                                ))}
+                                              </select>
+                                            </td>
+                                          )}
                                         </tr>
                                       )
                                     })}
@@ -319,6 +356,7 @@ export default function Contracts() {
                                       <td className="px-3 py-1.5" colSpan={3}>합계</td>
                                       <td className="px-3 py-1.5 text-right">{cg.premium.toLocaleString('ko-KR')}</td>
                                       <td className="px-3 py-1.5 text-right">{Math.round(cg.commission).toLocaleString('ko-KR')}</td>
+                                      {canReassign && <td />}
                                     </tr>
                                   </tbody>
                                 </table>
