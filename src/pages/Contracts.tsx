@@ -15,6 +15,7 @@ export default function Contracts() {
   const { profile } = useAuth()
   const [contracts, setContracts] = useState<Contract[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
+  const [invites, setInvites] = useState<{ email: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({
     agent_id: profile?.id ?? '',
@@ -38,6 +39,8 @@ export default function Contracts() {
     if (profile && profile.role !== 'agent') {
       const { data: p } = await supabase.from('profiles').select('*').order('name')
       setAgents(p ?? [])
+      const { data: i } = await supabase.from('pending_invites').select('email, name')
+      setInvites(i ?? [])
     }
     setLoading(false)
   }
@@ -62,9 +65,12 @@ export default function Contracts() {
   }
 
   const agentName = (c: Contract) => {
-    if (!c.agent_id) return `${c.agent_email ?? '-'} (미가입)`
-    if (c.agent_id === profile?.id) return profile.name
-    return agents.find((a) => a.id === c.agent_id)?.name ?? c.agent_id
+    if (c.agent_id) {
+      if (c.agent_id === profile?.id) return profile.name
+      return agents.find((a) => a.id === c.agent_id)?.name ?? c.agent_id
+    }
+    const invited = invites.find((i) => i.email === c.agent_email)
+    return invited ? `${invited.name} (미가입)` : `${c.agent_email ?? '-'} (미가입)`
   }
 
   return (
