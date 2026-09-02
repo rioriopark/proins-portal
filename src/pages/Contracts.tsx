@@ -25,6 +25,7 @@ export default function Contracts() {
   const [loading, setLoading] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState<'전체' | ContractCategory>('전체')
   const [typeFilter, setTypeFilter] = useState<'전체' | ContractType>('전체')
+  const [monthFilter, setMonthFilter] = useState<string>('전체')
   const [openAgents, setOpenAgents] = useState<Set<string>>(new Set())
   const [openCompanies, setOpenCompanies] = useState<Set<string>>(new Set())
   const [form, setForm] = useState({
@@ -105,12 +106,20 @@ export default function Contracts() {
   const rateFor = (c: Contract, info: { rate_long: number; rate_general: number }) =>
     c.category === '장기' ? info.rate_long : info.rate_general
 
+  const months = useMemo(
+    () => [...new Set(contracts.map((c) => c.month).filter(Boolean))].sort((a, b) => b.localeCompare(a)),
+    [contracts]
+  )
+
   const filtered = useMemo(
     () =>
       contracts.filter(
-        (c) => (categoryFilter === '전체' || c.category === categoryFilter) && (typeFilter === '전체' || c.type === typeFilter)
+        (c) =>
+          (categoryFilter === '전체' || c.category === categoryFilter) &&
+          (typeFilter === '전체' || c.type === typeFilter) &&
+          (monthFilter === '전체' || c.month === monthFilter)
       ),
-    [contracts, categoryFilter, typeFilter]
+    [contracts, categoryFilter, typeFilter, monthFilter]
   )
 
   const groups = useMemo(() => {
@@ -178,8 +187,8 @@ export default function Contracts() {
     <div className="space-y-6">
       <h1 className="text-xl font-bold text-slate-800">계약관리</h1>
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
-        {profile && profile.role !== 'agent' && (
+      {profile && profile.role !== 'agent' && (
+        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
           <div className="col-span-2">
             <label className="block text-xs text-slate-500 mb-1">담당자</label>
             <select
@@ -192,57 +201,65 @@ export default function Contracts() {
               ))}
             </select>
           </div>
-        )}
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">영수일</label>
-          <input type="date" value={form.receipt_date} onChange={(e) => setForm((f) => ({ ...f, receipt_date: e.target.value }))}
-            className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">종목</label>
-          <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as ContractCategory }))}
-            className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm">
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">구분</label>
-          <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ContractType }))}
-            className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm">
-            {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">보험사</label>
-          <input value={form.company} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
-            className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">상품명</label>
-          <input value={form.product_name} onChange={(e) => setForm((f) => ({ ...f, product_name: e.target.value }))}
-            className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">고객명</label>
-          <input value={form.customer_name} onChange={(e) => setForm((f) => ({ ...f, customer_name: e.target.value }))}
-            className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">보험료</label>
-          <input type="number" min={0} value={form.premium} onChange={(e) => setForm((f) => ({ ...f, premium: Number(e.target.value) }))}
-            className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">수수료(원, 지급률 적용 전)</label>
-          <input type="number" value={form.commission} onChange={(e) => setForm((f) => ({ ...f, commission: Number(e.target.value) }))}
-            className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-        </div>
-        <button type="submit" className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium h-fit">
-          계약 등록
-        </button>
-      </form>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">영수일</label>
+            <input type="date" value={form.receipt_date} onChange={(e) => setForm((f) => ({ ...f, receipt_date: e.target.value }))}
+              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">종목</label>
+            <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as ContractCategory }))}
+              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">구분</label>
+            <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ContractType }))}
+              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+              {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">보험사</label>
+            <input value={form.company} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">상품명</label>
+            <input value={form.product_name} onChange={(e) => setForm((f) => ({ ...f, product_name: e.target.value }))}
+              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">고객명</label>
+            <input value={form.customer_name} onChange={(e) => setForm((f) => ({ ...f, customer_name: e.target.value }))}
+              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">보험료</label>
+            <input type="number" min={0} value={form.premium} onChange={(e) => setForm((f) => ({ ...f, premium: Number(e.target.value) }))}
+              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">수수료(원, 지급률 적용 전)</label>
+            <input type="number" value={form.commission} onChange={(e) => setForm((f) => ({ ...f, commission: Number(e.target.value) }))}
+              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+          </div>
+          <button type="submit" className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium h-fit">
+            계약 등록
+          </button>
+        </form>
+      )}
 
       <div className="flex gap-3">
+        <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+          <option value="전체">전체 기간</option>
+          {months.map((m) => {
+            const [y, mo] = m.split('-')
+            return <option key={m} value={m}>{y}년 {mo}월</option>
+          })}
+        </select>
         <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
           className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
           <option value="전체">전체 종목</option>
