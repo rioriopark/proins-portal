@@ -67,9 +67,13 @@ returns boolean language sql stable as $$
 $$;
 
 -- ── 내 프로필 조회 헬퍼 (RLS 정책에서 재사용) ─────────────
-create or replace function my_role() returns text language sql stable
+-- security definer 필수: profiles 자신의 RLS 정책 안에서 profiles 를 다시 조회하므로,
+-- 일반 함수로 두면 "infinite recursion detected in policy for relation profiles" 에러가 남.
+create or replace function my_role() returns text
+  language sql stable security definer set search_path = public
   as $$ select role from profiles where id = auth.uid() $$;
-create or replace function my_org() returns text language sql stable
+create or replace function my_org() returns text
+  language sql stable security definer set search_path = public
   as $$ select org_id from profiles where id = auth.uid() $$;
 
 -- ── 신규 가입 시 초대장을 profiles 로 전환하는 트리거 ─────
