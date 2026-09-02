@@ -5,6 +5,7 @@ import { ROLE_LABEL } from '../lib/types'
 const NAV = [
   { to: '/', label: '대시보드', end: true },
   { to: '/contracts', label: '계약관리' },
+  { to: '/bulk-import', label: '계약 일괄등록', adminOnly: true },
   { to: '/statement', label: '수수료명세서' },
   { to: '/orgs', label: '조직관리', adminOnly: true },
 ]

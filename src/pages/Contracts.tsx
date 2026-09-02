@@ -61,8 +61,11 @@ export default function Contracts() {
     }
   }
 
-  const agentName = (id: string) =>
-    id === profile?.id ? profile.name : agents.find((a) => a.id === id)?.name ?? id
+  const agentName = (c: Contract) => {
+    if (!c.agent_id) return `${c.agent_email ?? '-'} (미가입)`
+    if (c.agent_id === profile?.id) return profile.name
+    return agents.find((a) => a.id === c.agent_id)?.name ?? c.agent_id
+  }
 
   return (
     <div className="space-y-6">
@@ -149,7 +152,7 @@ export default function Contracts() {
             {contracts.map((c) => (
               <tr key={c.id} className="border-t border-slate-100">
                 <td className="px-4 py-2">{c.month}</td>
-                <td className="px-4 py-2">{agentName(c.agent_id)}</td>
+                <td className="px-4 py-2">{agentName(c)}</td>
                 <td className="px-4 py-2">{c.category}</td>
                 <td className="px-4 py-2">{c.type}</td>
                 <td className="px-4 py-2">{c.company}</td>

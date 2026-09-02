@@ -41,7 +41,8 @@ export type ContractType = '신규' | '계속' | '환수' | '부활' | '비례�
 
 export interface Contract {
   id: string
-  agent_id: string
+  agent_id: string | null
+  agent_email: string | null
   month: string
   category: ContractCategory
   type: ContractType

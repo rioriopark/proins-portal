@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import Contracts from './pages/Contracts'
+import BulkImport from './pages/BulkImport'
 import Statement from './pages/Statement'
 import Orgs from './pages/Orgs'
 
@@ -44,6 +45,7 @@ export default function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="contracts" element={<Contracts />} />
+        <Route path="bulk-import" element={<BulkImport />} />
         <Route path="statement" element={<Statement />} />
         <Route path="orgs" element={<Orgs />} />
       </Route>
