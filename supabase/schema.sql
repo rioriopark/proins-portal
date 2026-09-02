@@ -29,7 +29,8 @@ create table profiles (
 -- ── 계약 ──────────────────────────────────────────────────
 create table contracts (
   id uuid primary key default gen_random_uuid(),
-  agent_id uuid not null references profiles(id) on delete cascade,
+  agent_id uuid references profiles(id) on delete cascade, -- 담당자가 가입 전이면 null
+  agent_email text,                  -- 가입 전 담당자를 이메일로 임시 식별 (가입 시 자동으로 agent_id 채워짐)
   month text not null,               -- 'YYYY-MM'
   category text not null,            -- '장기' | '일반' | '자동차'
   type text not null,                -- '신규' | '계속' | '환수' | '부활' | '비례공동'
@@ -37,7 +38,8 @@ create table contracts (
   count int not null default 0,
   premium numeric not null default 0,
   commission numeric not null default 0, -- 지급률 적용 전 원 수수료
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  constraint contracts_has_owner check (agent_id is not null or agent_email is not null)
 );
 
 -- ── 가입 초대장 (이메일 화이트리스트) ─────────────────────
@@ -87,6 +89,8 @@ begin
     insert into profiles (id, email, name, role, org_id, title, rate_long, rate_general)
     values (new.id, new.email, inv.name, inv.role, inv.org_id, inv.title, inv.rate_long, inv.rate_general);
     delete from pending_invites where email = new.email;
+    -- 가입 전에 이메일로 미리 등록해둔 계약들을 이 계정으로 연결
+    update contracts set agent_id = new.id where agent_email = new.email and agent_id is null;
   end if;
   return new;
 end;
@@ -120,12 +124,14 @@ create policy "profiles_update_self" on profiles
   for update using (id = auth.uid());
 
 -- contracts: 본인 계약 + 관리 범위 내 하위 조직 계약 조회, 입력은 담당자 본인 또는 관리자
+-- agent_id 가 null(담당자 미가입, 이메일로만 임시 등록된 계약)인 행은 본사관리자만 조회/관리 가능
 create policy "contracts_select_scope" on contracts
   for select using (
     agent_id = auth.uid()
     or my_role() = 'hq_admin'
     or (
-      my_role() in ('branch_admin','store_manager')
+      agent_id is not null
+      and my_role() in ('branch_admin','store_manager')
       and exists (select 1 from profiles p where p.id = contracts.agent_id and is_org_descendant(my_org(), p.org_id))
     )
   );
@@ -134,7 +140,8 @@ create policy "contracts_insert_scope" on contracts
     agent_id = auth.uid()
     or my_role() = 'hq_admin'
     or (
-      my_role() in ('branch_admin','store_manager')
+      agent_id is not null
+      and my_role() in ('branch_admin','store_manager')
       and exists (select 1 from profiles p where p.id = contracts.agent_id and is_org_descendant(my_org(), p.org_id))
     )
   );
@@ -142,7 +149,8 @@ create policy "contracts_update_scope" on contracts
   for update using (
     my_role() = 'hq_admin'
     or (
-      my_role() in ('branch_admin','store_manager')
+      agent_id is not null
+      and my_role() in ('branch_admin','store_manager')
       and exists (select 1 from profiles p where p.id = contracts.agent_id and is_org_descendant(my_org(), p.org_id))
     )
   );
