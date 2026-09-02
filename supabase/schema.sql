@@ -125,8 +125,12 @@ create policy "profiles_select_scope" on profiles
     or my_role() = 'hq_admin'
     or (my_role() in ('branch_admin','store_manager') and is_org_descendant(my_org(), org_id))
   );
-create policy "profiles_update_self" on profiles
-  for update using (id = auth.uid());
+create policy "profiles_update_scope" on profiles
+  for update using (
+    id = auth.uid()
+    or my_role() = 'hq_admin'
+    or (my_role() in ('branch_admin','store_manager') and is_org_descendant(my_org(), org_id))
+  );
 
 -- contracts: 본인 계약 + 관리 범위 내 하위 조직 계약 조회, 입력은 담당자 본인 또는 관리자
 -- agent_id 가 null(담당자 미가입, 이메일로만 임시 등록된 계약)인 행은 본사관리자만 조회/관리 가능
