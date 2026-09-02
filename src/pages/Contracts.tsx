@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Contract, ContractCategory, ContractType, Profile } from '../lib/types'
@@ -25,6 +25,8 @@ export default function Contracts() {
   const [loading, setLoading] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState<'전체' | ContractCategory>('전체')
   const [typeFilter, setTypeFilter] = useState<'전체' | ContractType>('전체')
+  const [openAgents, setOpenAgents] = useState<Set<string>>(new Set())
+  const [openCompanies, setOpenCompanies] = useState<Set<string>>(new Set())
   const [form, setForm] = useState({
     agent_id: profile?.id ?? '',
     receipt_date: today(),
@@ -112,18 +114,42 @@ export default function Contracts() {
   )
 
   const groups = useMemo(() => {
-    const map = new Map<string, { name: string; pending: boolean; rows: Contract[]; premium: number; commission: number }>()
+    interface CompanyGroup { company: string; rows: Contract[]; premium: number; commission: number }
+    interface AgentGroup { key: string; name: string; pending: boolean; premium: number; commission: number; companies: Map<string, CompanyGroup> }
+    const map = new Map<string, AgentGroup>()
     for (const c of filtered) {
       const key = c.agent_id ?? c.agent_email ?? 'unknown'
       const info = agentInfo(c)
-      const g = map.get(key) ?? { name: info.name, pending: info.pending, rows: [], premium: 0, commission: 0 }
-      g.rows.push(c)
+      const rate = rateFor(c, info)
+      const g = map.get(key) ?? { key, name: info.name, pending: info.pending, premium: 0, commission: 0, companies: new Map<string, CompanyGroup>() }
       g.premium += c.premium
-      g.commission += c.commission * rateFor(c, info)
+      g.commission += c.commission * rate
+      const cg = g.companies.get(c.company) ?? { company: c.company, rows: [], premium: 0, commission: 0 }
+      cg.rows.push(c)
+      cg.premium += c.premium
+      cg.commission += c.commission * rate
+      g.companies.set(c.company, cg)
       map.set(key, g)
     }
-    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+    return [...map.values()]
+      .map((g) => ({ ...g, companies: [...g.companies.values()].sort((a, b) => b.premium - a.premium) }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   }, [filtered, agentInfo])
+
+  function toggleAgent(key: string) {
+    setOpenAgents((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+  function toggleCompany(key: string) {
+    setOpenCompanies((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -209,45 +235,105 @@ export default function Contracts() {
       {loading && <p className="text-center text-slate-400 py-6">불러오는 중…</p>}
       {!loading && groups.length === 0 && <p className="text-center text-slate-400 py-6">등록된 계약이 없습니다.</p>}
 
-      <div className="space-y-4">
-        {groups.map((g) => (
-          <div key={g.name} className="bg-white rounded-xl shadow overflow-hidden">
-            <div className="flex items-center justify-between bg-slate-100 px-4 py-2.5">
-              <p className="font-semibold text-sm text-slate-700">
-                {g.name}{g.pending && <span className="text-amber-600 font-normal"> (미가입)</span>}
-              </p>
-              <p className="text-xs text-slate-500">
-                {g.rows.length}건 · 보험료 {g.premium.toLocaleString('ko-KR')}원 · 수수료(지급률 적용) {Math.round(g.commission).toLocaleString('ko-KR')}원
-              </p>
-            </div>
-            <table className="w-full text-sm">
-              <thead className="text-slate-500 text-xs border-b border-slate-100">
-                <tr>
-                  <th className="text-left px-4 py-2">보험사</th>
-                  <th className="text-left px-4 py-2">상품명</th>
-                  <th className="text-left px-4 py-2">영수일</th>
-                  <th className="text-right px-4 py-2">보험료</th>
-                  <th className="text-right px-4 py-2">건별수수료(지급률 적용)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {g.rows.map((c) => {
-                  const info = agentInfo(c)
-                  const rate = rateFor(c, info)
-                  return (
-                    <tr key={c.id} className="border-t border-slate-50">
-                      <td className="px-4 py-1.5">{c.company}</td>
-                      <td className="px-4 py-1.5">{c.product_name}</td>
-                      <td className="px-4 py-1.5">{c.receipt_date ?? '-'}</td>
-                      <td className="px-4 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
-                      <td className="px-4 py-1.5 text-right">{Math.round(c.commission * rate).toLocaleString('ko-KR')}</td>
+      <div className="space-y-3">
+        {groups.map((g) => {
+          const agentOpen = openAgents.has(g.key)
+          const totalCount = g.companies.reduce((s, cg) => s + cg.rows.length, 0)
+          return (
+            <div key={g.key} className="bg-white rounded-xl shadow overflow-hidden">
+              <button
+                onClick={() => toggleAgent(g.key)}
+                className="w-full flex items-center justify-between bg-slate-100 px-4 py-2.5 text-left hover:bg-slate-200"
+              >
+                <p className="font-semibold text-sm text-slate-700 flex items-center gap-1.5">
+                  <span className="inline-block w-3 text-slate-400">{agentOpen ? '▾' : '▸'}</span>
+                  {g.name}{g.pending && <span className="text-amber-600 font-normal"> (미가입)</span>}
+                  <span className="text-xs text-slate-400 font-normal">({g.companies.length}개 보험사)</span>
+                </p>
+                <p className="text-xs text-slate-500">
+                  {totalCount}건 · 보험료 {g.premium.toLocaleString('ko-KR')}원 · 수수료(지급률 적용) {Math.round(g.commission).toLocaleString('ko-KR')}원
+                </p>
+              </button>
+
+              {agentOpen && (
+                <table className="w-full text-sm">
+                  <thead className="text-slate-500 text-xs border-b border-slate-100">
+                    <tr>
+                      <th className="text-left px-4 py-2">보험사/상품</th>
+                      <th className="text-right px-4 py-2">건수</th>
+                      <th className="text-right px-4 py-2">보험료</th>
+                      <th className="text-right px-4 py-2">수수료(지급률 적용)</th>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        ))}
+                  </thead>
+                  <tbody>
+                    {g.companies.map((cg) => {
+                      const companyKey = `${g.key}|${cg.company}`
+                      const companyOpen = openCompanies.has(companyKey)
+                      return (
+                        <Fragment key={companyKey}>
+                          <tr className="border-t border-slate-50">
+                            <td colSpan={4} className="p-0">
+                              <button
+                                onClick={() => toggleCompany(companyKey)}
+                                className="w-full flex items-center justify-between px-4 py-2 text-left hover:bg-slate-50"
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <span className="inline-block w-3 text-slate-400">{companyOpen ? '▾' : '▸'}</span>
+                                  {cg.company || '(보험사 미입력)'}
+                                </span>
+                                <span className="flex gap-6 text-slate-600">
+                                  <span className="w-12 text-right">{cg.rows.length}</span>
+                                  <span className="w-24 text-right">{cg.premium.toLocaleString('ko-KR')}</span>
+                                  <span className="w-28 text-right">{Math.round(cg.commission).toLocaleString('ko-KR')}</span>
+                                </span>
+                              </button>
+                            </td>
+                          </tr>
+                          {companyOpen && (
+                            <tr>
+                              <td colSpan={4} className="px-4 pb-3">
+                                <table className="w-full text-xs border border-slate-100 rounded-md overflow-hidden">
+                                  <thead className="bg-slate-50 text-slate-500">
+                                    <tr>
+                                      <th className="text-left px-3 py-1.5">계약자명</th>
+                                      <th className="text-left px-3 py-1.5">상품명</th>
+                                      <th className="text-left px-3 py-1.5">영수일</th>
+                                      <th className="text-right px-3 py-1.5">보험료</th>
+                                      <th className="text-right px-3 py-1.5">건별수수료(지급률 {Math.round(rateFor(cg.rows[0], agentInfo(cg.rows[0])) * 100)}% 적용)</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {cg.rows.map((c) => {
+                                      const rate = rateFor(c, agentInfo(c))
+                                      return (
+                                        <tr key={c.id} className="border-t border-slate-100">
+                                          <td className="px-3 py-1.5">{c.customer_name}</td>
+                                          <td className="px-3 py-1.5">{c.product_name}</td>
+                                          <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
+                                          <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
+                                          <td className="px-3 py-1.5 text-right">{Math.round(c.commission * rate).toLocaleString('ko-KR')}</td>
+                                        </tr>
+                                      )
+                                    })}
+                                    <tr className="border-t border-slate-200 font-semibold">
+                                      <td className="px-3 py-1.5" colSpan={3}>합계</td>
+                                      <td className="px-3 py-1.5 text-right">{cg.premium.toLocaleString('ko-KR')}</td>
+                                      <td className="px-3 py-1.5 text-right">{Math.round(cg.commission).toLocaleString('ko-KR')}</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
