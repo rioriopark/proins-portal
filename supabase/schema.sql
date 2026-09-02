@@ -53,6 +53,8 @@ create table pending_invites (
   title text default '',
   rate_long numeric default 1.0,
   rate_general numeric default 1.0,
+  bank text default '',
+  account text default '',
   invited_by uuid references profiles(id),
   created_at timestamptz default now()
 );
@@ -86,8 +88,8 @@ declare
 begin
   select * into inv from pending_invites where email = new.email;
   if found then
-    insert into profiles (id, email, name, role, org_id, title, rate_long, rate_general)
-    values (new.id, new.email, inv.name, inv.role, inv.org_id, inv.title, inv.rate_long, inv.rate_general);
+    insert into profiles (id, email, name, role, org_id, title, rate_long, rate_general, bank, account)
+    values (new.id, new.email, inv.name, inv.role, inv.org_id, inv.title, inv.rate_long, inv.rate_general, inv.bank, inv.account);
     delete from pending_invites where email = new.email;
     -- 가입 전에 이메일로 미리 등록해둔 계약들을 이 계정으로 연결
     update contracts set agent_id = new.id where agent_email = new.email and agent_id is null;

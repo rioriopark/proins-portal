@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { toAuthEmail } from '../lib/id'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -13,7 +14,7 @@ export default function Login() {
     e.preventDefault()
     setError('')
     setBusy(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email: toAuthEmail(email), password })
     setBusy(false)
     if (error) {
       setError('이메일 또는 비밀번호가 올바르지 않습니다.')
@@ -30,9 +31,9 @@ export default function Login() {
           <p className="text-sm text-slate-500">계약관리 포털 로그인</p>
         </div>
         <input
-          type="email"
+          type="text"
           required
-          placeholder="이메일"
+          placeholder="아이디 (또는 이메일)"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
@@ -54,7 +55,7 @@ export default function Login() {
           {busy ? '로그인 중…' : '로그인'}
         </button>
         <p className="text-center text-xs text-slate-400">
-          초대받은 이메일이신가요? <Link to="/signup" className="text-slate-700 underline">회원가입</Link>
+          초대받은 아이디이신가요? <Link to="/signup" className="text-slate-700 underline">회원가입</Link>
         </p>
       </form>
     </div>

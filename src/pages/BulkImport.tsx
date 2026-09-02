@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { toAuthEmail } from '../lib/id'
 import type { Profile } from '../lib/types'
 
-const HEADER_HINT = '담당자이메일\t지급월\t종목\t구분\t보험사\t건수\t보험료\t수수료'
-const EXAMPLE = 'shinminhye@proins.kr\t2026-07\t장기\t신규\tDB손해보험\t4\t2428500\t339988'
+const HEADER_HINT = '담당자아이디\t지급월\t종목\t구분\t보험사\t건수\t보험료\t수수료'
+const EXAMPLE = 'shinminhye\t2026-07\t장기\t신규\tDB손해보험\t4\t2428500\t339988'
 
 interface ParsedRow {
   raw: string[]
@@ -23,10 +24,10 @@ function parseSheet(text: string): ParsedRow[] {
   const lines = text.trim().split(/\r?\n/).filter((l) => l.trim().length > 0)
   return lines.map((line) => {
     const cols = line.split(/\t|,/).map((c) => c.trim())
-    const [agent_email, month, category, type, company, count, premium, commission] = cols
+    const [agentId, month, category, type, company, count, premium, commission] = cols
     return {
       raw: cols,
-      agent_email: agent_email ?? '',
+      agent_email: agentId ? toAuthEmail(agentId) : '',
       month: month ?? '',
       category: category ?? '',
       type: type ?? '',
@@ -57,7 +58,7 @@ export default function BulkImport() {
     return parseSheet(text).map((r) => {
       const matched = profiles.find((p) => p.email.toLowerCase() === r.agent_email.toLowerCase())
       let error: string | undefined
-      if (!r.agent_email) error = '이메일 없음'
+      if (!r.agent_email) error = '아이디 없음'
       else if (!r.month || !/^\d{4}-\d{2}$/.test(r.month)) error = '지급월 형식 오류 (YYYY-MM)'
       else if (!['장기', '일반', '자동차'].includes(r.category)) error = '종목 값 오류'
       return { ...r, matched, error }
@@ -101,7 +102,7 @@ export default function BulkImport() {
       <h1 className="text-xl font-bold text-slate-800">계약 일괄 등록 (엑셀 붙여넣기)</h1>
       <p className="text-sm text-slate-500 -mt-4">
         엑셀에서 아래 순서대로 열을 만들어 셀을 드래그 선택 후 복사(Ctrl+C)한 다음, 아래 칸에 붙여넣기(Ctrl+V)하세요.
-        담당자가 아직 가입 전이어도 이메일만 맞으면 나중에 가입 시 자동으로 연결됩니다.
+        담당자가 아직 가입 전이어도 아이디만 맞으면 나중에 가입 시 자동으로 연결됩니다.
       </p>
 
       <div className="bg-white rounded-xl shadow p-5 space-y-3">
@@ -132,7 +133,7 @@ export default function BulkImport() {
           <table className="w-full text-xs">
             <thead className="bg-slate-100 text-slate-600">
               <tr>
-                <th className="text-left px-3 py-2">이메일</th>
+                <th className="text-left px-3 py-2">아이디</th>
                 <th className="text-left px-3 py-2">담당자매칭</th>
                 <th className="text-left px-3 py-2">지급월</th>
                 <th className="text-left px-3 py-2">종목</th>

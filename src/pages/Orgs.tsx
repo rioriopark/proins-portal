@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
+import { toAuthEmail } from '../lib/id'
 import { ROLE_LABEL, type Organization, type Profile, type Role } from '../lib/types'
 
 const ROLES: Role[] = ['hq_admin', 'branch_admin', 'store_manager', 'agent']
@@ -12,7 +13,7 @@ export default function Orgs() {
   const [invites, setInvites] = useState<any[]>([])
   const [orgForm, setOrgForm] = useState({ id: '', name: '', type: 'STORE', parent_id: '' })
   const [inviteForm, setInviteForm] = useState({
-    email: '', name: '', role: 'agent' as Role, org_id: '', title: '', rate_long: 1, rate_general: 1,
+    id: '', name: '', role: 'agent' as Role, org_id: '', title: '', rate_long: 1, rate_general: 1, bank: '', account: '',
   })
 
   async function load() {
@@ -44,10 +45,13 @@ export default function Orgs() {
 
   async function sendInvite(e: FormEvent) {
     e.preventDefault()
-    const { error } = await supabase.from('pending_invites').insert({ ...inviteForm, invited_by: profile?.id })
+    const { id, ...rest } = inviteForm
+    const { error } = await supabase
+      .from('pending_invites')
+      .insert({ ...rest, email: toAuthEmail(id), invited_by: profile?.id })
     if (error) alert('초대 실패: ' + error.message)
     else {
-      setInviteForm((f) => ({ ...f, email: '', name: '', title: '' }))
+      setInviteForm((f) => ({ ...f, id: '', name: '', title: '', bank: '', account: '' }))
       load()
     }
   }
@@ -111,8 +115,8 @@ export default function Orgs() {
       <div className="bg-white rounded-xl shadow p-5">
         <h2 className="font-semibold text-sm mb-3">직원 초대</h2>
         <form onSubmit={sendInvite} className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
-          <input required type="email" placeholder="이메일" value={inviteForm.email}
-            onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
+          <input required placeholder="아이디" value={inviteForm.id}
+            onChange={(e) => setInviteForm((f) => ({ ...f, id: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           <input required placeholder="이름" value={inviteForm.name}
             onChange={(e) => setInviteForm((f) => ({ ...f, name: e.target.value }))}
@@ -133,6 +137,12 @@ export default function Orgs() {
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           <input type="number" step="0.01" min={0} max={1} placeholder="일반 지급률(0~1)" value={inviteForm.rate_general}
             onChange={(e) => setInviteForm((f) => ({ ...f, rate_general: Number(e.target.value) }))}
+            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+          <input placeholder="은행 (선택)" value={inviteForm.bank}
+            onChange={(e) => setInviteForm((f) => ({ ...f, bank: e.target.value }))}
+            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+          <input placeholder="계좌번호 (선택)" value={inviteForm.account}
+            onChange={(e) => setInviteForm((f) => ({ ...f, account: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           <button className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm">초대장 발급</button>
         </form>
