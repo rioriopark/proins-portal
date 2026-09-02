@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Contract, ContractCategory, ContractType, Profile } from '../lib/types'
@@ -6,24 +6,33 @@ import type { Contract, ContractCategory, ContractType, Profile } from '../lib/t
 const CATEGORIES: ContractCategory[] = ['장기', '일반', '자동차']
 const TYPES: ContractType[] = ['신규', '계속', '환수', '부활', '비례공동']
 
-function thisMonth() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+interface Invite {
+  email: string
+  name: string
+  rate_long: number
+  rate_general: number
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10)
 }
 
 export default function Contracts() {
   const { profile } = useAuth()
   const [contracts, setContracts] = useState<Contract[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
-  const [invites, setInvites] = useState<{ email: string; name: string }[]>([])
+  const [invites, setInvites] = useState<Invite[]>([])
   const [loading, setLoading] = useState(true)
+  const [categoryFilter, setCategoryFilter] = useState<'전체' | ContractCategory>('전체')
+  const [typeFilter, setTypeFilter] = useState<'전체' | ContractType>('전체')
   const [form, setForm] = useState({
     agent_id: profile?.id ?? '',
-    month: thisMonth(),
+    receipt_date: today(),
     category: '장기' as ContractCategory,
     type: '신규' as ContractType,
     company: '',
-    count: 1,
+    product_name: '',
+    customer_name: '',
     premium: 0,
     commission: 0,
   })
@@ -33,13 +42,13 @@ export default function Contracts() {
     const { data: c } = await supabase
       .from('contracts')
       .select('*')
-      .order('month', { ascending: false })
+      .order('receipt_date', { ascending: false })
       .order('created_at', { ascending: false })
     setContracts(c ?? [])
     if (profile && profile.role !== 'agent') {
       const { data: p } = await supabase.from('profiles').select('*').order('name')
       setAgents(p ?? [])
-      const { data: i } = await supabase.from('pending_invites').select('email, name')
+      const { data: i } = await supabase.from('pending_invites').select('email, name, rate_long, rate_general')
       setInvites(i ?? [])
     }
     setLoading(false)
@@ -53,25 +62,68 @@ export default function Contracts() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     const { error } = await supabase.from('contracts').insert({
-      ...form,
       agent_id: form.agent_id || profile?.id,
+      month: form.receipt_date.slice(0, 7),
+      receipt_date: form.receipt_date,
+      category: form.category,
+      type: form.type,
+      company: form.company,
+      product_name: form.product_name,
+      customer_name: form.customer_name,
+      count: 1,
+      premium: form.premium,
+      commission: form.commission,
     })
     if (!error) {
-      setForm((f) => ({ ...f, company: '', count: 1, premium: 0, commission: 0 }))
+      setForm((f) => ({ ...f, company: '', product_name: '', customer_name: '', premium: 0, commission: 0 }))
       load()
     } else {
       alert('등록 실패: ' + error.message)
     }
   }
 
-  const agentName = (c: Contract) => {
-    if (c.agent_id) {
-      if (c.agent_id === profile?.id) return profile.name
-      return agents.find((a) => a.id === c.agent_id)?.name ?? c.agent_id
+  // agent_id/agent_email 로 이름과 지급률을 함께 찾는다
+  const agentInfo = useMemo(() => {
+    const byId = new Map(agents.map((a) => [a.id, a]))
+    const byEmail = new Map(invites.map((i) => [i.email, i]))
+    return (c: Contract) => {
+      if (c.agent_id === profile?.id) return { name: profile.name, rate_long: profile.rate_long, rate_general: profile.rate_general, pending: false }
+      if (c.agent_id && byId.has(c.agent_id)) {
+        const p = byId.get(c.agent_id)!
+        return { name: p.name, rate_long: p.rate_long, rate_general: p.rate_general, pending: false }
+      }
+      if (c.agent_email && byEmail.has(c.agent_email)) {
+        const i = byEmail.get(c.agent_email)!
+        return { name: i.name, rate_long: i.rate_long, rate_general: i.rate_general, pending: true }
+      }
+      return { name: c.agent_email ?? c.agent_id ?? '-', rate_long: 1, rate_general: 1, pending: true }
     }
-    const invited = invites.find((i) => i.email === c.agent_email)
-    return invited ? `${invited.name} (미가입)` : `${c.agent_email ?? '-'} (미가입)`
-  }
+  }, [agents, invites, profile])
+
+  const rateFor = (c: Contract, info: { rate_long: number; rate_general: number }) =>
+    c.category === '장기' ? info.rate_long : info.rate_general
+
+  const filtered = useMemo(
+    () =>
+      contracts.filter(
+        (c) => (categoryFilter === '전체' || c.category === categoryFilter) && (typeFilter === '전체' || c.type === typeFilter)
+      ),
+    [contracts, categoryFilter, typeFilter]
+  )
+
+  const groups = useMemo(() => {
+    const map = new Map<string, { name: string; pending: boolean; rows: Contract[]; premium: number; commission: number }>()
+    for (const c of filtered) {
+      const key = c.agent_id ?? c.agent_email ?? 'unknown'
+      const info = agentInfo(c)
+      const g = map.get(key) ?? { name: info.name, pending: info.pending, rows: [], premium: 0, commission: 0 }
+      g.rows.push(c)
+      g.premium += c.premium
+      g.commission += c.commission * rateFor(c, info)
+      map.set(key, g)
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  }, [filtered, agentInfo])
 
   return (
     <div className="space-y-6">
@@ -93,8 +145,8 @@ export default function Contracts() {
           </div>
         )}
         <div>
-          <label className="block text-xs text-slate-500 mb-1">지급월</label>
-          <input type="month" value={form.month} onChange={(e) => setForm((f) => ({ ...f, month: e.target.value }))}
+          <label className="block text-xs text-slate-500 mb-1">영수일</label>
+          <input type="date" value={form.receipt_date} onChange={(e) => setForm((f) => ({ ...f, receipt_date: e.target.value }))}
             className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
         </div>
         <div>
@@ -117,8 +169,13 @@ export default function Contracts() {
             className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">건수</label>
-          <input type="number" min={0} value={form.count} onChange={(e) => setForm((f) => ({ ...f, count: Number(e.target.value) }))}
+          <label className="block text-xs text-slate-500 mb-1">상품명</label>
+          <input value={form.product_name} onChange={(e) => setForm((f) => ({ ...f, product_name: e.target.value }))}
+            className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">고객명</label>
+          <input value={form.customer_name} onChange={(e) => setForm((f) => ({ ...f, customer_name: e.target.value }))}
             className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
         </div>
         <div>
@@ -127,8 +184,8 @@ export default function Contracts() {
             className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">수수료(원)</label>
-          <input type="number" min={0} value={form.commission} onChange={(e) => setForm((f) => ({ ...f, commission: Number(e.target.value) }))}
+          <label className="block text-xs text-slate-500 mb-1">수수료(원, 지급률 적용 전)</label>
+          <input type="number" value={form.commission} onChange={(e) => setForm((f) => ({ ...f, commission: Number(e.target.value) }))}
             className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
         </div>
         <button type="submit" className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium h-fit">
@@ -136,39 +193,61 @@ export default function Contracts() {
         </button>
       </form>
 
-      <div className="bg-white rounded-xl shadow overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-100 text-slate-600 text-xs">
-            <tr>
-              <th className="text-left px-4 py-2">지급월</th>
-              <th className="text-left px-4 py-2">담당자</th>
-              <th className="text-left px-4 py-2">종목</th>
-              <th className="text-left px-4 py-2">구분</th>
-              <th className="text-left px-4 py-2">보험사</th>
-              <th className="text-right px-4 py-2">건수</th>
-              <th className="text-right px-4 py-2">보험료</th>
-              <th className="text-right px-4 py-2">수수료</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400">불러오는 중…</td></tr>}
-            {!loading && contracts.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400">등록된 계약이 없습니다.</td></tr>
-            )}
-            {contracts.map((c) => (
-              <tr key={c.id} className="border-t border-slate-100">
-                <td className="px-4 py-2">{c.month}</td>
-                <td className="px-4 py-2">{agentName(c)}</td>
-                <td className="px-4 py-2">{c.category}</td>
-                <td className="px-4 py-2">{c.type}</td>
-                <td className="px-4 py-2">{c.company}</td>
-                <td className="px-4 py-2 text-right">{c.count}</td>
-                <td className="px-4 py-2 text-right">{c.premium.toLocaleString('ko-KR')}</td>
-                <td className="px-4 py-2 text-right">{c.commission.toLocaleString('ko-KR')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex gap-3">
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+          <option value="전체">전체 종목</option>
+          {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+          <option value="전체">전체 구분</option>
+          {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+
+      {loading && <p className="text-center text-slate-400 py-6">불러오는 중…</p>}
+      {!loading && groups.length === 0 && <p className="text-center text-slate-400 py-6">등록된 계약이 없습니다.</p>}
+
+      <div className="space-y-4">
+        {groups.map((g) => (
+          <div key={g.name} className="bg-white rounded-xl shadow overflow-hidden">
+            <div className="flex items-center justify-between bg-slate-100 px-4 py-2.5">
+              <p className="font-semibold text-sm text-slate-700">
+                {g.name}{g.pending && <span className="text-amber-600 font-normal"> (미가입)</span>}
+              </p>
+              <p className="text-xs text-slate-500">
+                {g.rows.length}건 · 보험료 {g.premium.toLocaleString('ko-KR')}원 · 수수료(지급률 적용) {Math.round(g.commission).toLocaleString('ko-KR')}원
+              </p>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="text-slate-500 text-xs border-b border-slate-100">
+                <tr>
+                  <th className="text-left px-4 py-2">보험사</th>
+                  <th className="text-left px-4 py-2">상품명</th>
+                  <th className="text-left px-4 py-2">영수일</th>
+                  <th className="text-right px-4 py-2">보험료</th>
+                  <th className="text-right px-4 py-2">건별수수료(지급률 적용)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.rows.map((c) => {
+                  const info = agentInfo(c)
+                  const rate = rateFor(c, info)
+                  return (
+                    <tr key={c.id} className="border-t border-slate-50">
+                      <td className="px-4 py-1.5">{c.company}</td>
+                      <td className="px-4 py-1.5">{c.product_name}</td>
+                      <td className="px-4 py-1.5">{c.receipt_date ?? '-'}</td>
+                      <td className="px-4 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
+                      <td className="px-4 py-1.5 text-right">{Math.round(c.commission * rate).toLocaleString('ko-KR')}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </div>
     </div>
   )

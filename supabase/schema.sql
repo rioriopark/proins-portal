@@ -35,6 +35,9 @@ create table contracts (
   category text not null,            -- '장기' | '일반' | '자동차'
   type text not null,                -- '신규' | '계속' | '환수' | '부활' | '비례공동'
   company text default '',
+  product_name text default '',
+  customer_name text default '',
+  receipt_date date,                 -- 영수일 (건별 상세 데이터가 없으면 null)
   count int not null default 0,
   premium numeric not null default 0,
   commission numeric not null default 0, -- 지급률 적용 전 원 수수료

@@ -47,6 +47,9 @@ export interface Contract {
   category: ContractCategory
   type: ContractType
   company: string
+  product_name: string
+  customer_name: string
+  receipt_date: string | null
   count: number
   premium: number
   commission: number
