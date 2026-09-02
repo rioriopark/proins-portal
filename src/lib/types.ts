@@ -64,6 +64,8 @@ export interface Incentive {
   period: string
   target: string
   content: string
+  file_url: string | null
+  file_name: string | null
   created_at: string
   updated_at: string
 }

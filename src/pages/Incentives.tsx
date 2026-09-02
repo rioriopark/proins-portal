@@ -54,6 +54,9 @@ export default function Incentives() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
+  const [file, setFile] = useState<File | null>(null)
+  const [existingFile, setExistingFile] = useState<{ url: string | null; name: string | null }>({ url: null, name: null })
+  const [uploading, setUploading] = useState(false)
   const [showBulk, setShowBulk] = useState(false)
   const [bulkText, setBulkText] = useState('')
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -83,6 +86,8 @@ export default function Incentives() {
   function startCreate() {
     setForm(emptyForm)
     setEditingId(null)
+    setFile(null)
+    setExistingFile({ url: null, name: null })
     setShowForm(true)
     setShowBulk(false)
   }
@@ -90,16 +95,30 @@ export default function Incentives() {
   function startEdit(i: Incentive) {
     setForm({ company: i.company, month: i.month, title: i.title, period: i.period, target: i.target, content: i.content })
     setEditingId(i.id)
+    setFile(null)
+    setExistingFile({ url: i.file_url, name: i.file_name })
     setShowForm(true)
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    let fileUrl = existingFile.url
+    let fileName = existingFile.name
+    if (file) {
+      setUploading(true)
+      const path = `${Date.now()}-${file.name}`
+      const { error: uploadError } = await supabase.storage.from('incentive-files').upload(path, file)
+      setUploading(false)
+      if (uploadError) return alert('파일 업로드 실패: ' + uploadError.message)
+      fileUrl = supabase.storage.from('incentive-files').getPublicUrl(path).data.publicUrl
+      fileName = file.name
+    }
+    const payload = { ...form, file_url: fileUrl, file_name: fileName }
     if (editingId) {
-      const { error } = await supabase.from('incentives').update({ ...form, updated_at: new Date().toISOString() }).eq('id', editingId)
+      const { error } = await supabase.from('incentives').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', editingId)
       if (error) return alert('수정 실패: ' + error.message)
     } else {
-      const { error } = await supabase.from('incentives').insert({ ...form, created_by: profile?.id })
+      const { error } = await supabase.from('incentives').insert({ ...payload, created_by: profile?.id })
       if (error) return alert('등록 실패: ' + error.message)
     }
     setShowForm(false)
@@ -226,9 +245,17 @@ export default function Incentives() {
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           <textarea placeholder="내용" value={form.content} onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
             rows={3} className="border border-slate-300 rounded-md px-2 py-1.5 text-sm col-span-2 md:col-span-3" />
+          <div className="col-span-2 md:col-span-3">
+            <label className="block text-xs text-slate-500 mb-1">첨부파일 (PDF/이미지, 선택)</label>
+            <input type="file" accept="application/pdf,image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="w-full text-sm" />
+            {existingFile.name && !file && (
+              <p className="text-xs text-slate-500 mt-1">현재 첨부: {existingFile.name} (새 파일 선택 시 교체됩니다)</p>
+            )}
+          </div>
           <div className="flex gap-2 col-span-2 md:col-span-3">
-            <button type="submit" className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium">
-              {editingId ? '수정 저장' : '등록'}
+            <button type="submit" disabled={uploading} className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50">
+              {uploading ? '업로드 중…' : editingId ? '수정 저장' : '등록'}
             </button>
             <button type="button" onClick={() => { setShowForm(false); setEditingId(null) }} className="text-sm text-slate-500 px-4 py-2">
               취소
@@ -270,6 +297,11 @@ export default function Incentives() {
             <p className="font-semibold text-slate-800">{i.title}</p>
             <p className="text-xs text-slate-500 mt-1">{i.period}{i.period && i.target && ' · '}{i.target}</p>
             <p className="text-sm text-slate-600 mt-2 whitespace-pre-wrap">{i.content}</p>
+            {i.file_url && (
+              <a href={i.file_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-2">
+                📎 {i.file_name ?? '첨부파일'}
+              </a>
+            )}
             {canWrite && (
               <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
                 <button onClick={() => startEdit(i)} className="text-xs border border-slate-300 rounded px-3 py-1.5 text-slate-600">수정</button>

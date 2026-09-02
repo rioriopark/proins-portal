@@ -81,6 +81,9 @@ create table incentives (
 -- 시상안 첨부파일(PDF/이미지) 저장용 버킷 — 마케팅성 자료라 공개 버킷으로 둠
 insert into storage.buckets (id, name, public) values ('incentive-files', 'incentive-files', true)
   on conflict (id) do nothing;
+create policy "incentive_files_select_all" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'incentive-files');
 create policy "incentive_files_insert_admin" on storage.objects
   for insert to authenticated
   with check (bucket_id = 'incentive-files' and my_role() <> 'agent');
