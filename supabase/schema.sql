@@ -71,10 +71,22 @@ create table incentives (
   period text default '',
   target text default '',
   content text default '',
+  file_url text,
+  file_name text,
   created_by uuid references profiles(id),
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- 시상안 첨부파일(PDF/이미지) 저장용 버킷 — 마케팅성 자료라 공개 버킷으로 둠
+insert into storage.buckets (id, name, public) values ('incentive-files', 'incentive-files', true)
+  on conflict (id) do nothing;
+create policy "incentive_files_insert_admin" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'incentive-files' and my_role() <> 'agent');
+create policy "incentive_files_delete_admin" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'incentive-files' and my_role() <> 'agent');
 
 -- ── 조직 하위트리 판별 함수 (root_id 가 node_id 의 조상 또는 자기 자신인가) ──
 create or replace function is_org_descendant(root_id text, node_id text)
