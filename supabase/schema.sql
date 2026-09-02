@@ -62,6 +62,20 @@ create table pending_invites (
   created_at timestamptz default now()
 );
 
+-- ── 보험사 시상안 게시판 ────────────────────────────────────
+create table incentives (
+  id uuid primary key default gen_random_uuid(),
+  company text not null,
+  month text not null,               -- 'YYYY-MM'
+  title text not null,
+  period text default '',
+  target text default '',
+  content text default '',
+  created_by uuid references profiles(id),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 -- ── 조직 하위트리 판별 함수 (root_id 가 node_id 의 조상 또는 자기 자신인가) ──
 create or replace function is_org_descendant(root_id text, node_id text)
 returns boolean language sql stable as $$
@@ -111,6 +125,7 @@ alter table organizations enable row level security;
 alter table profiles enable row level security;
 alter table contracts enable row level security;
 alter table pending_invites enable row level security;
+alter table incentives enable row level security;
 
 -- organizations: 로그인한 사람은 전체 조직도를 볼 수 있음(트리 UI 표시용), 쓰기는 hq_admin만
 create policy "orgs_select_all_authenticated" on organizations
@@ -174,6 +189,12 @@ create policy "invites_manage_scope" on pending_invites
     my_role() = 'hq_admin'
     or (my_role() in ('branch_admin','store_manager') and is_org_descendant(my_org(), org_id))
   );
+
+-- incentives: 로그인한 사람은 전체 열람, 작성/수정/삭제는 담당자(agent) 이외만
+create policy "incentives_select_all" on incentives
+  for select using (auth.role() = 'authenticated');
+create policy "incentives_write_admin" on incentives
+  for all using (my_role() <> 'agent') with check (my_role() <> 'agent');
 
 -- ── 조직 시드 데이터 (원본 포털의 조직 구조) ───────────────
 insert into organizations (id, name, type, parent_id) values
