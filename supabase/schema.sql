@@ -91,6 +91,47 @@ create policy "incentive_files_delete_admin" on storage.objects
   for delete to authenticated
   using (bucket_id = 'incentive-files' and my_role() <> 'agent');
 
+-- ── 수수료명세서 (급여/공제 상세 — 관리자가 월별로 직접 입력) ─
+create table statements (
+  id uuid primary key default gen_random_uuid(),
+  agent_id uuid references profiles(id) on delete cascade,
+  agent_email text not null,
+  month text not null,
+  recruit_first numeric default 0,        -- 모집초회수수료
+  recruit_installment numeric default 0,  -- 모집분급수수료
+  maintain numeric default 0,             -- 유지
+  clawback_revive numeric default 0,      -- 환수/부활
+  general numeric default 0,              -- 일반
+  auto numeric default 0,                 -- 자동차
+  mgmt_fee numeric default 0,             -- 관리수수료
+  collection_fee numeric default 0,       -- 수금수수료
+  personal_incentive numeric default 0,   -- 개인시책
+  corporate_incentive numeric default 0,  -- 법인시책
+  general_performance numeric default 0,  -- 일반성과
+  other_incentive numeric default 0,      -- 기타시상
+  taxable_income numeric default 0,       -- 과세소득합계
+  industrial_accident_ins numeric default 0, -- 산재보험
+  employment_ins numeric default 0,       -- 고용보험
+  employment_ins_support numeric default 0, -- 고용보험지원금
+  income_tax numeric default 0,           -- 소득세
+  resident_tax numeric default 0,         -- 주민세
+  incentive_offset numeric default 0,     -- 시상대체
+  other_deduction numeric default 0,      -- 기타공제
+  hq_support_offset numeric default 0,    -- 본사지원품대체
+  workplace_cost numeric default 0,       -- 사업장운영비
+  unit_cost numeric default 0,            -- 사업단운영비
+  risk_reserve numeric default 0,         -- 위험적립금
+  loan numeric default 0,                 -- 대여금
+  updated_at timestamptz default now(),
+  unique (agent_email, month)
+);
+
+alter table statements enable row level security;
+create policy "statements_select_scope" on statements
+  for select using (agent_id = auth.uid() or my_role() <> 'agent');
+create policy "statements_write_admin" on statements
+  for all using (my_role() <> 'agent') with check (my_role() <> 'agent');
+
 -- ── 조직 하위트리 판별 함수 (root_id 가 node_id 의 조상 또는 자기 자신인가) ──
 create or replace function is_org_descendant(root_id text, node_id text)
 returns boolean language sql stable as $$
@@ -123,8 +164,9 @@ begin
     insert into profiles (id, email, name, role, org_id, title, rate_long, rate_general, bank, account)
     values (new.id, new.email, inv.name, inv.role, inv.org_id, inv.title, inv.rate_long, inv.rate_general, inv.bank, inv.account);
     delete from pending_invites where email = new.email;
-    -- 가입 전에 이메일로 미리 등록해둔 계약들을 이 계정으로 연결
+    -- 가입 전에 이메일로 미리 등록해둔 계약/명세서를 이 계정으로 연결
     update contracts set agent_id = new.id where agent_email = new.email and agent_id is null;
+    update statements set agent_id = new.id where agent_email = new.email and agent_id is null;
   end if;
   return new;
 end;
