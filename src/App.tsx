@@ -9,6 +9,7 @@ import Contracts from './pages/Contracts'
 import BulkImport from './pages/BulkImport'
 import Statement from './pages/Statement'
 import Incentives from './pages/Incentives'
+import Contacts from './pages/Contacts'
 import Orgs from './pages/Orgs'
 
 function Gate({ children }: { children: ReactNode }) {
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="bulk-import" element={<BulkImport />} />
         <Route path="statement" element={<Statement />} />
         <Route path="incentives" element={<Incentives />} />
+        <Route path="contacts" element={<Contacts />} />
         <Route path="orgs" element={<Orgs />} />
       </Route>
     </Routes>

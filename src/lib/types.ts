@@ -70,6 +70,20 @@ export interface Incentive {
   updated_at: string
 }
 
+export interface Contact {
+  id: string
+  category: string
+  company: string
+  name: string
+  title: string
+  phone: string
+  office_phone: string
+  fax: string
+  business: string
+  email: string
+  sort_order: number
+}
+
 export interface Statement {
   id: string
   agent_id: string | null
