@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import type { Banner, Contract, Profile } from '../lib/types'
+import type { Banner, Contract, Incentive, Profile } from '../lib/types'
 import BarChart from '../components/BarChart'
 
 // 별도 만기일 필드가 없어 영수일 + 1년을 계약 만기(갱신 예정일)로 추정한다.
@@ -22,12 +23,14 @@ export default function Dashboard() {
   const [banners, setBanners] = useState<Banner[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
   const [invites, setInvites] = useState<{ email: string; name: string }[]>([])
+  const [incentives, setIncentives] = useState<Incentive[]>([])
 
   useEffect(() => {
     supabase.from('contracts').select('*').then(({ data }) => setContracts(data ?? []))
     supabase.from('banners').select('*').order('sort_order').then(({ data }) => setBanners(data ?? []))
     supabase.from('profiles').select('*').then(({ data }) => setAgents(data ?? []))
     supabase.from('pending_invites').select('email, name').then(({ data }) => setInvites(data ?? []))
+    supabase.from('incentives').select('*').then(({ data }) => setIncentives(data ?? []))
   }, [])
 
   const today = new Date().toISOString().slice(0, 10)
@@ -69,9 +72,14 @@ export default function Dashboard() {
     return [...map.entries()].map(([label, value]) => ({ label, value }))
   }, [contracts])
 
-  const totalPremium = contracts.reduce((s, c) => s + c.premium, 0)
-  const totalCount = contracts.reduce((s, c) => s + c.count, 0)
-  const totalCommission = contracts.reduce((s, c) => s + c.commission, 0)
+  const thisYear = String(new Date().getFullYear())
+  const yearContracts = useMemo(() => contracts.filter((c) => c.month?.startsWith(thisYear)), [contracts, thisYear])
+  const totalPremium = yearContracts.reduce((s, c) => s + c.premium, 0)
+  const totalCount = yearContracts.reduce((s, c) => s + c.count, 0)
+  const totalCommission = yearContracts.reduce((s, c) => s + c.commission, 0)
+
+  const thisMonth = today.slice(0, 7)
+  const monthIncentives = useMemo(() => incentives.filter((i) => i.month === thisMonth), [incentives, thisMonth])
 
   return (
     <div className="space-y-6">
@@ -91,17 +99,39 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow p-5">
-          <p className="text-xs text-slate-500">누적 보험료</p>
+          <p className="text-xs text-slate-500">{thisYear}년 누적 보험료</p>
           <p className="text-2xl font-bold mt-1">{totalPremium.toLocaleString('ko-KR')}원</p>
         </div>
         <div className="bg-white rounded-xl shadow p-5">
-          <p className="text-xs text-slate-500">누적 건수</p>
+          <p className="text-xs text-slate-500">{thisYear}년 누적 건수</p>
           <p className="text-2xl font-bold mt-1">{totalCount.toLocaleString('ko-KR')}건</p>
         </div>
         <div className="bg-white rounded-xl shadow p-5">
-          <p className="text-xs text-slate-500">누적 수수료</p>
+          <p className="text-xs text-slate-500">{thisYear}년 누적 수수료</p>
           <p className="text-2xl font-bold mt-1">{totalCommission.toLocaleString('ko-KR')}원</p>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow p-5">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold">당월 시상안 ({thisMonth})</p>
+          <Link to="/incentives" className="text-xs text-slate-500 hover:underline">전체보기</Link>
+        </div>
+        {monthIncentives.length === 0 ? (
+          <p className="text-sm text-slate-400 py-4 text-center">이번 달 등록된 시상안이 없습니다.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {monthIncentives.map((i) => (
+              <div key={i.id} className="border border-slate-100 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">{i.company}</span>
+                </div>
+                <p className="font-semibold text-sm text-slate-800">{i.title}</p>
+                <p className="text-xs text-slate-500 mt-1">{i.period}{i.period && i.target && ' · '}{i.target}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow p-5">
