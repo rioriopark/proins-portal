@@ -20,8 +20,7 @@ interface NavGroup {
 type NavEntry = ({ standalone: true } & NavItem) | ({ standalone: false } & NavGroup)
 
 const NAV: NavEntry[] = [
-  { standalone: true, to: '/', label: '대시보드', end: true },
-  { standalone: true, to: '/my-space', label: '나의공간' },
+  { standalone: true, to: '/', label: '메인화면', end: true },
   {
     standalone: false,
     key: 'contracts',
@@ -50,6 +49,7 @@ const NAV: NavEntry[] = [
       { to: '/info', label: '정보관리', adminOnly: true },
     ],
   },
+  { standalone: true, to: '/my-space', label: '나의공간' },
 ]
 
 function findGroupKey(pathname: string): string | null {

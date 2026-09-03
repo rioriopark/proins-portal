@@ -83,7 +83,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold text-slate-800">대시보드</h1>
+      <h1 className="text-xl font-bold text-slate-800">메인화면</h1>
       <p className="text-sm text-slate-500 -mt-4">{profile?.name}님이 조회 가능한 범위의 실적입니다.</p>
 
       {activeBanners.length > 0 && (
