@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Contact } from '../lib/types'
@@ -8,27 +8,42 @@ const emptyForm = {
   office_phone: '', fax: '', phone: '', email: '', note: '',
 }
 
-const MAX_LINES = 2
-
+// 콤마로 구분된 값이든 줄바꿈 없는 긴 문장이든, 실제 렌더링 후 2줄을 넘는지 측정해서
+// 넘칠 때만 더보기/접기 버튼을 보여준다 (기타처럼 콤마가 없는 항목도 동일하게 적용됨)
 function ExpandableCell({ value }: { value: string }) {
   const [expanded, setExpanded] = useState(false)
+  const [overflowing, setOverflowing] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
   const parts = (value ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    setOverflowing(el.scrollHeight > el.clientHeight + 1)
+  }, [value])
+
   if (parts.length === 0) return null
-  const hidden = parts.length - MAX_LINES
-  const shown = expanded ? parts : parts.slice(0, MAX_LINES)
 
   return (
     <div>
-      {shown.map((part, i) => (
-        <div key={i}>{part}</div>
-      ))}
-      {hidden > 0 && (
+      <div
+        ref={ref}
+        style={expanded ? undefined : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+      >
+        {parts.map((part, i) => (
+          <span key={i}>
+            {part}
+            {i < parts.length - 1 && <br />}
+          </span>
+        ))}
+      </div>
+      {overflowing && (
         <button
           type="button"
           onClick={() => setExpanded((e) => !e)}
           className="text-xs text-blue-500 hover:underline mt-0.5"
         >
-          {expanded ? '접기 ▲' : `더보기 +${hidden} ▼`}
+          {expanded ? '접기 ▲' : '더보기 ▼'}
         </button>
       )}
     </div>
