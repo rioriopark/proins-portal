@@ -63,10 +63,10 @@ create table pending_invites (
 );
 
 -- ── 보험사 시상안 게시판 ────────────────────────────────────
--- ── 업무 연락처(내부직원 / 보험사담당자) ────────────────────
+-- ── 업무 연락처(임직원 / 업무지원 / 보험사담당자) ────────────
 create table contacts (
   id uuid primary key default gen_random_uuid(),
-  category text not null,        -- '내부직원' | '보험사담당자' | '외부업체'
+  category text not null,        -- '임직원' | '업무지원' | '보험사담당자'
   company text default '',
   name text default '',
   title text default '',
@@ -77,7 +77,7 @@ create table contacts (
   email text default '',
   note text default '',
   sort_order int default 0,
-  profile_id uuid references profiles(id) on delete set null, -- 나의공간 개인정보와 자동 연동되는 내부직원 행 식별용
+  profile_id uuid references profiles(id) on delete set null, -- 나의공간 개인정보와 자동 연동되는 임직원 행 식별용
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -139,7 +139,7 @@ create policy "agent_contracts_select_scope" on agent_contracts
 create policy "agent_contracts_write_admin" on agent_contracts
   for all using (my_role() <> 'agent') with check (my_role() <> 'agent');
 
--- 나의공간(agent_profiles) 저장 시 업무연락처(contacts, 내부직원)에 자동 반영
+-- 나의공간(agent_profiles) 저장 시 업무연락처(contacts, 임직원)에 자동 반영
 -- security definer 라서 work_contacts 권한이 없는 담당자가 본인 나의공간을 저장해도 동기화됨
 create or replace function sync_contact_from_agent_profile() returns trigger
   language plpgsql security definer set search_path = public as $$
@@ -151,7 +151,7 @@ begin
     return new;
   end if;
   insert into contacts (category, profile_id, name, title, phone, email, sort_order)
-  values ('내부직원', new.profile_id, p.name, p.title, new.phone, new.email,
+  values ('임직원', new.profile_id, p.name, p.title, new.phone, new.email,
     (select coalesce(max(sort_order), 0) + 1 from contacts))
   on conflict (profile_id) where profile_id is not null do update
     set name = excluded.name,

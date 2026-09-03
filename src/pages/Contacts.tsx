@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth'
 import type { Contact } from '../lib/types'
 
 const emptyForm = {
-  category: '내부직원', company: '', name: '', title: '', business: '',
+  category: '임직원', company: '', name: '', title: '', business: '',
   office_phone: '', fax: '', phone: '', email: '', note: '',
 }
 
@@ -22,7 +22,7 @@ export default function Contacts() {
   const { can } = useAuth()
   const [items, setItems] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
-  const [categoryFilter, setCategoryFilter] = useState<'전체' | '내부직원' | '보험사담당자'>('전체')
+  const [categoryFilter, setCategoryFilter] = useState<'전체' | '보험사담당자' | '임직원' | '업무지원'>('전체')
   const [companyFilter, setCompanyFilter] = useState('전체')
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -135,8 +135,9 @@ export default function Contacts() {
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
           <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm">
-            <option value="내부직원">내부직원</option>
             <option value="보험사담당자">보험사담당자</option>
+            <option value="임직원">임직원</option>
+            <option value="업무지원">업무지원</option>
           </select>
           <input placeholder="회사" value={form.company} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
@@ -168,7 +169,7 @@ export default function Contacts() {
       )}
 
       <div className="flex flex-wrap gap-2 items-center">
-        {(['전체', '내부직원', '보험사담당자'] as const).map((c) => (
+        {(['전체', '보험사담당자', '임직원', '업무지원'] as const).map((c) => (
           <button key={c} onClick={() => { setCategoryFilter(c); setCompanyFilter('전체') }}
             className={`px-3 py-1.5 rounded-md text-sm font-medium ${categoryFilter === c ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
             {c}

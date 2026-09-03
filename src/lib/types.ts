@@ -130,7 +130,7 @@ export interface Contact {
   email: string
   note: string
   sort_order: number
-  // '내부직원' 행이 나의공간(agent_profiles)과 자동 연동된 경우에만 값이 있음
+  // '임직원' 행이 나의공간(agent_profiles)과 자동 연동된 경우에만 값이 있음
   profile_id?: string | null
 }
 
