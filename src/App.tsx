@@ -11,6 +11,8 @@ import Statement from './pages/Statement'
 import Incentives from './pages/Incentives'
 import Contacts from './pages/Contacts'
 import Orgs from './pages/Orgs'
+import Info from './pages/Info'
+import MySpace from './pages/MySpace'
 
 function Gate({ children }: { children: ReactNode }) {
   const { session, profile, loading, noProfile, signOut } = useAuth()
@@ -52,6 +54,8 @@ export default function App() {
         <Route path="incentives" element={<Incentives />} />
         <Route path="contacts" element={<Contacts />} />
         <Route path="orgs" element={<Orgs />} />
+        <Route path="info" element={<Info />} />
+        <Route path="my-space" element={<MySpace />} />
       </Route>
     </Routes>
   )

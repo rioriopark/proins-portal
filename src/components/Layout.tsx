@@ -4,16 +4,18 @@ import { ROLE_LABEL } from '../lib/types'
 
 const NAV = [
   { to: '/', label: '대시보드', end: true },
+  { to: '/my-space', label: '나의공간' },
   { to: '/contracts', label: '계약관리' },
-  { to: '/bulk-import', label: '계약 일괄등록', adminOnly: true },
+  { to: '/bulk-import', label: '계약 일괄등록', menuKey: 'bulk_import' },
   { to: '/statement', label: '수수료명세서' },
   { to: '/incentives', label: '보험사 시상안' },
   { to: '/contacts', label: '업무 연락처' },
   { to: '/orgs', label: '조직관리', adminOnly: true },
+  { to: '/info', label: '정보관리', adminOnly: true },
 ]
 
 export default function Layout() {
-  const { profile, signOut } = useAuth()
+  const { profile, signOut, can } = useAuth()
   if (!profile) return null
 
   return (
@@ -24,7 +26,7 @@ export default function Layout() {
           <p className="text-xs text-white/60 mt-1">계약관리 포털</p>
         </div>
         <nav className="flex-1 py-4">
-          {NAV.filter((n) => !n.adminOnly || profile.role !== 'agent').map((n) => (
+          {NAV.filter((n) => (n.adminOnly ? profile.role !== 'agent' : !n.menuKey || can(n.menuKey))).map((n) => (
             <NavLink
               key={n.to}
               to={n.to}

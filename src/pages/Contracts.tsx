@@ -18,7 +18,8 @@ function today() {
 }
 
 export default function Contracts() {
-  const { profile } = useAuth()
+  const { profile, can } = useAuth()
+  const canManage = can('contracts')
   const [contracts, setContracts] = useState<Contract[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
@@ -48,7 +49,7 @@ export default function Contracts() {
       .order('receipt_date', { ascending: false })
       .order('created_at', { ascending: false })
     setContracts(c ?? [])
-    if (profile && profile.role !== 'agent') {
+    if (canManage) {
       const { data: p } = await supabase.from('profiles').select('*').order('name')
       setAgents(p ?? [])
       const { data: i } = await supabase.from('pending_invites').select('email, name, rate_long, rate_general')
@@ -60,7 +61,7 @@ export default function Contracts() {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id])
+  }, [profile?.id, canManage])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -187,7 +188,7 @@ export default function Contracts() {
     <div className="space-y-6">
       <h1 className="text-xl font-bold text-slate-800">계약관리</h1>
 
-      {profile && profile.role !== 'agent' && (
+      {canManage && (
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
           <div className="col-span-2">
             <label className="block text-xs text-slate-500 mb-1">담당자</label>

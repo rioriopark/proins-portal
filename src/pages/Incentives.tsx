@@ -47,7 +47,7 @@ function parseBulk(text: string): BulkRow[] {
 }
 
 export default function Incentives() {
-  const { profile } = useAuth()
+  const { profile, can } = useAuth()
   const [items, setItems] = useState<Incentive[]>([])
   const [loading, setLoading] = useState(true)
   const [companyFilter, setCompanyFilter] = useState('전체')
@@ -61,7 +61,7 @@ export default function Incentives() {
   const [bulkText, setBulkText] = useState('')
   const [bulkBusy, setBulkBusy] = useState(false)
 
-  const canWrite = !!profile && profile.role !== 'agent'
+  const canWrite = can('incentives')
 
   async function load() {
     setLoading(true)

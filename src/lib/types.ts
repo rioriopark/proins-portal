@@ -70,6 +70,53 @@ export interface Incentive {
   updated_at: string
 }
 
+// 포털 항목별 수정권한 부여 대상 메뉴 (조직관리/정보관리는 권한 상승 위험으로 제외, hq_admin 전용 유지)
+export const MENU_OPTIONS: { key: string; label: string }[] = [
+  { key: 'contracts', label: '계약관리(관리자기능)' },
+  { key: 'bulk_import', label: '계약 일괄등록' },
+  { key: 'statement', label: '수수료명세서' },
+  { key: 'incentives', label: '보험사 시상안' },
+  { key: 'work_contacts', label: '업무 연락처' },
+]
+
+export interface CompanyCode { company: string; code: string }
+export interface LicenseInfo { name: string; valid_until: string }
+export interface EducationRecord { course: string; completed_date: string }
+export interface TerminationRecord { date: string; reason: string }
+
+export interface AgentProfile {
+  profile_id: string
+  phone: string
+  address: string
+  email: string
+  company_codes: CompanyCode[]
+  registration_no: string
+  licenses: LicenseInfo[]
+  education_records: EducationRecord[]
+  updated_at: string
+}
+
+export interface AgentContract {
+  profile_id: string
+  appointment_date: string | null
+  contract_file_path: string | null
+  contract_file_name: string | null
+  termination_history: TerminationRecord[]
+  updated_at: string
+}
+
+export interface Banner {
+  id: string
+  title: string
+  content: string
+  start_date: string | null
+  end_date: string | null
+  target_profile_ids: string[]
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
 export interface Contact {
   id: string
   category: string
@@ -81,7 +128,10 @@ export interface Contact {
   fax: string
   business: string
   email: string
+  note: string
   sort_order: number
+  // '내부직원' 행이 나의공간(agent_profiles)과 자동 연동된 경우에만 값이 있음
+  profile_id?: string | null
 }
 
 export interface Statement {

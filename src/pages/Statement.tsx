@@ -60,7 +60,7 @@ const INCOME_SUM_FIELDS: (keyof StmtFields)[] = [
 ]
 
 export default function Statement() {
-  const { profile } = useAuth()
+  const { profile, can } = useAuth()
   const [month, setMonth] = useState(thisMonth())
   const [agentId, setAgentId] = useState(profile?.id ?? '')
   const [agents, setAgents] = useState<Profile[]>([])
@@ -69,7 +69,7 @@ export default function Statement() {
   const [stmt, setStmt] = useState<StmtFields>(ZERO_STMT)
   const [saving, setSaving] = useState(false)
 
-  const canEdit = profile?.role !== 'agent'
+  const canEdit = can('statement')
 
   useEffect(() => {
     if (!profile) return

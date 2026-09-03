@@ -75,6 +75,123 @@ create table contacts (
   fax text default '',
   business text default '',
   email text default '',
+  note text default '',
+  sort_order int default 0,
+  profile_id uuid references profiles(id) on delete set null, -- 나의공간 개인정보와 자동 연동되는 내부직원 행 식별용
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+create unique index contacts_profile_id_unique on contacts (profile_id) where profile_id is not null;
+
+-- ── 포털 항목별 수정권한 (아이디별로 특정 메뉴에 관리자급 쓰기 권한을 개별 부여) ─
+-- menu_key: 'contracts' | 'bulk_import' | 'statement' | 'incentives' | 'work_contacts'
+-- 조직관리/정보관리는 권한 상승 위험 때문에 개별 부여 대상에서 제외하고 hq_admin 전용으로 유지
+create table menu_permissions (
+  profile_id uuid not null references profiles(id) on delete cascade,
+  menu_key text not null,
+  created_at timestamptz default now(),
+  primary key (profile_id, menu_key)
+);
+
+alter table menu_permissions enable row level security;
+create policy "menu_permissions_select_scope" on menu_permissions
+  for select using (profile_id = auth.uid() or my_role() = 'hq_admin');
+create policy "menu_permissions_write_hq" on menu_permissions
+  for all using (my_role() = 'hq_admin') with check (my_role() = 'hq_admin');
+
+create or replace function has_menu_permission(key text) returns boolean
+  language sql stable security definer set search_path = public
+  as $$ select exists(select 1 from menu_permissions where profile_id = auth.uid() and menu_key = key) $$;
+
+-- ── 나의공간: 설계사 개인정보 (본인 또는 관리자가 작성/수정) ────
+create table agent_profiles (
+  profile_id uuid primary key references profiles(id) on delete cascade,
+  phone text default '',
+  address text default '',
+  email text default '',
+  company_codes jsonb not null default '[]',     -- [{ company, code }]
+  registration_no text default '',
+  licenses jsonb not null default '[]',          -- [{ name, valid_until }]
+  education_records jsonb not null default '[]', -- [{ course, completed_date }]
+  updated_at timestamptz default now()
+);
+
+alter table agent_profiles enable row level security;
+create policy "agent_profiles_select_scope" on agent_profiles
+  for select using (profile_id = auth.uid() or my_role() <> 'agent');
+create policy "agent_profiles_write_scope" on agent_profiles
+  for all using (profile_id = auth.uid() or my_role() <> 'agent')
+  with check (profile_id = auth.uid() or my_role() <> 'agent');
+
+-- ── 나의공간: 위촉계약 정보 (본인은 조회만, 작성/수정은 관리자만) ─
+create table agent_contracts (
+  profile_id uuid primary key references profiles(id) on delete cascade,
+  appointment_date date,
+  contract_file_path text,
+  contract_file_name text,
+  termination_history jsonb not null default '[]', -- [{ date, reason }]
+  updated_at timestamptz default now()
+);
+
+alter table agent_contracts enable row level security;
+create policy "agent_contracts_select_scope" on agent_contracts
+  for select using (profile_id = auth.uid() or my_role() <> 'agent');
+create policy "agent_contracts_write_admin" on agent_contracts
+  for all using (my_role() <> 'agent') with check (my_role() <> 'agent');
+
+-- 나의공간(agent_profiles) 저장 시 업무연락처(contacts, 내부직원)에 자동 반영
+-- security definer 라서 work_contacts 권한이 없는 담당자가 본인 나의공간을 저장해도 동기화됨
+create or replace function sync_contact_from_agent_profile() returns trigger
+  language plpgsql security definer set search_path = public as $$
+declare
+  p profiles%rowtype;
+begin
+  select * into p from profiles where id = new.profile_id;
+  if not found then
+    return new;
+  end if;
+  insert into contacts (category, profile_id, name, title, phone, email, sort_order)
+  values ('내부직원', new.profile_id, p.name, p.title, new.phone, new.email,
+    (select coalesce(max(sort_order), 0) + 1 from contacts))
+  on conflict (profile_id) where profile_id is not null do update
+    set name = excluded.name,
+        title = excluded.title,
+        phone = excluded.phone,
+        email = excluded.email,
+        updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists on_agent_profile_upsert on agent_profiles;
+create trigger on_agent_profile_upsert
+  after insert or update on agent_profiles
+  for each row execute function sync_contact_from_agent_profile();
+
+-- 위촉계약서 원본 파일 — 개인정보라 비공개 버킷, 본인 폴더(profile_id) 또는 관리자만 열람
+insert into storage.buckets (id, name, public) values ('agent-contracts', 'agent-contracts', false)
+  on conflict (id) do nothing;
+create policy "agent_contracts_files_select" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'agent-contracts' and (my_role() <> 'agent' or (storage.foldername(name))[1] = auth.uid()::text));
+create policy "agent_contracts_files_insert_admin" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'agent-contracts' and my_role() <> 'agent');
+create policy "agent_contracts_files_update_admin" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'agent-contracts' and my_role() <> 'agent');
+create policy "agent_contracts_files_delete_admin" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'agent-contracts' and my_role() <> 'agent');
+
+-- ── 정보관리 배너 (공지 배너 — target_profile_ids 가 비어있으면 전체 공개) ─
+create table banners (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  content text default '',
+  start_date date,
+  end_date date,
+  target_profile_ids uuid[] not null default '{}',
   sort_order int default 0,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -103,10 +220,10 @@ create policy "incentive_files_select_all" on storage.objects
   using (bucket_id = 'incentive-files');
 create policy "incentive_files_insert_admin" on storage.objects
   for insert to authenticated
-  with check (bucket_id = 'incentive-files' and my_role() <> 'agent');
+  with check (bucket_id = 'incentive-files' and (my_role() <> 'agent' or has_menu_permission('incentives')));
 create policy "incentive_files_delete_admin" on storage.objects
   for delete to authenticated
-  using (bucket_id = 'incentive-files' and my_role() <> 'agent');
+  using (bucket_id = 'incentive-files' and (my_role() <> 'agent' or has_menu_permission('incentives')));
 
 -- ── 수수료명세서 (급여/공제 상세 — 관리자가 월별로 직접 입력) ─
 create table statements (
@@ -147,13 +264,26 @@ alter table statements enable row level security;
 create policy "statements_select_scope" on statements
   for select using (agent_id = auth.uid() or my_role() <> 'agent');
 create policy "statements_write_admin" on statements
-  for all using (my_role() <> 'agent') with check (my_role() <> 'agent');
+  for all using (my_role() <> 'agent' or has_menu_permission('statement'))
+  with check (my_role() <> 'agent' or has_menu_permission('statement'));
 
 alter table contacts enable row level security;
 create policy "contacts_select_all" on contacts
   for select using (auth.role() = 'authenticated');
 create policy "contacts_write_admin" on contacts
-  for all using (my_role() <> 'agent') with check (my_role() <> 'agent');
+  for all using (my_role() <> 'agent' or has_menu_permission('work_contacts'))
+  with check (my_role() <> 'agent' or has_menu_permission('work_contacts'));
+
+-- banners: target_profile_ids 가 비어있으면 전체 공개, 아니면 대상자 + 본사관리자만 조회. 작성/수정/삭제는 본사관리자만.
+alter table banners enable row level security;
+create policy "banners_select_scope" on banners
+  for select using (
+    my_role() = 'hq_admin'
+    or target_profile_ids = '{}'
+    or auth.uid() = any(target_profile_ids)
+  );
+create policy "banners_write_admin" on banners
+  for all using (my_role() = 'hq_admin') with check (my_role() = 'hq_admin');
 
 -- ── 조직 하위트리 판별 함수 (root_id 가 node_id 의 조상 또는 자기 자신인가) ──
 create or replace function is_org_descendant(root_id text, node_id text)
@@ -243,6 +373,8 @@ create policy "contracts_insert_scope" on contracts
   for insert with check (
     agent_id = auth.uid()
     or my_role() = 'hq_admin'
+    or has_menu_permission('contracts')
+    or has_menu_permission('bulk_import')
     or (
       agent_id is not null
       and my_role() in ('branch_admin','store_manager')
@@ -252,6 +384,8 @@ create policy "contracts_insert_scope" on contracts
 create policy "contracts_update_scope" on contracts
   for update using (
     my_role() = 'hq_admin'
+    or has_menu_permission('contracts')
+    or has_menu_permission('bulk_import')
     or (
       agent_id is not null
       and my_role() in ('branch_admin','store_manager')

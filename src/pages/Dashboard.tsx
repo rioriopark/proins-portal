@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import type { Contract } from '../lib/types'
+import type { Banner, Contract } from '../lib/types'
 import BarChart from '../components/BarChart'
 
 export default function Dashboard() {
   const { profile } = useAuth()
   const [contracts, setContracts] = useState<Contract[]>([])
+  const [banners, setBanners] = useState<Banner[]>([])
 
   useEffect(() => {
     supabase.from('contracts').select('*').then(({ data }) => setContracts(data ?? []))
+    supabase.from('banners').select('*').order('sort_order').then(({ data }) => setBanners(data ?? []))
   }, [])
+
+  const today = new Date().toISOString().slice(0, 10)
+  const activeBanners = banners.filter(
+    (b) => (!b.start_date || b.start_date <= today) && (!b.end_date || b.end_date >= today)
+  )
 
   const byMonth = useMemo(() => {
     const map = new Map<string, number>()
@@ -32,6 +39,17 @@ export default function Dashboard() {
     <div className="space-y-6">
       <h1 className="text-xl font-bold text-slate-800">대시보드</h1>
       <p className="text-sm text-slate-500 -mt-4">{profile?.name}님이 조회 가능한 범위의 실적입니다.</p>
+
+      {activeBanners.length > 0 && (
+        <div className="space-y-2">
+          {activeBanners.map((b) => (
+            <div key={b.id} className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <p className="text-sm font-semibold text-amber-900">{b.title}</p>
+              {b.content && <p className="text-sm text-amber-800 mt-1 whitespace-pre-wrap">{b.content}</p>}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow p-5">
