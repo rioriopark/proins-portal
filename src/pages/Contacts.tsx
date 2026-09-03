@@ -8,14 +8,31 @@ const emptyForm = {
   office_phone: '', fax: '', phone: '', email: '', note: '',
 }
 
-function withCommaBreaks(value: string) {
+const MAX_LINES = 2
+
+function ExpandableCell({ value }: { value: string }) {
+  const [expanded, setExpanded] = useState(false)
   const parts = (value ?? '').split(',').map((s) => s.trim()).filter(Boolean)
-  return parts.map((part, i) => (
-    <span key={i}>
-      {part}
-      {i < parts.length - 1 && <br />}
-    </span>
-  ))
+  if (parts.length === 0) return null
+  const hidden = parts.length - MAX_LINES
+  const shown = expanded ? parts : parts.slice(0, MAX_LINES)
+
+  return (
+    <div>
+      {shown.map((part, i) => (
+        <div key={i}>{part}</div>
+      ))}
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="text-xs text-blue-500 hover:underline mt-0.5"
+        >
+          {expanded ? '접기 ▲' : `더보기 +${hidden} ▼`}
+        </button>
+      )}
+    </div>
+  )
 }
 
 export default function Contacts() {
@@ -232,15 +249,15 @@ export default function Contacts() {
                       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(idx)); setDragIndex(idx) }}
                       onDragEnd={() => { setDragIndex(null); setOverIndex(null) }}>⠿</td>
                   )}
-                  <td className="text-center px-3 py-2 text-slate-500 break-words">{withCommaBreaks(c.company)}</td>
-                  <td className="text-center px-3 py-2 font-medium break-words">{withCommaBreaks(c.name)}</td>
-                  <td className="text-center px-3 py-2 break-words">{withCommaBreaks(c.title)}</td>
-                  <td className="text-center px-3 py-2 break-words">{withCommaBreaks(c.business)}</td>
-                  <td className="text-center px-3 py-2 break-words">{withCommaBreaks(c.office_phone)}</td>
-                  <td className="text-center px-3 py-2 break-words">{withCommaBreaks(c.fax)}</td>
-                  <td className="text-center px-3 py-2 break-words">{withCommaBreaks(c.phone)}</td>
-                  <td className="text-center px-3 py-2 text-slate-500 break-words">{withCommaBreaks(c.email)}</td>
-                  <td className="text-center px-3 py-2 text-slate-500 break-words">{withCommaBreaks(c.note)}</td>
+                  <td className="text-center px-3 py-2 text-slate-500 break-words"><ExpandableCell value={c.company} /></td>
+                  <td className="text-center px-3 py-2 font-medium break-words"><ExpandableCell value={c.name} /></td>
+                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.title} /></td>
+                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.business} /></td>
+                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.office_phone} /></td>
+                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.fax} /></td>
+                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.phone} /></td>
+                  <td className="text-center px-3 py-2 text-slate-500 break-words"><ExpandableCell value={c.email} /></td>
+                  <td className="text-center px-3 py-2 text-slate-500 break-words"><ExpandableCell value={c.note} /></td>
                   {canWrite && (
                     <td className="text-center px-3 py-2 whitespace-nowrap">
                       <button onClick={() => startEdit(c)} className="text-xs text-slate-500 hover:underline mr-2">수정</button>
