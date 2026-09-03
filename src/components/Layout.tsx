@@ -34,10 +34,10 @@ const NAV: NavEntry[] = [
   {
     standalone: false,
     key: 'info',
-    label: '정보',
+    label: '업무지원',
     items: [
-      { to: '/incentives', label: '보험사 시상안' },
       { to: '/contacts', label: '업무 연락처' },
+      { to: '/incentives', label: '보험사 시상안' },
     ],
   },
   {
