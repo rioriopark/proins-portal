@@ -1,22 +1,93 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { ROLE_LABEL } from '../lib/types'
 
-const NAV = [
-  { to: '/', label: '대시보드', end: true },
-  { to: '/my-space', label: '나의공간' },
-  { to: '/contracts', label: '계약관리' },
-  { to: '/bulk-import', label: '계약 일괄등록', menuKey: 'bulk_import' },
-  { to: '/statement', label: '수수료명세서' },
-  { to: '/incentives', label: '보험사 시상안' },
-  { to: '/contacts', label: '업무 연락처' },
-  { to: '/orgs', label: '조직관리', adminOnly: true },
-  { to: '/info', label: '정보관리', adminOnly: true },
+interface NavItem {
+  to: string
+  label: string
+  end?: boolean
+  menuKey?: string
+  adminOnly?: boolean
+}
+
+interface NavGroup {
+  key: string
+  label: string
+  items: NavItem[]
+}
+
+type NavEntry = ({ standalone: true } & NavItem) | ({ standalone: false } & NavGroup)
+
+const NAV: NavEntry[] = [
+  { standalone: true, to: '/', label: '대시보드', end: true },
+  { standalone: true, to: '/my-space', label: '나의공간' },
+  {
+    standalone: false,
+    key: 'contracts',
+    label: '계약업무',
+    items: [
+      { to: '/contracts', label: '계약관리' },
+      { to: '/bulk-import', label: '계약 일괄등록', menuKey: 'bulk_import' },
+      { to: '/statement', label: '수수료명세서' },
+    ],
+  },
+  {
+    standalone: false,
+    key: 'info',
+    label: '정보',
+    items: [
+      { to: '/incentives', label: '보험사 시상안' },
+      { to: '/contacts', label: '업무 연락처' },
+    ],
+  },
+  {
+    standalone: false,
+    key: 'admin',
+    label: '관리자',
+    items: [
+      { to: '/orgs', label: '조직관리', adminOnly: true },
+      { to: '/info', label: '정보관리', adminOnly: true },
+    ],
+  },
 ]
+
+function findGroupKey(pathname: string): string | null {
+  for (const entry of NAV) {
+    if (!entry.standalone && entry.items.some((i) => pathname === i.to || pathname.startsWith(i.to + '/'))) {
+      return entry.key
+    }
+  }
+  return null
+}
 
 export default function Layout() {
   const { profile, signOut, can } = useAuth()
+  const location = useLocation()
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    const key = findGroupKey(location.pathname)
+    return new Set(key ? [key] : [])
+  })
+
+  useEffect(() => {
+    const key = findGroupKey(location.pathname)
+    if (key) setOpenGroups((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+  }, [location.pathname])
+
   if (!profile) return null
+
+  function isVisible(item: NavItem) {
+    return item.adminOnly ? profile!.role !== 'agent' : !item.menuKey || can(item.menuKey)
+  }
+
+  function toggleGroup(key: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -25,19 +96,57 @@ export default function Layout() {
           <p className="font-bold text-sm tracking-wide">PRO INS COMPANY</p>
           <p className="text-xs text-white/60 mt-1">계약관리 포털</p>
         </div>
-        <nav className="flex-1 py-4">
-          {NAV.filter((n) => (n.adminOnly ? profile.role !== 'agent' : !n.menuKey || can(n.menuKey))).map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              end={n.end}
-              className={({ isActive }) =>
-                `block px-5 py-3 text-sm ${isActive ? 'bg-white/10 font-semibold' : 'text-white/80 hover:bg-white/5'}`
-              }
-            >
-              {n.label}
-            </NavLink>
-          ))}
+        <nav className="flex-1 py-4 overflow-y-auto">
+          {NAV.map((entry) => {
+            if (entry.standalone) {
+              if (!isVisible(entry)) return null
+              return (
+                <NavLink
+                  key={entry.to}
+                  to={entry.to}
+                  end={entry.end}
+                  className={({ isActive }) =>
+                    `block px-5 py-3 text-sm ${isActive ? 'bg-white/10 font-semibold' : 'text-white/80 hover:bg-white/5'}`
+                  }
+                >
+                  {entry.label}
+                </NavLink>
+              )
+            }
+
+            const items = entry.items.filter(isVisible)
+            if (items.length === 0) return null
+            const open = openGroups.has(entry.key)
+
+            return (
+              <div key={entry.key}>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(entry.key)}
+                  className="w-full flex items-center justify-between px-5 py-3 text-xs font-semibold text-white/50 uppercase tracking-wide hover:bg-white/5"
+                >
+                  <span>{entry.label}</span>
+                  <span className={`transition-transform duration-150 ${open ? 'rotate-90' : ''}`}>›</span>
+                </button>
+                {open && (
+                  <div>
+                    {items.map((item) => (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        end={item.end}
+                        className={({ isActive }) =>
+                          `block pl-8 pr-5 py-2.5 text-sm ${isActive ? 'bg-white/10 font-semibold' : 'text-white/80 hover:bg-white/5'}`
+                        }
+                      >
+                        {item.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </nav>
         <div className="px-5 py-4 border-t border-white/10 text-xs text-white/70">
           <p className="font-medium text-white">{profile.name}</p>
