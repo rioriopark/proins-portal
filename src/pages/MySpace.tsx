@@ -163,9 +163,10 @@ export default function MySpace() {
               <option key={a.id} value={a.id}>{a.name} ({a.email})</option>
             ))}
           </select>
-          {isHqAdmin && targetId !== profile.id && (
-            <button onClick={resetTargetPassword} disabled={resettingPw}
-              className="ml-auto border border-red-200 text-red-600 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50">
+          {isHqAdmin && (
+            <button onClick={resetTargetPassword} disabled={resettingPw || targetId === profile.id}
+              title={targetId === profile.id ? '본인 계정은 초기화할 수 없습니다. 다른 대상자를 선택하세요.' : undefined}
+              className="ml-auto border border-red-200 text-red-600 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed">
               {resettingPw ? '초기화 중…' : '비밀번호 초기화 (아이디로)'}
             </button>
           )}
