@@ -63,6 +63,23 @@ create table pending_invites (
 );
 
 -- ── 보험사 시상안 게시판 ────────────────────────────────────
+-- ── 업무 연락처(내부직원 / 보험사담당자) ────────────────────
+create table contacts (
+  id uuid primary key default gen_random_uuid(),
+  category text not null,        -- '내부직원' | '보험사담당자' | '외부업체'
+  company text default '',
+  name text default '',
+  title text default '',
+  phone text default '',
+  office_phone text default '',
+  fax text default '',
+  business text default '',
+  email text default '',
+  sort_order int default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 create table incentives (
   id uuid primary key default gen_random_uuid(),
   company text not null,
@@ -130,6 +147,12 @@ alter table statements enable row level security;
 create policy "statements_select_scope" on statements
   for select using (agent_id = auth.uid() or my_role() <> 'agent');
 create policy "statements_write_admin" on statements
+  for all using (my_role() <> 'agent') with check (my_role() <> 'agent');
+
+alter table contacts enable row level security;
+create policy "contacts_select_all" on contacts
+  for select using (auth.role() = 'authenticated');
+create policy "contacts_write_admin" on contacts
   for all using (my_role() <> 'agent') with check (my_role() <> 'agent');
 
 -- ── 조직 하위트리 판별 함수 (root_id 가 node_id 의 조상 또는 자기 자신인가) ──
