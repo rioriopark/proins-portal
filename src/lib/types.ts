@@ -69,3 +69,36 @@ export interface Incentive {
   created_at: string
   updated_at: string
 }
+
+export interface Statement {
+  id: string
+  agent_id: string | null
+  agent_email: string
+  month: string
+  recruit_first: number
+  recruit_installment: number
+  maintain: number
+  clawback_revive: number
+  general: number
+  auto: number
+  mgmt_fee: number
+  collection_fee: number
+  personal_incentive: number
+  corporate_incentive: number
+  general_performance: number
+  other_incentive: number
+  taxable_income: number
+  industrial_accident_ins: number
+  employment_ins: number
+  employment_ins_support: number
+  income_tax: number
+  resident_tax: number
+  incentive_offset: number
+  other_deduction: number
+  hq_support_offset: number
+  workplace_cost: number
+  unit_cost: number
+  risk_reserve: number
+  loan: number
+  updated_at: string
+}
