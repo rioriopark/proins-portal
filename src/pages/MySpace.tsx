@@ -27,6 +27,10 @@ export default function MySpace() {
   const [savingContract, setSavingContract] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [pwError, setPwError] = useState('')
+  const [pwSaving, setPwSaving] = useState(false)
 
   useEffect(() => {
     if (profile) setTargetId(profile.id)
@@ -101,6 +105,19 @@ export default function MySpace() {
   }
   function updateTermination(rows: TerminationRecord[]) {
     setAc((s) => (s ? { ...s, termination_history: rows } : s))
+  }
+
+  async function changePassword() {
+    setPwError('')
+    if (newPassword.length < 6) return setPwError('비밀번호는 6자 이상이어야 합니다.')
+    if (newPassword !== confirmPassword) return setPwError('비밀번호가 일치하지 않습니다.')
+    setPwSaving(true)
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    setPwSaving(false)
+    if (error) return setPwError(error.message)
+    setNewPassword('')
+    setConfirmPassword('')
+    alert('비밀번호가 변경되었습니다.')
   }
 
   if (!profile) return null
@@ -190,6 +207,31 @@ export default function MySpace() {
             makeEmpty={() => ({ course: '', completed_date: '' })}
             colTypes={{ completed_date: 'date' }}
           />
+        </div>
+      )}
+
+      {targetId === profile.id && (
+        <div className="bg-white rounded-xl shadow p-5 space-y-4">
+          <div>
+            <h2 className="font-semibold text-sm">비밀번호 변경</h2>
+            <p className="text-xs text-slate-400 mt-0.5">최초 로그인 후에는 보안을 위해 비밀번호를 변경해주세요.</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="새 비밀번호">
+              <input type="password" minLength={6} value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="6자 이상"
+                className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+            </Field>
+            <Field label="새 비밀번호 확인">
+              <input type="password" minLength={6} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+            </Field>
+          </div>
+          {pwError && <p className="text-sm text-red-600">{pwError}</p>}
+          <button onClick={changePassword} disabled={pwSaving || !newPassword || !confirmPassword}
+            className="bg-slate-800 text-white rounded-md px-4 py-1.5 text-sm font-medium disabled:opacity-50">
+            {pwSaving ? '변경 중…' : '비밀번호 변경'}
+          </button>
         </div>
       )}
 
