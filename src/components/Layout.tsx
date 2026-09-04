@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
-import { ROLE_LABEL } from '../lib/types'
+import { ROLE_LABEL, type Profile } from '../lib/types'
 
 interface NavItem {
   to: string
@@ -9,6 +9,8 @@ interface NavItem {
   end?: boolean
   menuKey?: string
   adminOnly?: boolean
+  // adminOnly/menuKey 로 표현할 수 없는 항목별 커스텀 노출 조건 (예: 소속에 따른 분기)
+  visible?: (profile: Profile) => boolean
 }
 
 interface NavGroup {
@@ -28,8 +30,8 @@ const NAV: NavEntry[] = [
     items: [
       { to: '/contracts', label: '계약관리' },
       { to: '/bulk-import', label: '계약 일괄등록', menuKey: 'bulk_import' },
-      { to: '/statement', label: '수수료명세서' },
-      { to: '/wage-statement', label: '임금명세서' },
+      { to: '/statement', label: '수수료명세서', visible: (p) => p.role !== 'agent' || p.org_id !== 'hq' },
+      { to: '/wage-statement', label: '임금명세서', visible: (p) => p.role !== 'agent' || p.org_id === 'hq' },
     ],
   },
   {
@@ -78,6 +80,7 @@ export default function Layout() {
   if (!profile) return null
 
   function isVisible(item: NavItem) {
+    if (item.visible) return item.visible(profile!)
     return item.adminOnly ? profile!.role !== 'agent' : !item.menuKey || can(item.menuKey)
   }
 
