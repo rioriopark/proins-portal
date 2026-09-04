@@ -197,7 +197,7 @@ create table banners (
   updated_at timestamptz default now()
 );
 
--- ── 보험사 계정 (본사 담당자 공용 대표코드/비밀번호 — 본사관리자만 조회/관리) ─
+-- ── 보험사 계정 (본사 담당자 공용 대표코드/비밀번호 — 본사 소속 직원만 조회/관리) ─
 create table insurer_accounts (
   id uuid primary key default gen_random_uuid(),
   company text not null,
@@ -345,10 +345,10 @@ create policy "banners_select_scope" on banners
 create policy "banners_write_admin" on banners
   for all using (my_role() = 'hq_admin') with check (my_role() = 'hq_admin');
 
--- insurer_accounts: 대표코드/비밀번호는 민감정보이므로 본사관리자만 조회/관리
+-- insurer_accounts: 대표코드/비밀번호는 민감정보이므로 본사 소속(org_id='hq') 직원만 조회/관리
 alter table insurer_accounts enable row level security;
-create policy "insurer_accounts_hq_only" on insurer_accounts
-  for all using (my_role() = 'hq_admin') with check (my_role() = 'hq_admin');
+create policy "insurer_accounts_hq_org_only" on insurer_accounts
+  for all using (my_org() = 'hq') with check (my_org() = 'hq');
 
 -- education_events: 로그인한 사람 전체 조회 가능, 작성/수정/삭제는 본사관리자만
 alter table education_events enable row level security;

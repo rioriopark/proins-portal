@@ -50,7 +50,7 @@ const NAV: NavEntry[] = [
     items: [
       { to: '/orgs', label: '조직관리', adminOnly: true },
       { to: '/info', label: '정보관리', adminOnly: true },
-      { to: '/insurer-accounts', label: '보험사 계정', visible: (p) => p.role === 'hq_admin' },
+      { to: '/insurer-accounts', label: '보험사 계정', visible: (p) => p.org_id === 'hq' },
     ],
   },
   { standalone: true, to: '/my-space', label: '나의공간' },

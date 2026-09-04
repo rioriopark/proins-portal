@@ -95,7 +95,7 @@ export default function InsurerAccounts() {
         <div>
           <h1 className="text-xl font-bold text-slate-800">보험사 계정</h1>
           <p className="text-sm text-slate-500 mt-1">
-            보험사별 대표코드·비밀번호를 본사 담당자끼리 공유합니다. 본사관리자만 조회·수정할 수 있습니다.
+            보험사별 대표코드·비밀번호를 본사 담당자끼리 공유합니다. 본사 소속 직원만 조회·수정할 수 있습니다.
           </p>
         </div>
         <button onClick={startCreate} className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium">
