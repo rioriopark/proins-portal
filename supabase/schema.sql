@@ -267,6 +267,44 @@ create policy "statements_write_admin" on statements
   for all using (my_role() <> 'agent' or has_menu_permission('statement'))
   with check (my_role() <> 'agent' or has_menu_permission('statement'));
 
+-- ── 임금명세서 (정직원 급여/공제 상세 — 관리자가 월별로 직접 입력) ─
+create table wage_statements (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid references profiles(id) on delete cascade,
+  month text not null,
+  pay_date date,           -- 지급일
+  emp_no text default '',  -- 사번
+  department text default '', -- 부서
+  hire_date date,          -- 입사일
+  base_salary numeric default 0,       -- 기본급
+  position_allowance numeric default 0, -- 직책수당
+  meal_allowance numeric default 0,    -- 식대
+  bonus numeric default 0,             -- 상여
+  car_allowance numeric default 0,     -- 자가운전보조금
+  national_pension numeric default 0,  -- 국민연금
+  health_insurance numeric default 0,  -- 건강보험
+  longterm_care_insurance numeric default 0, -- 장기요양보험
+  employment_insurance numeric default 0,    -- 고용보험
+  health_insurance_settlement numeric default 0, -- 건강보험정산
+  care_insurance_settlement numeric default 0,   -- 요양보험정산
+  advance_payment numeric default 0,   -- 기지급액
+  durunuri_pension numeric default 0,  -- 두루누리정산(연금)
+  durunuri_employment numeric default 0, -- 두루누리정산(고용)
+  income_tax numeric default 0,        -- 소득세
+  local_income_tax numeric default 0,  -- 지방소득세
+  agri_tax numeric default 0,          -- 농특세
+  calc_notes jsonb not null default '[]', -- 계산방법: [{category, method, amount}]
+  updated_at timestamptz default now(),
+  unique (profile_id, month)
+);
+
+alter table wage_statements enable row level security;
+create policy "wage_statements_select_scope" on wage_statements
+  for select using (profile_id = auth.uid() or my_role() <> 'agent');
+create policy "wage_statements_write_admin" on wage_statements
+  for all using (my_role() <> 'agent' or has_menu_permission('wage_statement'))
+  with check (my_role() <> 'agent' or has_menu_permission('wage_statement'));
+
 alter table contacts enable row level security;
 create policy "contacts_select_all" on contacts
   for select using (auth.role() = 'authenticated');

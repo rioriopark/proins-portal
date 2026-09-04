@@ -77,6 +77,7 @@ export const MENU_OPTIONS: { key: string; label: string }[] = [
   { key: 'statement', label: '수수료명세서' },
   { key: 'incentives', label: '보험사 시상안' },
   { key: 'work_contacts', label: '업무 연락처' },
+  { key: 'wage_statement', label: '임금명세서' },
 ]
 
 export interface CompanyCode { company: string; code: string }
@@ -132,6 +133,41 @@ export interface Contact {
   sort_order: number
   // '임직원' 행이 나의공간(agent_profiles)과 자동 연동된 경우에만 값이 있음
   profile_id?: string | null
+}
+
+export interface WageCalcNote {
+  category: string
+  method: string
+  amount: string
+}
+
+export interface WageStatement {
+  id: string
+  profile_id: string | null
+  month: string
+  pay_date: string | null
+  emp_no: string
+  department: string
+  hire_date: string | null
+  base_salary: number
+  position_allowance: number
+  meal_allowance: number
+  bonus: number
+  car_allowance: number
+  national_pension: number
+  health_insurance: number
+  longterm_care_insurance: number
+  employment_insurance: number
+  health_insurance_settlement: number
+  care_insurance_settlement: number
+  advance_payment: number
+  durunuri_pension: number
+  durunuri_employment: number
+  income_tax: number
+  local_income_tax: number
+  agri_tax: number
+  calc_notes: WageCalcNote[]
+  updated_at: string
 }
 
 export interface Statement {
