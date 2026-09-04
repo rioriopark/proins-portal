@@ -103,7 +103,7 @@ const STAT_COLORS = {
 
 // 각 보험사가 자체 운영하는 GA/설계사용 업무포털 바로가기 (프로인스포탈 내부 페이지가 아님)
 const PORTAL_LINKS = [
-  { name: '삼성화재', portal: '드림포탈', url: 'https://erp.samsungfire.com/', badge: '삼성', color: 'bg-blue-600' },
+  { name: '삼성화재', portal: '드림포탈', url: 'https://login.samsungfire.com/nl/p/login/ui/SPGENLP00000', badge: '삼성', color: 'bg-blue-600' },
   { name: 'DB손보', portal: '영업포탈', url: 'https://www.mdbins.com', badge: 'DB', color: 'bg-sky-600' },
   { name: '현대해상', portal: '영업포탈', url: 'https://sp.hi.co.kr', badge: '현대', color: 'bg-orange-500' },
   { name: 'KB손보', portal: '전용포탈', url: 'https://sales.kbinsure.co.kr', badge: 'KB', color: 'bg-amber-500' },
@@ -111,8 +111,13 @@ const PORTAL_LINKS = [
   { name: '롯데손해보험', portal: '영업포탈', url: 'http://lottero.lotteins.co.kr', badge: '롯데', color: 'bg-red-600' },
   { name: '라이나손보', portal: '영업포탈', url: 'https://ga.linagi.com/', badge: '라이나', color: 'bg-indigo-600' },
   { name: '한화손해보험', portal: '스마트포탈', url: 'https://portal.hwgeneralins.com/', badge: '한화', color: 'bg-rose-600' },
-  { name: 'AIG손해보험', portal: '', url: 'https://sso.aig.co.kr/gaLogin/gaLogin.jsp', badge: 'AIG', color: 'bg-slate-700' },
+  { name: 'AIG손해보험', portal: '', url: 'https://sso.aig.co.kr/gaLogin/gaLogin.jsp', badge: 'AIG', color: 'bg-slate-700', forceEdge: true },
 ]
+
+// Windows의 microsoft-edge: URI 프로토콜을 이용해 항상 Edge로 열리도록 강제한다.
+function portalHref(p: { url: string; forceEdge?: boolean }) {
+  return p.forceEdge ? `microsoft-edge:${p.url}` : p.url
+}
 
 function PortalLinksBar() {
   return (
@@ -122,7 +127,7 @@ function PortalLinksBar() {
         {PORTAL_LINKS.map((p) => (
           <a
             key={p.name}
-            href={p.url}
+            href={portalHref(p)}
             target="_blank"
             rel="noopener noreferrer"
             className="flex flex-col items-center w-20 text-center group"
