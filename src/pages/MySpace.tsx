@@ -2,8 +2,12 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type {
-  AgentContract, AgentProfile, CompanyCode, EducationRecord, InsurerRepCode, LicenseInfo, Profile, TerminationRecord,
+  AgentContract, AgentProfile, CompanyCode, EducationRecord, InsurerAccount, LicenseInfo, Profile, TerminationRecord,
 } from '../lib/types'
+
+const emptyInsurerAccount = (company: string): InsurerAccount => ({
+  id: '', company, login_id: '', password: '', memo: '', updated_by: null, created_at: '', updated_at: '',
+})
 
 const emptyProfile = (profileId: string): AgentProfile => ({
   profile_id: profileId, phone: '', address: '', email: '',
@@ -22,7 +26,7 @@ export default function MySpace() {
   const [targetId, setTargetId] = useState('')
   const [ap, setAp] = useState<AgentProfile | null>(null)
   const [ac, setAc] = useState<AgentContract | null>(null)
-  const [repCodes, setRepCodes] = useState<InsurerRepCode[]>([])
+  const [insurerAccounts, setInsurerAccounts] = useState<InsurerAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingContract, setSavingContract] = useState(false)
@@ -47,15 +51,44 @@ export default function MySpace() {
 
   useEffect(() => {
     if (profile?.org_id === 'hq') {
-      supabase.from('insurer_rep_codes').select('*').then(({ data }) => setRepCodes(data ?? []))
+      supabase.from('insurer_accounts').select('*').then(({ data }) => setInsurerAccounts(data ?? []))
     }
   }, [profile])
 
-  const repCodeByCompany = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const r of repCodes) map.set(r.company.trim(), r.rep_code)
+  const insurerAccountByCompany = useMemo(() => {
+    const map = new Map<string, InsurerAccount>()
+    for (const a of insurerAccounts) map.set(a.company.trim(), a)
     return map
-  }, [repCodes])
+  }, [insurerAccounts])
+
+  function updateRepField(company: string, field: 'login_id' | 'password', value: string) {
+    const key = company.trim()
+    if (!key) return
+    setInsurerAccounts((prev) => {
+      const idx = prev.findIndex((a) => a.company.trim() === key)
+      if (idx === -1) return [...prev, { ...emptyInsurerAccount(key), [field]: value }]
+      return prev.map((a, i) => (i === idx ? { ...a, [field]: value } : a))
+    })
+  }
+
+  async function persistRepField(company: string) {
+    const key = company.trim()
+    if (!key || !profile) return
+    const row = insurerAccountByCompany.get(key)
+    if (!row) return
+    const payload = {
+      company: key, login_id: row.login_id, password: row.password,
+      updated_by: profile.id, updated_at: new Date().toISOString(),
+    }
+    if (row.id) {
+      const { error } = await supabase.from('insurer_accounts').update(payload).eq('id', row.id)
+      if (error) alert('대표코드 저장 실패: ' + error.message)
+    } else {
+      const { data, error } = await supabase.from('insurer_accounts').insert(payload).select().maybeSingle()
+      if (error) alert('대표코드 저장 실패: ' + error.message)
+      else if (data) setInsurerAccounts((prev) => prev.map((a) => (a.company.trim() === key ? data : a)))
+    }
+  }
 
   useEffect(() => {
     if (!targetId) return
@@ -245,7 +278,9 @@ export default function MySpace() {
               editable={canEditSelf}
               rows={ap.company_codes}
               onChange={updateCompanyCodes}
-              repCodeByCompany={repCodeByCompany}
+              insurerAccountByCompany={insurerAccountByCompany}
+              onRepFieldChange={updateRepField}
+              onRepFieldBlur={persistRepField}
             />
           )}
 
@@ -388,26 +423,31 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function CompanyCodeTable({
-  editable, rows, onChange, repCodeByCompany,
+  editable, rows, onChange, insurerAccountByCompany, onRepFieldChange, onRepFieldBlur,
 }: {
   editable: boolean
   rows: CompanyCode[]
   onChange: (rows: CompanyCode[]) => void
-  repCodeByCompany: Map<string, string>
+  insurerAccountByCompany: Map<string, InsurerAccount>
+  onRepFieldChange: (company: string, field: 'login_id' | 'password', value: string) => void
+  onRepFieldBlur: (company: string) => void
 }) {
-  function update(i: number, key: 'company' | 'code' | 'code_auth' | 'rep_auth', value: string) {
+  function update(i: number, key: 'company' | 'code' | 'code_auth', value: string) {
     onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)))
   }
   function remove(i: number) {
     onChange(rows.filter((_, idx) => idx !== i))
   }
   function add() {
-    onChange([...rows, { company: '', code: '', code_auth: '', rep_auth: '' }])
+    onChange([...rows, { company: '', code: '', code_auth: '' }])
   }
 
   return (
     <div>
       <p className="text-xs font-medium text-slate-500 mb-2">보험사별 코드정보</p>
+      <p className="text-[11px] text-slate-400 mb-2">
+        대표사번·비밀번호/인증번호는 대표관리자·본사담당자 전체가 공유하는 값입니다. 입력하면 즉시 반영됩니다.
+      </p>
       {rows.length === 0 && <p className="text-xs text-slate-400 mb-2">등록된 정보가 없습니다.</p>}
       {rows.length > 0 && (
         <div className="flex items-center gap-2 mb-1 px-0.5">
@@ -420,44 +460,51 @@ function CompanyCodeTable({
         </div>
       )}
       <div className="space-y-2">
-        {rows.map((row, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input
-              disabled={!editable}
-              value={row.company}
-              onChange={(e) => update(i, 'company', e.target.value)}
-              className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
-            />
-            <input
-              disabled={!editable}
-              value={row.code}
-              onChange={(e) => update(i, 'code', e.target.value)}
-              className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
-            />
-            <input
-              disabled={!editable}
-              value={row.code_auth}
-              onChange={(e) => update(i, 'code_auth', e.target.value)}
-              className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
-            />
-            <input
-              disabled
-              value={repCodeByCompany.get(row.company.trim()) || '-'}
-              title="대표코드 메뉴에 등록된 보험사 대표사번입니다."
-              className="flex-1 border border-slate-200 bg-slate-50 rounded-md px-2 py-1.5 text-sm text-slate-500"
-            />
-            <input
-              disabled={!editable}
-              value={row.rep_auth}
-              onChange={(e) => update(i, 'rep_auth', e.target.value)}
-              title="대표사번으로 로그인할 때 본인이 사용하는 비밀번호/인증번호입니다."
-              className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
-            />
-            {editable && (
-              <button type="button" onClick={() => remove(i)} className="text-slate-400 hover:text-red-500 text-sm px-1">✕</button>
-            )}
-          </div>
-        ))}
+        {rows.map((row, i) => {
+          const company = row.company.trim()
+          const rep = insurerAccountByCompany.get(company)
+          return (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                disabled={!editable}
+                value={row.company}
+                onChange={(e) => update(i, 'company', e.target.value)}
+                className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+              />
+              <input
+                disabled={!editable}
+                value={row.code}
+                onChange={(e) => update(i, 'code', e.target.value)}
+                className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+              />
+              <input
+                disabled={!editable}
+                value={row.code_auth}
+                onChange={(e) => update(i, 'code_auth', e.target.value)}
+                className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+              />
+              <input
+                disabled={!company}
+                value={rep?.login_id ?? ''}
+                onChange={(e) => onRepFieldChange(company, 'login_id', e.target.value)}
+                onBlur={() => onRepFieldBlur(company)}
+                title="대표관리자·본사담당자 전체가 공유하는 보험사 대표사번입니다."
+                className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+              />
+              <input
+                disabled={!company}
+                value={rep?.password ?? ''}
+                onChange={(e) => onRepFieldChange(company, 'password', e.target.value)}
+                onBlur={() => onRepFieldBlur(company)}
+                title="대표사번의 비밀번호/인증번호입니다. 대표관리자·본사담당자 전체와 공유됩니다."
+                className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+              />
+              {editable && (
+                <button type="button" onClick={() => remove(i)} className="text-slate-400 hover:text-red-500 text-sm px-1">✕</button>
+              )}
+            </div>
+          )
+        })}
       </div>
       {editable && (
         <button type="button" onClick={add} className="mt-2 text-xs text-slate-500 hover:underline">
