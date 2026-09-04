@@ -43,7 +43,9 @@ function parseSheet(text: string): ParsedRow[] {
 
 // ---- 보험사 엑셀 업로드 모드 ----
 
-type FieldKey = 'agentCode' | 'agentName' | 'month' | 'category' | 'type' | 'count' | 'premium' | 'commission'
+type FieldKey =
+  | 'agentCode' | 'agentName' | 'month' | 'category' | 'type' | 'count' | 'premium' | 'commission'
+  | 'productName' | 'customerName' | 'receiptDate' | 'expiryDate'
 
 const FIELD_META: { key: FieldKey; label: string; required: boolean; keywords: string[] }[] = [
   { key: 'agentCode', label: '설계사코드/사번', required: false, keywords: [] },
@@ -54,6 +56,10 @@ const FIELD_META: { key: FieldKey; label: string; required: boolean; keywords: s
   { key: 'count', label: '건수', required: false, keywords: ['건수', '계약건수'] },
   { key: 'premium', label: '보험료', required: true, keywords: ['보험료', '납입보험료', '월보험료', '초회보험료'] },
   { key: 'commission', label: '수수료', required: true, keywords: ['수수료', '지급수수료', '수수료액', '커미션'] },
+  { key: 'productName', label: '상품명', required: false, keywords: ['상품명', '상품'] },
+  { key: 'customerName', label: '고객명', required: false, keywords: ['계약자명', '고객명', '계약자', '피보험자명'] },
+  { key: 'receiptDate', label: '영수일', required: false, keywords: ['영수일', '접수일', '청약일', '응당일'] },
+  { key: 'expiryDate', label: '만기일(보험종기)', required: false, keywords: ['보험종기', '보험만기일자', '만기일자', '만기일', '증권만기일', '만료일', '종기'] },
 ]
 
 const HEADER_DETECT_KEYWORDS = [
@@ -123,7 +129,10 @@ function pickBestColumn(headers: string[], body: string[][], predicate: (h: stri
 }
 
 function emptyMapping(): Record<FieldKey, number> {
-  return { agentCode: -1, agentName: -1, month: -1, category: -1, type: -1, count: -1, premium: -1, commission: -1 }
+  return {
+    agentCode: -1, agentName: -1, month: -1, category: -1, type: -1, count: -1, premium: -1, commission: -1,
+    productName: -1, customerName: -1, receiptDate: -1, expiryDate: -1,
+  }
 }
 
 function guessMapping(headers: string[], body: string[][]): Record<FieldKey, number> {
@@ -190,6 +199,16 @@ function normalizeMonth(raw: string): string {
   return `${m[1]}-${m[2].padStart(2, '0')}`
 }
 
+function normalizeDate(raw: string): string {
+  const s = (raw ?? '').trim()
+  if (!s) return ''
+  let m = s.match(/^(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/)
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
+  m = s.match(/^(\d{4})(\d{2})(\d{2})$/)
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`
+  return s
+}
+
 function normalizeCategory(raw: string): string {
   const s = (raw ?? '').trim()
   if (s.includes('자동차')) return '자동차'
@@ -203,18 +222,8 @@ function toNumber(v: string): number {
   return Number.isFinite(n) ? n : 0
 }
 
-interface FileRawRow {
-  agentCode: string
-  agentName: string
-  month: string
-  category: string
-  type: string
-  count: number
-  premium: number
-  commission: number
-}
-
-interface AggRow {
+// 보험사 다운로드 파일은 한 행이 계약 1건이므로, 합산하지 않고 건별(개별 계약)로 저장해 고객명·상품명·만기일을 보존한다.
+interface FileRow {
   key: string
   agentKey: string
   agentLabel: string
@@ -222,10 +231,13 @@ interface AggRow {
   month: string
   category: string
   type: string
+  productName: string
+  customerName: string
+  receiptDate: string
+  expiryDate: string
   count: number
   premium: number
   commission: number
-  rowCount: number
   error?: string
 }
 
@@ -349,110 +361,93 @@ export default function BulkImport() {
     return m
   }, [agentProfiles, profiles])
 
-  const fileRawRows = useMemo<FileRawRow[]>(() => {
+  const fileRows = useMemo<FileRow[]>(() => {
     if (!dataRows.length) return []
     const get = (row: string[], key: FieldKey) => {
       const idx = mapping[key]
       return idx >= 0 && idx < row.length ? (row[idx] ?? '').trim() : ''
     }
     return dataRows
-      .map((row) => {
+      .filter((row) => row.some((cell) => cell))
+      .map((row, i) => {
+        const agentCode = get(row, 'agentCode')
+        const agentName = get(row, 'agentName')
         const rawCategory = get(row, 'category')
         const rawType = get(row, 'type')
         const rawMonth = get(row, 'month')
+        const month = rawMonth ? normalizeMonth(rawMonth) : fileMonth
+        const category = rawCategory ? normalizeCategory(rawCategory) : inferCategoryFallback(insurer, headers, row)
+        const type = rawType || inferTypeFallback(insurer, headers, row)
+        const premium = toNumber(get(row, 'premium'))
+        const commission = toNumber(get(row, 'commission'))
+
+        const codeKey = agentCode ? `${insurer}|${agentCode}` : ''
+        const autoProfile = codeKey ? codeMap.get(codeKey) : undefined
+        const nameProfile = !autoProfile && agentName ? profiles.find((p) => p.name.trim() === agentName) : undefined
+        const matchedAuto = autoProfile ?? nameProfile
+        const agentKey = matchedAuto ? `p:${matchedAuto.id}` : agentCode ? `c:${agentCode}` : agentName ? `n:${agentName}` : 'unknown'
+        const manualId = manualAssign[agentKey]
+        const profile = matchedAuto ?? (manualId ? profiles.find((p) => p.id === manualId) : undefined)
+        const agentLabel = matchedAuto ? matchedAuto.name : agentCode || agentName || '(식별불가)'
+
+        let error: string | undefined
+        if (!month || !/^\d{4}-\d{2}$/.test(month)) error = '지급월 형식 오류'
+        else if (!['장기', '일반', '자동차'].includes(category)) error = '종목 값 오류'
+        else if (!profile) error = '담당자 미매칭'
+
         return {
-          agentCode: get(row, 'agentCode'),
-          agentName: get(row, 'agentName'),
-          month: rawMonth ? normalizeMonth(rawMonth) : fileMonth,
-          category: rawCategory ? normalizeCategory(rawCategory) : inferCategoryFallback(insurer, headers, row),
-          type: rawType || inferTypeFallback(insurer, headers, row),
+          key: `r${i}`, agentKey, agentLabel, profile, month, category, type,
+          productName: get(row, 'productName'),
+          customerName: get(row, 'customerName'),
+          receiptDate: normalizeDate(get(row, 'receiptDate')),
+          expiryDate: normalizeDate(get(row, 'expiryDate')),
           count: mapping.count >= 0 ? toNumber(get(row, 'count')) || 1 : 1,
-          premium: toNumber(get(row, 'premium')),
-          commission: toNumber(get(row, 'commission')),
+          premium, commission, error,
         }
       })
-      .filter((r) => r.agentCode || r.agentName || r.premium || r.commission)
-  }, [dataRows, mapping, fileMonth, insurer, headers])
-
-  const aggRows = useMemo<AggRow[]>(() => {
-    const groups = new Map<string, AggRow>()
-    for (const r of fileRawRows) {
-      const codeKey = r.agentCode ? `${insurer}|${r.agentCode}` : ''
-      const autoProfile = codeKey ? codeMap.get(codeKey) : undefined
-      const nameProfile = !autoProfile && r.agentName ? profiles.find((p) => p.name.trim() === r.agentName) : undefined
-      const matchedAuto = autoProfile ?? nameProfile
-      const agentKey = matchedAuto ? `p:${matchedAuto.id}` : r.agentCode ? `c:${r.agentCode}` : r.agentName ? `n:${r.agentName}` : 'unknown'
-      const manualId = manualAssign[agentKey]
-      const profile = matchedAuto ?? (manualId ? profiles.find((p) => p.id === manualId) : undefined)
-      const agentLabel = matchedAuto ? matchedAuto.name : r.agentCode || r.agentName || '(식별불가)'
-
-      let error: string | undefined
-      if (!r.month || !/^\d{4}-\d{2}$/.test(r.month)) error = '지급월 형식 오류'
-      else if (!['장기', '일반', '자동차'].includes(r.category)) error = '종목 값 오류'
-      else if (!profile) error = '담당자 미매칭'
-
-      const gkey = `${agentKey}__${r.month}__${r.category}__${r.type}`
-      const existing = groups.get(gkey)
-      if (existing) {
-        existing.count += r.count
-        existing.premium += r.premium
-        existing.commission += r.commission
-        existing.rowCount += 1
-        existing.error = error
-        existing.profile = profile
-      } else {
-        groups.set(gkey, {
-          key: gkey, agentKey, agentLabel, profile,
-          month: r.month, category: r.category, type: r.type,
-          count: r.count, premium: r.premium, commission: r.commission,
-          rowCount: 1, error,
-        })
-      }
-    }
-    return Array.from(groups.values()).sort(
-      (a, b) => a.agentLabel.localeCompare(b.agentLabel, 'ko') || a.month.localeCompare(b.month),
-    )
-  }, [fileRawRows, insurer, codeMap, profiles, manualAssign])
+  }, [dataRows, mapping, fileMonth, insurer, headers, codeMap, profiles, manualAssign])
 
   const unresolvedAgents = useMemo(() => {
     const map = new Map<string, string>()
-    for (const r of aggRows) if (!r.profile) map.set(r.agentKey, r.agentLabel)
+    for (const r of fileRows) if (!r.profile) map.set(r.agentKey, r.agentLabel)
     return Array.from(map.entries())
-  }, [aggRows])
+  }, [fileRows])
 
   const groupedByAgent = useMemo(() => {
     const order: string[] = []
-    const map = new Map<string, AggRow[]>()
-    for (const r of aggRows) {
+    const map = new Map<string, FileRow[]>()
+    for (const r of fileRows) {
       if (!map.has(r.agentKey)) {
         order.push(r.agentKey)
         map.set(r.agentKey, [])
       }
       map.get(r.agentKey)!.push(r)
     }
-    return order.map((k) => {
-      const grp = map.get(k)!
-      return {
-        agentKey: k,
-        label: grp[0].agentLabel,
-        profile: grp[0].profile,
-        rows: grp,
-        subtotal: {
-          count: sum(grp, (g) => g.count),
-          premium: sum(grp, (g) => g.premium),
-          commission: sum(grp, (g) => g.commission),
-        },
-      }
-    })
-  }, [aggRows])
+    return order
+      .map((k) => {
+        const grp = map.get(k)!.sort((a, b) => (a.expiryDate || a.receiptDate).localeCompare(b.expiryDate || b.receiptDate))
+        return {
+          agentKey: k,
+          label: grp[0].agentLabel,
+          profile: grp[0].profile,
+          rows: grp,
+          subtotal: {
+            count: sum(grp, (g) => g.count),
+            premium: sum(grp, (g) => g.premium),
+            commission: sum(grp, (g) => g.commission),
+          },
+        }
+      })
+      .sort((a, b) => a.label.localeCompare(b.label, 'ko'))
+  }, [fileRows])
 
-  const fileValidCount = aggRows.filter((r) => !r.error).length
+  const fileValidCount = fileRows.filter((r) => !r.error).length
   const identifierMissing = mapping.agentCode < 0 && mapping.agentName < 0
   const missingRequired = FIELD_META.filter((f) => f.required && mapping[f.key] < 0)
 
   async function handleFileImport() {
     setBusy(true)
-    const payload = aggRows
+    const payload = fileRows
       .filter((r) => !r.error && r.profile)
       .map((r) => ({
         agent_email: r.profile!.email,
@@ -461,6 +456,10 @@ export default function BulkImport() {
         category: r.category,
         type: r.type,
         company: insurer,
+        product_name: r.productName,
+        customer_name: r.customerName,
+        receipt_date: r.receiptDate || null,
+        expiry_date: r.expiryDate || null,
         count: r.count,
         premium: r.premium,
         commission: r.commission,
@@ -588,7 +587,7 @@ export default function BulkImport() {
           <p className="text-sm text-slate-500">
             보험사 업무포털에서 계약내용을 엑셀(xlsx/xls/csv)로 내려받아 그대로 업로드하세요.
             보험사마다 열 이름이 달라 자동으로 추정한 뒤 확인할 수 있고, 담당자는 마이스페이스에 등록된 보험사별 설계사코드로 자동 매칭됩니다.
-            매칭되지 않으면 아래에서 직접 담당자를 지정하면 되고, 같은 담당자·월·종목·구분의 계약은 자동으로 합산되어 담당자별로 정리됩니다.
+            매칭되지 않으면 아래에서 직접 담당자를 지정하면 되고, 계약은 합산하지 않고 건별로 저장되어(고객명·상품명·만기일 보존) 담당자별로 정리됩니다.
           </p>
 
           <div className="bg-white rounded-xl shadow p-5 space-y-4">
@@ -687,9 +686,9 @@ export default function BulkImport() {
               </div>
             )}
 
-            {aggRows.length > 0 && (
+            {fileRows.length > 0 && (
               <div className="text-sm text-slate-600 border-t border-slate-100 pt-3">
-                담당자 {groupedByAgent.length}명 · 합산 {aggRows.length}행 (원본 {fileRawRows.length}행) · 유효 {fileValidCount}행
+                담당자 {groupedByAgent.length}명 · 총 {fileRows.length}건 · 유효 {fileValidCount}건
               </div>
             )}
           </div>
@@ -709,10 +708,11 @@ export default function BulkImport() {
                   <table className="w-full text-xs">
                     <thead className="bg-slate-50 text-slate-500">
                       <tr>
-                        <th className="text-left px-3 py-1.5">지급월</th>
-                        <th className="text-left px-3 py-1.5">종목</th>
-                        <th className="text-left px-3 py-1.5">구분</th>
-                        <th className="text-right px-3 py-1.5">건수</th>
+                        <th className="text-left px-3 py-1.5">고객명</th>
+                        <th className="text-left px-3 py-1.5">상품명</th>
+                        <th className="text-left px-3 py-1.5">종목/구분</th>
+                        <th className="text-left px-3 py-1.5">영수일</th>
+                        <th className="text-left px-3 py-1.5">만기일</th>
                         <th className="text-right px-3 py-1.5">보험료</th>
                         <th className="text-right px-3 py-1.5">수수료</th>
                         <th className="text-left px-3 py-1.5">상태</th>
@@ -721,10 +721,11 @@ export default function BulkImport() {
                     <tbody>
                       {g.rows.map((r) => (
                         <tr key={r.key} className={`border-t border-slate-100 ${r.error ? 'bg-red-50' : ''}`}>
-                          <td className="px-3 py-1.5">{r.month}</td>
-                          <td className="px-3 py-1.5">{r.category}</td>
-                          <td className="px-3 py-1.5">{r.type}</td>
-                          <td className="px-3 py-1.5 text-right">{r.count}</td>
+                          <td className="px-3 py-1.5">{r.customerName}</td>
+                          <td className="px-3 py-1.5 max-w-52 truncate" title={r.productName}>{r.productName}</td>
+                          <td className="px-3 py-1.5">{r.category}/{r.type}</td>
+                          <td className="px-3 py-1.5">{r.receiptDate}</td>
+                          <td className="px-3 py-1.5">{r.expiryDate}</td>
                           <td className="px-3 py-1.5 text-right">{r.premium.toLocaleString('ko-KR')}</td>
                           <td className="px-3 py-1.5 text-right">{r.commission.toLocaleString('ko-KR')}</td>
                           <td className="px-3 py-1.5 text-red-600">{r.error ?? ''}</td>

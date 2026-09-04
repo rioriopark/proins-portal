@@ -5,7 +5,7 @@ import type { Contract, ContractCategory, Profile } from '../lib/types'
 
 interface Invite { email: string; name: string }
 
-// 별도 만기일 필드가 없어 영수일 + 1년을 계약 만기(갱신 예정일)로 추정한다 (대시보드 갱신센터와 동일한 기준).
+// 실제 만기일(expiry_date)이 있으면 그 값을 쓰고, 없는 계약(만기일 없이 등록된 건)만 영수일 + 1년으로 추정한다.
 function addYears(dateStr: string, years: number): string {
   const d = new Date(dateStr + 'T00:00:00Z')
   d.setUTCFullYear(d.getUTCFullYear() + years)
@@ -82,8 +82,8 @@ export default function Renewals() {
   const withExpiry = useMemo(
     () =>
       contracts
-        .filter((c) => c.receipt_date && (categoryFilter === '전체' || c.category === categoryFilter))
-        .map((c) => ({ c, expiry: addYears(c.receipt_date!, 1) })),
+        .filter((c) => (c.expiry_date || c.receipt_date) && (categoryFilter === '전체' || c.category === categoryFilter))
+        .map((c) => ({ c, expiry: c.expiry_date ?? addYears(c.receipt_date!, 1), estimated: !c.expiry_date })),
     [contracts, categoryFilter],
   )
 
@@ -95,7 +95,7 @@ export default function Renewals() {
   }, [withExpiry, period, today])
 
   const groups = useMemo(() => {
-    interface Group { key: string; name: string; pending: boolean; rows: { c: Contract; expiry: string }[]; premium: number }
+    interface Group { key: string; name: string; pending: boolean; rows: { c: Contract; expiry: string; estimated: boolean }[]; premium: number }
     const map = new Map<string, Group>()
     for (const r of filtered) {
       const key = r.c.agent_id ?? r.c.agent_email ?? 'unknown'
@@ -178,13 +178,14 @@ export default function Renewals() {
                     </tr>
                   </thead>
                   <tbody>
-                    {g.rows.map(({ c, expiry }) => {
+                    {g.rows.map(({ c, expiry, estimated }) => {
                       const overdue = expiry < today
                       return (
                         <tr key={c.id} className="border-t border-slate-50">
                           <td className="px-4 py-1.5">
                             <span className={overdue ? 'text-rose-600 font-medium' : 'text-slate-700'}>{expiry}</span>
                             <span className={`ml-1.5 text-xs ${overdue ? 'text-rose-500' : 'text-slate-400'}`}>({dday(expiry, today)})</span>
+                            {estimated && <span className="ml-1.5 text-[10px] text-slate-400" title="만기일 미등록 · 영수일+1년으로 추정">추정</span>}
                           </td>
                           <td className="px-4 py-1.5">{c.company}</td>
                           <td className="px-4 py-1.5">{c.product_name}</td>
