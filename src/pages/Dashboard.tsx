@@ -101,6 +101,47 @@ const STAT_COLORS = {
   teal: { bg: 'bg-teal-50', text: 'text-teal-600' },
 } as const
 
+// 각 보험사가 자체 운영하는 GA/설계사용 업무포털 바로가기 (프로인스포탈 내부 페이지가 아님)
+const PORTAL_LINKS = [
+  { name: '삼성화재', portal: '드림포탈', url: 'https://erp.samsungfire.com/', badge: '삼성', color: 'bg-blue-600' },
+  { name: 'DB손보', portal: '영업포탈', url: 'https://www.mdbins.com', badge: 'DB', color: 'bg-sky-600' },
+  { name: '현대해상', portal: '영업포탈', url: 'https://sp.hi.co.kr', badge: '현대', color: 'bg-orange-500' },
+  { name: 'KB손보', portal: '전용포탈', url: 'https://sales.kbinsure.co.kr', badge: 'KB', color: 'bg-amber-500' },
+  { name: '메리츠화재', portal: '영업포탈', url: 'https://sales.meritzfire.com', badge: '메리츠', color: 'bg-teal-600' },
+  { name: '롯데손해보험', portal: '영업포탈', url: 'http://lottero.lotteins.co.kr', badge: '롯데', color: 'bg-red-600' },
+  { name: '라이나손보', portal: '영업포탈', url: 'https://ga.linagi.com/', badge: '라이나', color: 'bg-indigo-600' },
+  { name: '한화손해보험', portal: '스마트포탈', url: 'https://portal.hwgeneralins.com/', badge: '한화', color: 'bg-rose-600' },
+  { name: 'AIG손해보험', portal: '', url: 'https://sso.aig.co.kr/gaLogin/gaLogin.jsp', badge: 'AIG', color: 'bg-slate-700' },
+]
+
+function PortalLinksBar() {
+  return (
+    <div className="bg-white rounded-xl shadow p-4">
+      <p className="text-xs font-semibold text-slate-500 mb-3">보험사 업무포털 바로가기</p>
+      <div className="flex flex-wrap gap-3">
+        {PORTAL_LINKS.map((p) => (
+          <a
+            key={p.name}
+            href={p.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex flex-col items-center w-20 text-center group"
+            title={`${p.name} ${p.portal}`.trim()}
+          >
+            <div
+              className={`w-12 h-12 rounded-2xl ${p.color} text-white flex items-center justify-center text-xs font-bold shadow-sm group-hover:opacity-90`}
+            >
+              {p.badge}
+            </div>
+            <span className="text-[11px] text-slate-600 mt-1.5 leading-tight">{p.name}</span>
+            {p.portal && <span className="text-[10px] text-slate-400 leading-tight">{p.portal}</span>}
+          </a>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const RENEWAL_BUCKETS = [
   { days: 90, label: '90일 이내', color: 'bg-blue-500' },
   { days: 60, label: '60일 이내', color: 'bg-emerald-500' },
@@ -261,6 +302,8 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <PortalLinksBar />
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-800">
