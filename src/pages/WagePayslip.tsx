@@ -58,7 +58,7 @@ export default function WagePayslip() {
 
   useEffect(() => {
     if (!profile || !canEdit) return
-    supabase.from('profiles').select('*').order('name').then(({ data }) => setStaff(data ?? []))
+    supabase.from('profiles').select('*').eq('org_id', 'hq').order('name').then(({ data }) => setStaff(data ?? []))
   }, [profile, canEdit])
 
   useEffect(() => {
