@@ -27,6 +27,8 @@ export default function MySpace() {
   const [savingContract, setSavingContract] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [bankForm, setBankForm] = useState({ bank: '', account: '' })
+  const [savingBank, setSavingBank] = useState(false)
 
   useEffect(() => {
     if (profile) setTargetId(profile.id)
@@ -35,6 +37,13 @@ export default function MySpace() {
   useEffect(() => {
     if (isAdmin) supabase.from('profiles').select('*').order('name').then(({ data }) => setAgents(data ?? []))
   }, [isAdmin])
+
+  useEffect(() => {
+    if (!targetId) return
+    supabase.from('profiles').select('bank, account').eq('id', targetId).maybeSingle().then(({ data }) => {
+      setBankForm({ bank: data?.bank ?? '', account: data?.account ?? '' })
+    })
+  }, [targetId])
 
   useEffect(() => {
     if (!targetId) return
@@ -81,6 +90,14 @@ export default function MySpace() {
     setSavingContract(false)
     if (error) alert('저장 실패: ' + error.message)
     else { setFile(null); alert('저장되었습니다.') }
+  }
+
+  async function saveBank() {
+    setSavingBank(true)
+    const { error } = await supabase.from('profiles').update(bankForm).eq('id', targetId)
+    setSavingBank(false)
+    if (error) alert('저장 실패: ' + error.message)
+    else alert('저장되었습니다.')
   }
 
   async function viewContractFile() {
@@ -190,6 +207,34 @@ export default function MySpace() {
             makeEmpty={() => ({ course: '', completed_date: '' })}
             colTypes={{ completed_date: 'date' }}
           />
+        </div>
+      )}
+
+      {!loading && ap && (
+        <div className="bg-white rounded-xl shadow p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-sm">계좌정보</h2>
+              <p className="text-xs text-slate-400 mt-0.5">급여/수수료 입금 계좌입니다.</p>
+            </div>
+            {canEditSelf && (
+              <button onClick={saveBank} disabled={savingBank}
+                className="bg-slate-800 text-white rounded-md px-4 py-1.5 text-sm font-medium disabled:opacity-50">
+                {savingBank ? '저장 중…' : '저장'}
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="은행">
+              <input disabled={!canEditSelf} value={bankForm.bank} onChange={(e) => setBankForm((f) => ({ ...f, bank: e.target.value }))}
+                className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50" />
+            </Field>
+            <Field label="계좌번호">
+              <input disabled={!canEditSelf} value={bankForm.account} onChange={(e) => setBankForm((f) => ({ ...f, account: e.target.value }))}
+                className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50" />
+            </Field>
+          </div>
         </div>
       )}
 
