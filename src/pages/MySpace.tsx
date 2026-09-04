@@ -112,8 +112,9 @@ export default function MySpace() {
 
   const canEditSelf = !!profile && (targetId === profile.id || isAdmin)
   const canEditContract = isAdmin
-  // 대표사번이 함께 노출되는 영역이라 본사 소속(org_id='hq') 직원에게만 열람/수정을 허용한다.
-  const canSeeCompanyCodes = profile?.org_id === 'hq'
+  // 대표사번/비밀번호는 본사 소속(org_id='hq') 직원끼리 공유하는 값이라 그 두 컬럼만 노출을 제한한다.
+  // 개인사번(코드정보) 자체는 소속과 무관하게 모든 담당자가 계속 보고 편집할 수 있어야 한다.
+  const canSeeRepCodes = profile?.org_id === 'hq'
 
   async function saveProfile() {
     if (!ap) return
@@ -273,16 +274,15 @@ export default function MySpace() {
             </Field>
           </div>
 
-          {canSeeCompanyCodes && (
-            <CompanyCodeTable
-              editable={canEditSelf}
-              rows={ap.company_codes}
-              onChange={updateCompanyCodes}
-              insurerAccountByCompany={insurerAccountByCompany}
-              onRepFieldChange={updateRepField}
-              onRepFieldBlur={persistRepField}
-            />
-          )}
+          <CompanyCodeTable
+            editable={canEditSelf}
+            rows={ap.company_codes}
+            onChange={updateCompanyCodes}
+            showRepColumns={canSeeRepCodes}
+            insurerAccountByCompany={insurerAccountByCompany}
+            onRepFieldChange={updateRepField}
+            onRepFieldBlur={persistRepField}
+          />
 
           <RepeatingTable
             title="자격증 정보"
@@ -423,11 +423,12 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function CompanyCodeTable({
-  editable, rows, onChange, insurerAccountByCompany, onRepFieldChange, onRepFieldBlur,
+  editable, rows, onChange, showRepColumns, insurerAccountByCompany, onRepFieldChange, onRepFieldBlur,
 }: {
   editable: boolean
   rows: CompanyCode[]
   onChange: (rows: CompanyCode[]) => void
+  showRepColumns: boolean
   insurerAccountByCompany: Map<string, InsurerAccount>
   onRepFieldChange: (company: string, field: 'login_id' | 'password', value: string) => void
   onRepFieldBlur: (company: string) => void
@@ -445,17 +446,23 @@ function CompanyCodeTable({
   return (
     <div>
       <p className="text-xs font-medium text-slate-500 mb-2">보험사별 코드정보</p>
-      <p className="text-[11px] text-slate-400 mb-2">
-        대표사번·비밀번호/인증번호는 대표관리자·본사담당자 전체가 공유하는 값입니다. 입력하면 즉시 반영됩니다.
-      </p>
+      {showRepColumns && (
+        <p className="text-[11px] text-slate-400 mb-2">
+          대표사번·비밀번호/인증번호는 대표관리자·본사담당자 전체가 공유하는 값입니다. 입력하면 즉시 반영됩니다.
+        </p>
+      )}
       {rows.length === 0 && <p className="text-xs text-slate-400 mb-2">등록된 정보가 없습니다.</p>}
       {rows.length > 0 && (
         <div className="flex items-center gap-2 mb-1 px-0.5">
           <span className="flex-1 text-[11px] text-slate-400">보험사</span>
           <span className="flex-1 text-[11px] text-slate-400">개인사번</span>
           <span className="flex-1 text-[11px] text-slate-400">비밀번호/인증번호</span>
-          <span className="flex-1 text-[11px] text-slate-400">대표사번</span>
-          <span className="flex-1 text-[11px] text-slate-400">비밀번호/인증번호</span>
+          {showRepColumns && (
+            <>
+              <span className="flex-1 text-[11px] text-slate-400">대표사번</span>
+              <span className="flex-1 text-[11px] text-slate-400">비밀번호/인증번호</span>
+            </>
+          )}
           {editable && <span className="w-5" />}
         </div>
       )}
@@ -483,22 +490,26 @@ function CompanyCodeTable({
                 onChange={(e) => update(i, 'code_auth', e.target.value)}
                 className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
               />
-              <input
-                disabled={!company}
-                value={rep?.login_id ?? ''}
-                onChange={(e) => onRepFieldChange(company, 'login_id', e.target.value)}
-                onBlur={() => onRepFieldBlur(company)}
-                title="대표관리자·본사담당자 전체가 공유하는 보험사 대표사번입니다."
-                className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
-              />
-              <input
-                disabled={!company}
-                value={rep?.password ?? ''}
-                onChange={(e) => onRepFieldChange(company, 'password', e.target.value)}
-                onBlur={() => onRepFieldBlur(company)}
-                title="대표사번의 비밀번호/인증번호입니다. 대표관리자·본사담당자 전체와 공유됩니다."
-                className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
-              />
+              {showRepColumns && (
+                <>
+                  <input
+                    disabled={!company}
+                    value={rep?.login_id ?? ''}
+                    onChange={(e) => onRepFieldChange(company, 'login_id', e.target.value)}
+                    onBlur={() => onRepFieldBlur(company)}
+                    title="대표관리자·본사담당자 전체가 공유하는 보험사 대표사번입니다."
+                    className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+                  />
+                  <input
+                    disabled={!company}
+                    value={rep?.password ?? ''}
+                    onChange={(e) => onRepFieldChange(company, 'password', e.target.value)}
+                    onBlur={() => onRepFieldBlur(company)}
+                    title="대표사번의 비밀번호/인증번호입니다. 대표관리자·본사담당자 전체와 공유됩니다."
+                    className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+                  />
+                </>
+              )}
               {editable && (
                 <button type="button" onClick={() => remove(i)} className="text-slate-400 hover:text-red-500 text-sm px-1">✕</button>
               )}
