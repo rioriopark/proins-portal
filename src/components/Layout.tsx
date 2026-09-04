@@ -53,7 +53,6 @@ const NAV: NavEntry[] = [
     ],
   },
   { standalone: true, to: '/my-space', label: '나의공간' },
-  { standalone: true, to: '/insurer-accounts', label: '대표코드', visible: (p) => p.org_id === 'hq' },
 ]
 
 function findGroupKey(pathname: string): string | null {
