@@ -51,6 +51,7 @@ export interface Contract {
   customer_name: string
   receipt_date: string | null
   expiry_date: string | null
+  collection_status: string | null
   count: number
   premium: number
   commission: number

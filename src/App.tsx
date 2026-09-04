@@ -7,6 +7,7 @@ import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import Contracts from './pages/Contracts'
 import Renewals from './pages/Renewals'
+import Collections from './pages/Collections'
 import BulkImport from './pages/BulkImport'
 import Statement from './pages/Statement'
 import WagePayslip from './pages/WagePayslip'
@@ -52,6 +53,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="contracts" element={<Contracts />} />
         <Route path="renewals" element={<Renewals />} />
+        <Route path="collections" element={<Collections />} />
         <Route path="bulk-import" element={<BulkImport />} />
         <Route path="statement" element={<Statement />} />
         <Route path="wage-statement" element={<WagePayslip />} />

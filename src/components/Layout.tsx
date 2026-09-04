@@ -30,6 +30,7 @@ const NAV: NavEntry[] = [
     items: [
       { to: '/contracts', label: '계약관리' },
       { to: '/renewals', label: '갱신관리' },
+      { to: '/collections', label: '수금관리' },
       { to: '/bulk-import', label: '계약 일괄등록', menuKey: 'bulk_import' },
       { to: '/statement', label: '수수료명세서', visible: (p) => p.role !== 'agent' || p.org_id !== 'hq' },
       { to: '/wage-statement', label: '임금명세서', visible: (p) => p.role !== 'agent' || p.org_id === 'hq' },

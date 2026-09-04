@@ -45,7 +45,7 @@ function parseSheet(text: string): ParsedRow[] {
 
 type FieldKey =
   | 'agentCode' | 'agentName' | 'month' | 'category' | 'type' | 'count' | 'premium' | 'commission'
-  | 'productName' | 'customerName' | 'receiptDate' | 'expiryDate'
+  | 'productName' | 'customerName' | 'receiptDate' | 'expiryDate' | 'collectionStatus'
 
 const FIELD_META: { key: FieldKey; label: string; required: boolean; keywords: string[] }[] = [
   { key: 'agentCode', label: '설계사코드/사번', required: false, keywords: [] },
@@ -60,6 +60,7 @@ const FIELD_META: { key: FieldKey; label: string; required: boolean; keywords: s
   { key: 'customerName', label: '고객명', required: false, keywords: ['계약자명', '고객명', '계약자', '피보험자명'] },
   { key: 'receiptDate', label: '영수일', required: false, keywords: ['영수일', '접수일', '청약일', '응당일'] },
   { key: 'expiryDate', label: '만기일(보험종기)', required: false, keywords: ['보험종기', '보험만기일자', '만기일자', '만기일', '증권만기일', '만료일', '종기'] },
+  { key: 'collectionStatus', label: '수금상태', required: false, keywords: ['정상집금여부', '집금상태', '수금상태', '수납상태', '미납여부', '수금여부', '입금상태'] },
 ]
 
 const HEADER_DETECT_KEYWORDS = [
@@ -131,7 +132,7 @@ function pickBestColumn(headers: string[], body: string[][], predicate: (h: stri
 function emptyMapping(): Record<FieldKey, number> {
   return {
     agentCode: -1, agentName: -1, month: -1, category: -1, type: -1, count: -1, premium: -1, commission: -1,
-    productName: -1, customerName: -1, receiptDate: -1, expiryDate: -1,
+    productName: -1, customerName: -1, receiptDate: -1, expiryDate: -1, collectionStatus: -1,
   }
 }
 
@@ -235,6 +236,7 @@ interface FileRow {
   customerName: string
   receiptDate: string
   expiryDate: string
+  collectionStatus: string
   count: number
   premium: number
   commission: number
@@ -401,6 +403,7 @@ export default function BulkImport() {
           customerName: get(row, 'customerName'),
           receiptDate: normalizeDate(get(row, 'receiptDate')),
           expiryDate: normalizeDate(get(row, 'expiryDate')),
+          collectionStatus: get(row, 'collectionStatus'),
           count: mapping.count >= 0 ? toNumber(get(row, 'count')) || 1 : 1,
           premium, commission, error,
         }
@@ -460,6 +463,7 @@ export default function BulkImport() {
         customer_name: r.customerName,
         receipt_date: r.receiptDate || null,
         expiry_date: r.expiryDate || null,
+        collection_status: r.collectionStatus || null,
         count: r.count,
         premium: r.premium,
         commission: r.commission,
@@ -713,6 +717,7 @@ export default function BulkImport() {
                         <th className="text-left px-3 py-1.5">종목/구분</th>
                         <th className="text-left px-3 py-1.5">영수일</th>
                         <th className="text-left px-3 py-1.5">만기일</th>
+                        <th className="text-left px-3 py-1.5">수금상태</th>
                         <th className="text-right px-3 py-1.5">보험료</th>
                         <th className="text-right px-3 py-1.5">수수료</th>
                         <th className="text-left px-3 py-1.5">상태</th>
@@ -726,6 +731,7 @@ export default function BulkImport() {
                           <td className="px-3 py-1.5">{r.category}/{r.type}</td>
                           <td className="px-3 py-1.5">{r.receiptDate}</td>
                           <td className="px-3 py-1.5">{r.expiryDate}</td>
+                          <td className="px-3 py-1.5">{r.collectionStatus}</td>
                           <td className="px-3 py-1.5 text-right">{r.premium.toLocaleString('ko-KR')}</td>
                           <td className="px-3 py-1.5 text-right">{r.commission.toLocaleString('ko-KR')}</td>
                           <td className="px-3 py-1.5 text-red-600">{r.error ?? ''}</td>
