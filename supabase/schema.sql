@@ -350,6 +350,13 @@ alter table insurer_accounts enable row level security;
 create policy "insurer_accounts_hq_org_only" on insurer_accounts
   for all using (my_org() = 'hq') with check (my_org() = 'hq');
 
+-- 대표사번(회사명+로그인아이디)만 뽑아 전 직원에게 공개하는 뷰 — 비밀번호는 제외.
+-- 일반 뷰는 소유자(postgres) 권한으로 조회되어 insurer_accounts 의 RLS를 우회하므로,
+-- 컬럼 단위로 안전하게 일부만 공개하는 용도로 사용한다.
+create or replace view insurer_rep_codes as
+  select company, login_id as rep_code from insurer_accounts;
+grant select on insurer_rep_codes to authenticated;
+
 -- education_events: 로그인한 사람 전체 조회 가능, 작성/수정/삭제는 본사관리자만
 alter table education_events enable row level security;
 create policy "education_events_select_all" on education_events

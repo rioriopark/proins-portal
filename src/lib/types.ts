@@ -118,6 +118,11 @@ export interface Banner {
   updated_at: string
 }
 
+export interface InsurerRepCode {
+  company: string
+  rep_code: string
+}
+
 export interface InsurerAccount {
   id: string
   company: string

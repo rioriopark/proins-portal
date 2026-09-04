@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type {
-  AgentContract, AgentProfile, CompanyCode, EducationRecord, LicenseInfo, Profile, TerminationRecord,
+  AgentContract, AgentProfile, CompanyCode, EducationRecord, InsurerRepCode, LicenseInfo, Profile, TerminationRecord,
 } from '../lib/types'
 
 const emptyProfile = (profileId: string): AgentProfile => ({
@@ -22,6 +22,7 @@ export default function MySpace() {
   const [targetId, setTargetId] = useState('')
   const [ap, setAp] = useState<AgentProfile | null>(null)
   const [ac, setAc] = useState<AgentContract | null>(null)
+  const [repCodes, setRepCodes] = useState<InsurerRepCode[]>([])
   const [loading, setLoading] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingContract, setSavingContract] = useState(false)
@@ -43,6 +44,16 @@ export default function MySpace() {
   useEffect(() => {
     if (isAdmin) supabase.from('profiles').select('*').order('name').then(({ data }) => setAgents(data ?? []))
   }, [isAdmin])
+
+  useEffect(() => {
+    supabase.from('insurer_rep_codes').select('*').then(({ data }) => setRepCodes(data ?? []))
+  }, [])
+
+  const repCodeByCompany = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const r of repCodes) map.set(r.company.trim(), r.rep_code)
+    return map
+  }, [repCodes])
 
   useEffect(() => {
     if (!targetId) return
@@ -225,14 +236,11 @@ export default function MySpace() {
             </Field>
           </div>
 
-          <RepeatingTable
-            title="보험사별 코드정보"
+          <CompanyCodeTable
             editable={canEditSelf}
-            columns={['company', 'code']}
-            headers={['보험사', '코드']}
             rows={ap.company_codes}
             onChange={updateCompanyCodes}
-            makeEmpty={() => ({ company: '', code: '' })}
+            repCodeByCompany={repCodeByCompany}
           />
 
           <RepeatingTable
@@ -370,6 +378,72 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span className="block text-xs text-slate-500 mb-1">{label}</span>
       {children}
     </label>
+  )
+}
+
+function CompanyCodeTable({
+  editable, rows, onChange, repCodeByCompany,
+}: {
+  editable: boolean
+  rows: CompanyCode[]
+  onChange: (rows: CompanyCode[]) => void
+  repCodeByCompany: Map<string, string>
+}) {
+  function update(i: number, key: 'company' | 'code', value: string) {
+    onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)))
+  }
+  function remove(i: number) {
+    onChange(rows.filter((_, idx) => idx !== i))
+  }
+  function add() {
+    onChange([...rows, { company: '', code: '' }])
+  }
+
+  return (
+    <div>
+      <p className="text-xs font-medium text-slate-500 mb-2">보험사별 코드정보</p>
+      {rows.length === 0 && <p className="text-xs text-slate-400 mb-2">등록된 정보가 없습니다.</p>}
+      {rows.length > 0 && (
+        <div className="flex items-center gap-2 mb-1 px-0.5">
+          <span className="flex-1 text-[11px] text-slate-400">보험사</span>
+          <span className="flex-1 text-[11px] text-slate-400">개인사번</span>
+          <span className="flex-1 text-[11px] text-slate-400">대표사번</span>
+          {editable && <span className="w-5" />}
+        </div>
+      )}
+      <div className="space-y-2">
+        {rows.map((row, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              disabled={!editable}
+              value={row.company}
+              onChange={(e) => update(i, 'company', e.target.value)}
+              className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+            />
+            <input
+              disabled={!editable}
+              value={row.code}
+              onChange={(e) => update(i, 'code', e.target.value)}
+              className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+            />
+            <input
+              disabled
+              value={repCodeByCompany.get(row.company.trim()) || '-'}
+              title="대표코드 메뉴에 등록된 보험사 대표사번입니다."
+              className="flex-1 border border-slate-200 bg-slate-50 rounded-md px-2 py-1.5 text-sm text-slate-500"
+            />
+            {editable && (
+              <button type="button" onClick={() => remove(i)} className="text-slate-400 hover:text-red-500 text-sm px-1">✕</button>
+            )}
+          </div>
+        ))}
+      </div>
+      {editable && (
+        <button type="button" onClick={add} className="mt-2 text-xs text-slate-500 hover:underline">
+          + 보험사 추가
+        </button>
+      )}
+    </div>
   )
 }
 
