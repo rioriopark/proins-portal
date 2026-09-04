@@ -46,29 +46,106 @@ function parseSheet(text: string): ParsedRow[] {
 type FieldKey = 'agentCode' | 'agentName' | 'month' | 'category' | 'type' | 'count' | 'premium' | 'commission'
 
 const FIELD_META: { key: FieldKey; label: string; required: boolean; keywords: string[] }[] = [
-  { key: 'agentCode', label: '설계사코드/사번', required: false, keywords: ['설계사코드', '설계사번호', '사번', '모집인코드', 'fc코드', '컨설턴트코드', '대리점코드', '판매인코드', '모집자코드'] },
-  { key: 'agentName', label: '담당자명', required: false, keywords: ['설계사명', '담당자', '성명', '이름', '판매인명', '모집인명'] },
-  { key: 'month', label: '지급월', required: true, keywords: ['지급월', '정산월', '귀속월', '기준월', '수수료월', '지급년월'] },
-  { key: 'category', label: '종목', required: true, keywords: ['종목', '상품군', '보험종목'] },
-  { key: 'type', label: '구분', required: true, keywords: ['구분', '계약구분', '유형'] },
+  { key: 'agentCode', label: '설계사코드/사번', required: false, keywords: [] },
+  { key: 'agentName', label: '담당자명', required: false, keywords: [] },
+  { key: 'month', label: '지급월', required: false, keywords: ['지급월', '정산월', '귀속월', '기준월', '수수료월', '지급년월', '업적월'] },
+  { key: 'category', label: '종목', required: false, keywords: ['종목', '상품군', '보험종목'] },
+  { key: 'type', label: '구분', required: false, keywords: ['계약구분', '가입구분', '청약구분', '신계약구분', '유형'] },
   { key: 'count', label: '건수', required: false, keywords: ['건수', '계약건수'] },
   { key: 'premium', label: '보험료', required: true, keywords: ['보험료', '납입보험료', '월보험료', '초회보험료'] },
-  { key: 'commission', label: '수수료', required: true, keywords: ['수수료', '지급수수료', '수수료액'] },
+  { key: 'commission', label: '수수료', required: true, keywords: ['수수료', '지급수수료', '수수료액', '커미션'] },
 ]
+
+const HEADER_DETECT_KEYWORDS = [
+  '계약번호', '상품명', '계약자', '피보험자', '보험료', '수수료', '커미션', '설계사', '사용인', '모집인', '모집자',
+  '지사', '종목', '구분', '건수', '월납', '청약일', '계약상태', '증권', '고객명',
+]
+
+function normalizeHeader(h: string): string {
+  return String(h ?? '').toLowerCase().replace(/\s/g, '')
+}
+
+// 보험사 다운로드 파일은 제목/필터조건 등 안내행이 여러 줄 앞에 붙는 경우가 많아, 보험 업무 용어가 가장 많이 등장하는 행을 실제 헤더 행으로 추정한다.
+function findHeaderRowIndex(grid: (string | number)[][]): number {
+  let bestIdx = 0
+  let bestScore = -1
+  const limit = Math.min(grid.length, 20)
+  for (let i = 0; i < limit; i++) {
+    const row = grid[i] ?? []
+    let score = 0
+    for (const cell of row) {
+      const c = normalizeHeader(String(cell ?? ''))
+      if (!c) continue
+      if (HEADER_DETECT_KEYWORDS.some((k) => c.includes(k))) score++
+    }
+    if (score > bestScore) {
+      bestScore = score
+      bestIdx = i
+    }
+  }
+  return bestScore >= 2 ? bestIdx : 0
+}
+
+// 파일 상단(헤더 행 이전)의 안내행에서 "2025-09" 같은 지급월 값을 찾아 파일 공통값으로 제안한다.
+function guessFileMonth(grid: (string | number)[][], headerIdx: number): string {
+  for (let i = 0; i < headerIdx; i++) {
+    for (const cell of grid[i] ?? []) {
+      const m = String(cell ?? '').match(/(20\d{2})[.\-/](\d{1,2})(?!\d)/)
+      if (m) return `${m[1]}-${m[2].padStart(2, '0')}`
+    }
+  }
+  return ''
+}
+
+const PERSON_TOKENS = ['사용인', '설계사', '모집인', '모집자', '판매인', '컨설턴트', 'fc', '대리점', '에이전트']
+const CODE_TOKENS = ['코드', '번호', '사번', 'id']
+const NAME_TOKENS = ['명', '이름', '성명']
+
+// 같은 후보 열이 여러 개면(예: 개인 설계사코드 vs 소속 지사/대표코드), 값이 행마다 달라지는(=개인 식별자인) 열을 우선한다.
+function pickBestColumn(headers: string[], body: string[][], predicate: (h: string) => boolean): number {
+  const candidates = headers.map((_, i) => i).filter((i) => predicate(normalizeHeader(headers[i])))
+  if (candidates.length === 0) return -1
+  if (candidates.length === 1) return candidates[0]
+  let best = candidates[0]
+  let bestCardinality = -1
+  for (const idx of candidates) {
+    const values = new Set<string>()
+    for (const row of body) {
+      const v = (row[idx] ?? '').trim()
+      if (v) values.add(v)
+    }
+    if (values.size > bestCardinality) {
+      bestCardinality = values.size
+      best = idx
+    }
+  }
+  return best
+}
 
 function emptyMapping(): Record<FieldKey, number> {
   return { agentCode: -1, agentName: -1, month: -1, category: -1, type: -1, count: -1, premium: -1, commission: -1 }
 }
 
-function guessMapping(headers: string[]): Record<FieldKey, number> {
+function guessMapping(headers: string[], body: string[][]): Record<FieldKey, number> {
   const used = new Set<number>()
   const result = emptyMapping()
+
+  const agentCode = pickBestColumn(headers, body, (h) => PERSON_TOKENS.some((p) => h.includes(p)) && CODE_TOKENS.some((c) => h.includes(c)))
+  if (agentCode >= 0) { result.agentCode = agentCode; used.add(agentCode) }
+
+  const agentName = pickBestColumn(
+    headers, body,
+    (h) => PERSON_TOKENS.some((p) => h.includes(p)) && NAME_TOKENS.some((n) => h.includes(n)) && !CODE_TOKENS.some((c) => h.includes(c)),
+  )
+  if (agentName >= 0 && !used.has(agentName)) { result.agentName = agentName; used.add(agentName) }
+
   for (const f of FIELD_META) {
+    if (f.key === 'agentCode' || f.key === 'agentName') continue
     let found = -1
     for (let i = 0; i < headers.length; i++) {
       if (used.has(i)) continue
-      const h = headers[i].toLowerCase().replace(/\s/g, '')
-      if (f.keywords.some((k) => h.includes(k.toLowerCase().replace(/\s/g, '')))) {
+      const h = normalizeHeader(headers[i])
+      if (f.keywords.some((k) => h.includes(normalizeHeader(k)))) {
         found = i
         break
       }
@@ -77,6 +154,33 @@ function guessMapping(headers: string[]): Record<FieldKey, number> {
     result[f.key] = found
   }
   return result
+}
+
+// 삼성화재 다운로드 파일은 종목/구분을 별도 열로 주지 않고 다른 열의 값 유무로만 구분되므로, 해당 열을 찾아 유추한다.
+function inferSamsungCategory(headers: string[], row: string[]): string {
+  const longIdx = headers.findIndex((h) => normalizeHeader(h).includes('장기상품'))
+  const autoIdx = headers.findIndex((h) => normalizeHeader(h).includes('자동차'))
+  if (longIdx >= 0 && (row[longIdx] ?? '').trim()) return '장기'
+  if (autoIdx >= 0 && (row[autoIdx] ?? '').trim()) return '자동차'
+  return '일반'
+}
+
+function inferSamsungType(headers: string[], row: string[]): string {
+  const idx = headers.findIndex((h) => normalizeHeader(h).includes('계약상태'))
+  if (idx < 0) return ''
+  const v = (row[idx] ?? '').trim()
+  if (v.includes('계속')) return '계속'
+  return v || '신규'
+}
+
+function inferCategoryFallback(insurer: string, headers: string[], row: string[]): string {
+  if (insurer === '삼성화재') return inferSamsungCategory(headers, row)
+  return ''
+}
+
+function inferTypeFallback(insurer: string, headers: string[], row: string[]): string {
+  if (insurer === '삼성화재') return inferSamsungType(headers, row)
+  return ''
 }
 
 function normalizeMonth(raw: string): string {
@@ -199,6 +303,7 @@ export default function BulkImport() {
   const [headers, setHeaders] = useState<string[]>([])
   const [dataRows, setDataRows] = useState<string[][]>([])
   const [mapping, setMapping] = useState<Record<FieldKey, number>>(emptyMapping())
+  const [fileMonth, setFileMonth] = useState('')
   const [manualAssign, setManualAssign] = useState<Record<string, string>>({})
   const [fileBusy, setFileBusy] = useState(false)
 
@@ -215,12 +320,14 @@ export default function BulkImport() {
       const ws = wb.Sheets[wb.SheetNames[0]]
       const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as (string | number)[][]
       if (!grid.length) return
-      const hdrs = grid[0].map((c) => String(c ?? '').trim())
-      const body = grid.slice(1).map((r) => hdrs.map((_, i) => String(r[i] ?? '').trim()))
+      const headerIdx = findHeaderRowIndex(grid)
+      const hdrs = grid[headerIdx].map((c) => String(c ?? '').trim())
+      const body = grid.slice(headerIdx + 1).map((r) => hdrs.map((_, i) => String(r[i] ?? '').trim()))
       setFileName(f.name)
       setHeaders(hdrs)
       setDataRows(body)
-      setMapping(guessMapping(hdrs))
+      setMapping(guessMapping(hdrs, body))
+      setFileMonth(guessFileMonth(grid, headerIdx))
       setManualAssign({})
       setResult(null)
     } finally {
@@ -249,18 +356,23 @@ export default function BulkImport() {
       return idx >= 0 && idx < row.length ? (row[idx] ?? '').trim() : ''
     }
     return dataRows
-      .map((row) => ({
-        agentCode: get(row, 'agentCode'),
-        agentName: get(row, 'agentName'),
-        month: normalizeMonth(get(row, 'month')),
-        category: normalizeCategory(get(row, 'category')),
-        type: get(row, 'type'),
-        count: mapping.count >= 0 ? toNumber(get(row, 'count')) || 1 : 1,
-        premium: toNumber(get(row, 'premium')),
-        commission: toNumber(get(row, 'commission')),
-      }))
-      .filter((r) => r.agentCode || r.agentName || r.month || r.premium || r.commission)
-  }, [dataRows, mapping])
+      .map((row) => {
+        const rawCategory = get(row, 'category')
+        const rawType = get(row, 'type')
+        const rawMonth = get(row, 'month')
+        return {
+          agentCode: get(row, 'agentCode'),
+          agentName: get(row, 'agentName'),
+          month: rawMonth ? normalizeMonth(rawMonth) : fileMonth,
+          category: rawCategory ? normalizeCategory(rawCategory) : inferCategoryFallback(insurer, headers, row),
+          type: rawType || inferTypeFallback(insurer, headers, row),
+          count: mapping.count >= 0 ? toNumber(get(row, 'count')) || 1 : 1,
+          premium: toNumber(get(row, 'premium')),
+          commission: toNumber(get(row, 'commission')),
+        }
+      })
+      .filter((r) => r.agentCode || r.agentName || r.premium || r.commission)
+  }, [dataRows, mapping, fileMonth, insurer, headers])
 
   const aggRows = useMemo<AggRow[]>(() => {
     const groups = new Map<string, AggRow>()
@@ -369,6 +481,7 @@ export default function BulkImport() {
       setHeaders([])
       setDataRows([])
       setMapping(emptyMapping())
+      setFileMonth('')
       setManualAssign({})
     }
   }
@@ -530,6 +643,24 @@ export default function BulkImport() {
                   <p className="text-xs text-red-600">
                     {identifierMissing && '설계사코드/사번 또는 담당자명 중 하나는 반드시 매핑해야 합니다. '}
                     {missingRequired.length > 0 && `필수 항목 미지정: ${missingRequired.map((f) => f.label).join(', ')}`}
+                  </p>
+                )}
+                {mapping.month < 0 && (
+                  <label className="block text-xs pt-1">
+                    <span className="block text-slate-500 mb-1">
+                      지급월 (파일에 열이 없어 값 하나를 전체 행에 적용합니다 · 안내문에서 자동 인식 시도함)
+                    </span>
+                    <input
+                      type="month"
+                      value={fileMonth}
+                      onChange={(e) => setFileMonth(e.target.value)}
+                      className="border border-slate-300 rounded-md px-2 py-1.5"
+                    />
+                  </label>
+                )}
+                {mapping.category < 0 && insurer !== '삼성화재' && (
+                  <p className="text-xs text-amber-600">
+                    이 파일에서 종목(장기/일반/자동차) 열을 찾지 못했습니다. 열 매핑에서 직접 지정해주세요.
                   </p>
                 )}
               </div>
