@@ -80,7 +80,7 @@ export const MENU_OPTIONS: { key: string; label: string }[] = [
   { key: 'wage_statement', label: '임금명세서' },
 ]
 
-export interface CompanyCode { company: string; code: string }
+export interface CompanyCode { company: string; code: string; code_auth: string; rep_auth: string }
 export interface LicenseInfo { name: string; valid_until: string }
 export interface EducationRecord { course: string; completed_date: string }
 export interface TerminationRecord { date: string; reason: string }

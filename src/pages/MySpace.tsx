@@ -46,8 +46,10 @@ export default function MySpace() {
   }, [isAdmin])
 
   useEffect(() => {
-    supabase.from('insurer_rep_codes').select('*').then(({ data }) => setRepCodes(data ?? []))
-  }, [])
+    if (profile?.org_id === 'hq') {
+      supabase.from('insurer_rep_codes').select('*').then(({ data }) => setRepCodes(data ?? []))
+    }
+  }, [profile])
 
   const repCodeByCompany = useMemo(() => {
     const map = new Map<string, string>()
@@ -77,6 +79,8 @@ export default function MySpace() {
 
   const canEditSelf = !!profile && (targetId === profile.id || isAdmin)
   const canEditContract = isAdmin
+  // 대표사번이 함께 노출되는 영역이라 본사 소속(org_id='hq') 직원에게만 열람/수정을 허용한다.
+  const canSeeCompanyCodes = profile?.org_id === 'hq'
 
   async function saveProfile() {
     if (!ap) return
@@ -236,12 +240,14 @@ export default function MySpace() {
             </Field>
           </div>
 
-          <CompanyCodeTable
-            editable={canEditSelf}
-            rows={ap.company_codes}
-            onChange={updateCompanyCodes}
-            repCodeByCompany={repCodeByCompany}
-          />
+          {canSeeCompanyCodes && (
+            <CompanyCodeTable
+              editable={canEditSelf}
+              rows={ap.company_codes}
+              onChange={updateCompanyCodes}
+              repCodeByCompany={repCodeByCompany}
+            />
+          )}
 
           <RepeatingTable
             title="자격증 정보"
@@ -389,14 +395,14 @@ function CompanyCodeTable({
   onChange: (rows: CompanyCode[]) => void
   repCodeByCompany: Map<string, string>
 }) {
-  function update(i: number, key: 'company' | 'code', value: string) {
+  function update(i: number, key: 'company' | 'code' | 'code_auth' | 'rep_auth', value: string) {
     onChange(rows.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)))
   }
   function remove(i: number) {
     onChange(rows.filter((_, idx) => idx !== i))
   }
   function add() {
-    onChange([...rows, { company: '', code: '' }])
+    onChange([...rows, { company: '', code: '', code_auth: '', rep_auth: '' }])
   }
 
   return (
@@ -407,7 +413,9 @@ function CompanyCodeTable({
         <div className="flex items-center gap-2 mb-1 px-0.5">
           <span className="flex-1 text-[11px] text-slate-400">보험사</span>
           <span className="flex-1 text-[11px] text-slate-400">개인사번</span>
+          <span className="flex-1 text-[11px] text-slate-400">비밀번호/인증번호</span>
           <span className="flex-1 text-[11px] text-slate-400">대표사번</span>
+          <span className="flex-1 text-[11px] text-slate-400">비밀번호/인증번호</span>
           {editable && <span className="w-5" />}
         </div>
       )}
@@ -427,10 +435,23 @@ function CompanyCodeTable({
               className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
             />
             <input
+              disabled={!editable}
+              value={row.code_auth}
+              onChange={(e) => update(i, 'code_auth', e.target.value)}
+              className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+            />
+            <input
               disabled
               value={repCodeByCompany.get(row.company.trim()) || '-'}
               title="대표코드 메뉴에 등록된 보험사 대표사번입니다."
               className="flex-1 border border-slate-200 bg-slate-50 rounded-md px-2 py-1.5 text-sm text-slate-500"
+            />
+            <input
+              disabled={!editable}
+              value={row.rep_auth}
+              onChange={(e) => update(i, 'rep_auth', e.target.value)}
+              title="대표사번으로 로그인할 때 본인이 사용하는 비밀번호/인증번호입니다."
+              className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
             />
             {editable && (
               <button type="button" onClick={() => remove(i)} className="text-slate-400 hover:text-red-500 text-sm px-1">✕</button>
