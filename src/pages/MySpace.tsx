@@ -29,6 +29,12 @@ export default function MySpace() {
   const [uploading, setUploading] = useState(false)
   const [bankForm, setBankForm] = useState({ bank: '', account: '' })
   const [savingBank, setSavingBank] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [pwError, setPwError] = useState('')
+  const [pwSaving, setPwSaving] = useState(false)
+  const [resettingPw, setResettingPw] = useState(false)
+  const isHqAdmin = profile?.role === 'hq_admin'
 
   useEffect(() => {
     if (profile) setTargetId(profile.id)
@@ -120,6 +126,42 @@ export default function MySpace() {
     setAc((s) => (s ? { ...s, termination_history: rows } : s))
   }
 
+  async function changePassword() {
+    setPwError('')
+    if (newPassword.length < 6) return setPwError('비밀번호는 6자 이상이어야 합니다.')
+    if (newPassword !== confirmPassword) return setPwError('비밀번호가 일치하지 않습니다.')
+    setPwSaving(true)
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    setPwSaving(false)
+    if (error) return setPwError(error.message)
+    setNewPassword('')
+    setConfirmPassword('')
+    alert('비밀번호가 변경되었습니다.')
+  }
+
+  async function resetTargetPassword() {
+    const target = agents.find((a) => a.id === targetId)
+    if (!target) return
+    if (!confirm(`${target.name}(${target.email}) 계정의 비밀번호를 초기화할까요?\n초기화하면 새 비밀번호는 아이디와 동일하게 설정됩니다.`)) return
+    setResettingPw(true)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      const res = await fetch('/api/admin-reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ targetProfileId: targetId }),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error ?? '초기화 실패')
+      alert('비밀번호가 초기화되었습니다. 새 비밀번호는 아이디와 동일합니다.')
+    } catch (e) {
+      alert('초기화 실패: ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setResettingPw(false)
+    }
+  }
+
   if (!profile) return null
 
   return (
@@ -130,7 +172,7 @@ export default function MySpace() {
       </div>
 
       {isAdmin && (
-        <div className="bg-white rounded-xl shadow p-4 flex items-center gap-3">
+        <div className="bg-white rounded-xl shadow p-4 flex items-center gap-3 flex-wrap">
           <label className="text-sm text-slate-500">대상자</label>
           <select value={targetId} onChange={(e) => setTargetId(e.target.value)}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm">
@@ -138,6 +180,13 @@ export default function MySpace() {
               <option key={a.id} value={a.id}>{a.name} ({a.email})</option>
             ))}
           </select>
+          {isHqAdmin && (
+            <button onClick={resetTargetPassword} disabled={resettingPw || targetId === profile.id}
+              title={targetId === profile.id ? '본인 계정은 초기화할 수 없습니다. 다른 대상자를 선택하세요.' : undefined}
+              className="ml-auto border border-red-200 text-red-600 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed">
+              {resettingPw ? '초기화 중…' : '비밀번호 초기화 (아이디로)'}
+            </button>
+          )}
         </div>
       )}
 
@@ -235,6 +284,31 @@ export default function MySpace() {
                 className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50" />
             </Field>
           </div>
+        </div>
+      )}
+
+      {targetId === profile.id && (
+        <div className="bg-white rounded-xl shadow p-5 space-y-4">
+          <div>
+            <h2 className="font-semibold text-sm">비밀번호 변경</h2>
+            <p className="text-xs text-slate-400 mt-0.5">최초 로그인 후에는 보안을 위해 비밀번호를 변경해주세요.</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="새 비밀번호">
+              <input type="password" minLength={6} value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="6자 이상"
+                className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+            </Field>
+            <Field label="새 비밀번호 확인">
+              <input type="password" minLength={6} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+            </Field>
+          </div>
+          {pwError && <p className="text-sm text-red-600">{pwError}</p>}
+          <button onClick={changePassword} disabled={pwSaving || !newPassword || !confirmPassword}
+            className="bg-slate-800 text-white rounded-md px-4 py-1.5 text-sm font-medium disabled:opacity-50">
+            {pwSaving ? '변경 중…' : '비밀번호 변경'}
+          </button>
         </div>
       )}
 
