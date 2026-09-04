@@ -118,6 +118,15 @@ export interface Banner {
   updated_at: string
 }
 
+export interface EducationEvent {
+  id: string
+  title: string
+  event_date: string
+  event_time: string
+  created_at: string
+  updated_at: string
+}
+
 export interface Contact {
   id: string
   category: string

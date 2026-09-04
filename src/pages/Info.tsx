@@ -1,11 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import { MENU_OPTIONS, type Banner, type Profile } from '../lib/types'
+import { MENU_OPTIONS, type Banner, type EducationEvent, type Profile } from '../lib/types'
 
 const emptyForm = {
   title: '', content: '', start_date: '', end_date: '', target_profile_ids: [] as string[],
 }
+
+const emptyEduForm = { title: '', event_date: '', event_time: '' }
 
 export default function Info() {
   const { profile } = useAuth()
@@ -17,6 +19,11 @@ export default function Info() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
 
+  const [eduEvents, setEduEvents] = useState<EducationEvent[]>([])
+  const [showEduForm, setShowEduForm] = useState(false)
+  const [editingEduId, setEditingEduId] = useState<string | null>(null)
+  const [eduForm, setEduForm] = useState(emptyEduForm)
+
   const isHq = profile?.role === 'hq_admin'
 
   async function load() {
@@ -27,6 +34,8 @@ export default function Info() {
     setProfiles(p ?? [])
     const { data: g } = await supabase.from('menu_permissions').select('profile_id, menu_key')
     setGrants(g ?? [])
+    const { data: e } = await supabase.from('education_events').select('*').order('event_date')
+    setEduEvents(e ?? [])
     setLoading(false)
   }
 
@@ -97,6 +106,40 @@ export default function Info() {
   async function remove(id: string) {
     if (!confirm('이 배너를 삭제할까요?')) return
     const { error } = await supabase.from('banners').delete().eq('id', id)
+    if (error) alert('삭제 실패: ' + error.message)
+    else load()
+  }
+
+  function startEduCreate() {
+    setEduForm(emptyEduForm)
+    setEditingEduId(null)
+    setShowEduForm(true)
+  }
+
+  function startEduEdit(e: EducationEvent) {
+    setEduForm({ title: e.title, event_date: e.event_date, event_time: e.event_time })
+    setEditingEduId(e.id)
+    setShowEduForm(true)
+  }
+
+  async function handleEduSubmit(e: FormEvent) {
+    e.preventDefault()
+    const payload = { title: eduForm.title, event_date: eduForm.event_date, event_time: eduForm.event_time }
+    if (editingEduId) {
+      const { error } = await supabase.from('education_events').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', editingEduId)
+      if (error) return alert('수정 실패: ' + error.message)
+    } else {
+      const { error } = await supabase.from('education_events').insert(payload)
+      if (error) return alert('등록 실패: ' + error.message)
+    }
+    setShowEduForm(false)
+    setEditingEduId(null)
+    load()
+  }
+
+  async function removeEdu(id: string) {
+    if (!confirm('이 교육 일정을 삭제할까요?')) return
+    const { error } = await supabase.from('education_events').delete().eq('id', id)
     if (error) alert('삭제 실패: ' + error.message)
     else load()
   }
@@ -186,6 +229,71 @@ export default function Info() {
                     <td className="px-3 py-2 whitespace-nowrap">
                       <button onClick={() => startEdit(b)} className="text-xs text-slate-500 hover:underline mr-2">수정</button>
                       <button onClick={() => remove(b.id)} className="text-xs text-red-500 hover:underline">삭제</button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="flex items-start justify-between pt-2">
+        <div>
+          <h2 className="font-semibold text-slate-800">교육 일정</h2>
+          <p className="text-sm text-slate-500 mt-1">대시보드에 노출되는 교육 일정을 관리합니다.</p>
+        </div>
+        {isHq && (
+          <button onClick={startEduCreate} className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium">
+            + 일정 등록
+          </button>
+        )}
+      </div>
+
+      {showEduForm && (
+        <form onSubmit={handleEduSubmit} className="bg-white rounded-xl shadow p-5 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input required placeholder="제목" value={eduForm.title} onChange={(e) => setEduForm((f) => ({ ...f, title: e.target.value }))}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm md:col-span-1" />
+            <input required type="date" value={eduForm.event_date} onChange={(e) => setEduForm((f) => ({ ...f, event_date: e.target.value }))}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+            <input type="time" value={eduForm.event_time} onChange={(e) => setEduForm((f) => ({ ...f, event_time: e.target.value }))}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium">
+              {editingEduId ? '수정 저장' : '등록'}
+            </button>
+            <button type="button" onClick={() => { setShowEduForm(false); setEditingEduId(null) }} className="text-sm text-slate-500 px-4 py-2">
+              취소
+            </button>
+          </div>
+        </form>
+      )}
+
+      {!loading && eduEvents.length === 0 && <p className="text-center text-slate-400 py-6">등록된 교육 일정이 없습니다.</p>}
+
+      {!loading && eduEvents.length > 0 && (
+        <div className="bg-white rounded-xl shadow overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-100 text-xs text-slate-600">
+              <tr>
+                <th className="text-left px-3 py-2">제목</th>
+                <th className="text-left px-3 py-2">일시</th>
+                {isHq && <th className="px-3 py-2"></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {eduEvents.map((e) => (
+                <tr key={e.id} className="border-t border-slate-100">
+                  <td className="px-3 py-2 font-medium">{e.title}</td>
+                  <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
+                    {e.event_date}{e.event_time && ` ${e.event_time}`}
+                  </td>
+                  {isHq && (
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <button onClick={() => startEduEdit(e)} className="text-xs text-slate-500 hover:underline mr-2">수정</button>
+                      <button onClick={() => removeEdu(e.id)} className="text-xs text-red-500 hover:underline">삭제</button>
                     </td>
                   )}
                 </tr>

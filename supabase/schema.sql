@@ -197,6 +197,16 @@ create table banners (
   updated_at timestamptz default now()
 );
 
+-- ── 교육 일정 (메인화면 노출용 — 본사관리자가 등록) ──────────
+create table education_events (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  event_date date not null,
+  event_time text default '',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 create table incentives (
   id uuid primary key default gen_random_uuid(),
   company text not null,
@@ -321,6 +331,13 @@ create policy "banners_select_scope" on banners
     or auth.uid() = any(target_profile_ids)
   );
 create policy "banners_write_admin" on banners
+  for all using (my_role() = 'hq_admin') with check (my_role() = 'hq_admin');
+
+-- education_events: 로그인한 사람 전체 조회 가능, 작성/수정/삭제는 본사관리자만
+alter table education_events enable row level security;
+create policy "education_events_select_all" on education_events
+  for select using (auth.role() = 'authenticated');
+create policy "education_events_write_admin" on education_events
   for all using (my_role() = 'hq_admin') with check (my_role() = 'hq_admin');
 
 -- ── 조직 하위트리 판별 함수 (root_id 가 node_id 의 조상 또는 자기 자신인가) ──
