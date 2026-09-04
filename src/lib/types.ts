@@ -118,6 +118,17 @@ export interface Banner {
   updated_at: string
 }
 
+export interface InsurerAccount {
+  id: string
+  company: string
+  login_id: string
+  password: string
+  memo: string
+  updated_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface EducationEvent {
   id: string
   title: string

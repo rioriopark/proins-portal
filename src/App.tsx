@@ -13,6 +13,7 @@ import Incentives from './pages/Incentives'
 import Contacts from './pages/Contacts'
 import Orgs from './pages/Orgs'
 import Info from './pages/Info'
+import InsurerAccounts from './pages/InsurerAccounts'
 import MySpace from './pages/MySpace'
 
 function Gate({ children }: { children: ReactNode }) {
@@ -57,6 +58,7 @@ export default function App() {
         <Route path="contacts" element={<Contacts />} />
         <Route path="orgs" element={<Orgs />} />
         <Route path="info" element={<Info />} />
+        <Route path="insurer-accounts" element={<InsurerAccounts />} />
         <Route path="my-space" element={<MySpace />} />
       </Route>
     </Routes>
