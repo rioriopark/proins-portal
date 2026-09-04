@@ -378,7 +378,7 @@ export default function Dashboard() {
             ))}
           </div>
           <Link
-            to="/contracts"
+            to="/renewals"
             className="mt-auto text-center text-sm font-medium text-white bg-slate-800 rounded-md py-2 hover:bg-slate-700"
           >
             갱신관리 바로가기
