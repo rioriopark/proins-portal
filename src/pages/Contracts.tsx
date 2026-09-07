@@ -100,6 +100,10 @@ export default function Contracts() {
       alert('신규계약은 이번 달 영수일로만 등록할 수 있습니다.')
       return
     }
+    if (!form.policy_no.trim()) {
+      alert('증권번호를 입력해야 등록할 수 있습니다.')
+      return
+    }
     const { error } = await supabase.from('contracts').insert({
       agent_id: form.agent_id || profile?.id,
       month: form.receipt_date.slice(0, 7),
@@ -369,8 +373,8 @@ export default function Contracts() {
               className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">증권번호</label>
-            <input value={form.policy_no} onChange={(e) => setForm((f) => ({ ...f, policy_no: e.target.value }))}
+            <label className="block text-xs text-slate-500 mb-1">증권번호 *</label>
+            <input value={form.policy_no} onChange={(e) => setForm((f) => ({ ...f, policy_no: e.target.value }))} required
               className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           </div>
           <div>
@@ -431,8 +435,8 @@ export default function Contracts() {
                   className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">증권번호</label>
-                <input value={selfForm.policy_no} onChange={(e) => setSelfForm((f) => ({ ...f, policy_no: e.target.value }))}
+                <label className="block text-xs text-slate-500 mb-1">증권번호 *</label>
+                <input value={selfForm.policy_no} onChange={(e) => setSelfForm((f) => ({ ...f, policy_no: e.target.value }))} required
                   className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
               </div>
               <div>
