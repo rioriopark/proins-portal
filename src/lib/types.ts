@@ -56,6 +56,7 @@ export interface Contract {
   count: number
   premium: number
   commission: number
+  is_preliminary: boolean
   created_at: string
 }
 

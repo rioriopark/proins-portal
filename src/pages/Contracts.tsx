@@ -30,6 +30,8 @@ export default function Contracts() {
   const { profile } = useAuth()
   // 계약 등록(신규계약)은 본사관리자와 본사담당자(소속이 본사인 담당자)만 할 수 있다.
   const canManage = profile?.role === 'hq_admin' || (profile?.role === 'agent' && profile.org_id === 'hq')
+  // 위촉설계사(소속이 본사가 아닌 담당자)는 본인 예비계약만 직접 등록할 수 있다.
+  const isFieldAgent = profile?.role === 'agent' && profile.org_id !== 'hq'
   const [contracts, setContracts] = useState<Contract[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
@@ -51,6 +53,16 @@ export default function Contracts() {
     customer_name: '',
     premium: 0,
     commission: 0,
+  })
+  const [selfReportOpen, setSelfReportOpen] = useState(false)
+  const [matchOpen, setMatchOpen] = useState(false)
+  const [selfForm, setSelfForm] = useState({
+    receipt_date: today(),
+    category: '장기' as '장기' | '일반',
+    company: '',
+    product_name: '',
+    customer_name: '',
+    premium: 0,
   })
 
   async function load() {
@@ -99,6 +111,36 @@ export default function Contracts() {
     })
     if (!error) {
       setForm((f) => ({ ...f, company: '', product_name: '', customer_name: '', premium: 0, commission: 0 }))
+      load()
+    } else {
+      alert('등록 실패: ' + error.message)
+    }
+  }
+
+  // 위촉설계사가 보험사 확정 전 직접 등록하는 예비계약: 본인 앞으로, 신규/장기·일반만, 이번 달만.
+  // 수수료는 아직 몰라 0으로 두고, 익월 본사에서 보험사 확정 계약을 업로드하면 매칭 후 이 예비계약은 삭제된다.
+  async function handleSelfReportSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (selfForm.receipt_date < monthStart() || selfForm.receipt_date > monthEnd()) {
+      alert('신규계약은 이번 달 영수일로만 등록할 수 있습니다.')
+      return
+    }
+    const { error } = await supabase.from('contracts').insert({
+      agent_id: profile?.id,
+      month: selfForm.receipt_date.slice(0, 7),
+      receipt_date: selfForm.receipt_date,
+      category: selfForm.category,
+      type: '신규',
+      company: selfForm.company,
+      product_name: selfForm.product_name,
+      customer_name: selfForm.customer_name,
+      count: 1,
+      premium: selfForm.premium,
+      commission: 0,
+      is_preliminary: true,
+    })
+    if (!error) {
+      setSelfForm((f) => ({ ...f, company: '', product_name: '', customer_name: '', premium: 0 }))
       load()
     } else {
       alert('등록 실패: ' + error.message)
@@ -201,6 +243,26 @@ export default function Contracts() {
       return next
     })
   }
+
+  // 위촉설계사가 등록한 예비계약 중, 같은 담당자·고객명·상품명으로 보험사 확정 계약(예비 아님)이
+  // 이미 들어와 있는 것을 찾아 본사관리자/본사담당자가 확인 후 예비계약을 정리할 수 있게 한다.
+  const preliminaryMatches = useMemo(() => {
+    if (!canManage) return []
+    const officialByKey = new Map<string, Contract[]>()
+    for (const c of contracts) {
+      if (c.is_preliminary) continue
+      const key = `${c.agent_id ?? c.agent_email ?? ''}|${c.customer_name.trim()}|${c.product_name.trim()}`
+      if (!officialByKey.has(key)) officialByKey.set(key, [])
+      officialByKey.get(key)!.push(c)
+    }
+    return contracts
+      .filter((c) => c.is_preliminary)
+      .map((prelim) => {
+        const key = `${prelim.agent_id ?? prelim.agent_email ?? ''}|${prelim.customer_name.trim()}|${prelim.product_name.trim()}`
+        return { prelim, matches: officialByKey.get(key) ?? [] }
+      })
+      .filter((x) => x.matches.length > 0)
+  }, [contracts, canManage])
 
   const canReassign = profile?.role === 'hq_admin'
   const agentOptions = [
@@ -314,6 +376,118 @@ export default function Contracts() {
         </div>
       )}
 
+      {isFieldAgent && (
+        <div className="bg-white rounded-xl shadow overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setSelfReportOpen((v) => !v)}
+            className="w-full flex items-center gap-1.5 bg-slate-100 px-4 py-2.5 text-left hover:bg-slate-200"
+          >
+            <span className="inline-block w-3 text-slate-400">{selfReportOpen ? '▾' : '▸'}</span>
+            <span className="font-semibold text-sm text-slate-700">신규계약</span>
+          </button>
+          {selfReportOpen && (
+            <form onSubmit={handleSelfReportSubmit} className="p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+              <p className="col-span-2 md:col-span-4 text-xs text-slate-500 -mt-1 mb-1">
+                이번 달 신규 계약(장기·일반)을 미리 등록해두면, 다음 달 보험사 확정 계약이 올라올 때 매칭되어 정리됩니다. 수수료는 확정 후 반영돼요.
+              </p>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">영수일 (이번 달만 등록 가능)</label>
+                <input type="date" value={selfForm.receipt_date} min={monthStart()} max={monthEnd()}
+                  onChange={(e) => setSelfForm((f) => ({ ...f, receipt_date: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">종목</label>
+                <select value={selfForm.category} onChange={(e) => setSelfForm((f) => ({ ...f, category: e.target.value as '장기' | '일반' }))}
+                  className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm">
+                  <option value="장기">장기</option>
+                  <option value="일반">일반</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">보험사</label>
+                <input value={selfForm.company} onChange={(e) => setSelfForm((f) => ({ ...f, company: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">상품명</label>
+                <input value={selfForm.product_name} onChange={(e) => setSelfForm((f) => ({ ...f, product_name: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">고객명</label>
+                <input value={selfForm.customer_name} onChange={(e) => setSelfForm((f) => ({ ...f, customer_name: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">보험료</label>
+                <input type="number" min={0} value={selfForm.premium} onChange={(e) => setSelfForm((f) => ({ ...f, premium: Number(e.target.value) }))}
+                  className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+              </div>
+              <button type="submit" className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium h-fit">
+                신규계약 등록
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
+      {canManage && (
+        <div className="bg-white rounded-xl shadow overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setMatchOpen((v) => !v)}
+            className="w-full flex items-center gap-1.5 bg-slate-100 px-4 py-2.5 text-left hover:bg-slate-200"
+          >
+            <span className="inline-block w-3 text-slate-400">{matchOpen ? '▾' : '▸'}</span>
+            <span className="font-semibold text-sm text-slate-700">
+              예비계약 확인{preliminaryMatches.length > 0 && ` (${preliminaryMatches.length}건)`}
+            </span>
+          </button>
+          {matchOpen && (
+            preliminaryMatches.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-6">확정 계약과 매칭된 예비계약이 없습니다.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="text-slate-500 text-xs border-b border-slate-100">
+                  <tr>
+                    <th className="text-left px-4 py-2">담당자</th>
+                    <th className="text-left px-4 py-2">고객명 / 상품명</th>
+                    <th className="text-right px-4 py-2">예비 보험료</th>
+                    <th className="text-right px-4 py-2">확정 보험료</th>
+                    <th className="text-left px-4 py-2">확정 지급월</th>
+                    <th className="px-4 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {preliminaryMatches.map(({ prelim, matches }) => (
+                    <tr key={prelim.id} className="border-t border-slate-50">
+                      <td className="px-4 py-2">{agentInfo(prelim).name}</td>
+                      <td className="px-4 py-2">{prelim.customer_name} / {prelim.product_name}</td>
+                      <td className="px-4 py-2 text-right">{prelim.premium.toLocaleString('ko-KR')}원</td>
+                      <td className="px-4 py-2 text-right">
+                        {matches[0].premium.toLocaleString('ko-KR')}원
+                        {matches.length > 1 && <span className="text-xs text-slate-400"> 외 {matches.length - 1}건</span>}
+                      </td>
+                      <td className="px-4 py-2">{matches[0].month}</td>
+                      <td className="px-4 py-2 text-right">
+                        <button
+                          onClick={() => deleteContract(prelim.id)}
+                          className="text-xs text-white bg-slate-800 rounded-md px-3 py-1.5 hover:bg-slate-700"
+                        >
+                          확정 처리(예비 삭제)
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-3">
         <input
           type="text"
@@ -420,7 +594,12 @@ export default function Contracts() {
                                       return (
                                         <tr key={c.id} className="border-t border-slate-100">
                                           <td className="px-3 py-1.5">{c.policy_no ?? '-'}</td>
-                                          <td className="px-3 py-1.5">{c.customer_name}</td>
+                                          <td className="px-3 py-1.5">
+                                            {c.customer_name}
+                                            {c.is_preliminary && (
+                                              <span className="ml-1.5 text-[10px] font-semibold text-amber-600 bg-amber-50 px-1 py-0.5 rounded">예비</span>
+                                            )}
+                                          </td>
                                           <td className="px-3 py-1.5">{c.product_name}</td>
                                           <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
                                           <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
