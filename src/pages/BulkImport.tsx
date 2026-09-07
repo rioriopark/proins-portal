@@ -167,8 +167,17 @@ function guessMapping(headers: string[], body: string[][]): Record<FieldKey, num
   return result
 }
 
+// 납입회차 0회는 일반보험 신규건, 1회는 장기계약 신규건을 뜻한다 (삼성화재 파일 기준).
+function samsungInstallmentNo(headers: string[], row: string[]): string {
+  const idx = headers.findIndex((h) => normalizeHeader(h).includes('납입회차'))
+  return idx >= 0 ? (row[idx] ?? '').trim() : ''
+}
+
 // 삼성화재 다운로드 파일은 종목/구분을 별도 열로 주지 않고 다른 열의 값 유무로만 구분되므로, 해당 열을 찾아 유추한다.
 function inferSamsungCategory(headers: string[], row: string[]): string {
+  const installment = samsungInstallmentNo(headers, row)
+  if (installment === '0') return '일반'
+  if (installment === '1') return '장기'
   const longIdx = headers.findIndex((h) => normalizeHeader(h).includes('장기상품'))
   const autoIdx = headers.findIndex((h) => normalizeHeader(h).includes('자동차'))
   if (longIdx >= 0 && (row[longIdx] ?? '').trim()) return '장기'
@@ -177,6 +186,8 @@ function inferSamsungCategory(headers: string[], row: string[]): string {
 }
 
 function inferSamsungType(headers: string[], row: string[]): string {
+  const installment = samsungInstallmentNo(headers, row)
+  if (installment === '0' || installment === '1') return '신규'
   const idx = headers.findIndex((h) => normalizeHeader(h).includes('계약상태'))
   if (idx < 0) return ''
   const v = (row[idx] ?? '').trim()
