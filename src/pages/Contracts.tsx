@@ -27,6 +27,7 @@ export default function Contracts() {
   const [categoryFilter, setCategoryFilter] = useState<'전체' | ContractCategory>('전체')
   const [typeFilter, setTypeFilter] = useState<'전체' | ContractType>('전체')
   const [monthFilter, setMonthFilter] = useState<string>('전체')
+  const [search, setSearch] = useState('')
   const [openAgents, setOpenAgents] = useState<Set<string>>(new Set())
   const [openCompanies, setOpenCompanies] = useState<Set<string>>(new Set())
   const [form, setForm] = useState({
@@ -112,15 +113,22 @@ export default function Contracts() {
     [contracts]
   )
 
+  const keyword = search.trim().toLowerCase()
+
   const filtered = useMemo(
     () =>
-      contracts.filter(
-        (c) =>
-          (categoryFilter === '전체' || c.category === categoryFilter) &&
-          (typeFilter === '전체' || c.type === typeFilter) &&
-          (monthFilter === '전체' || c.month === monthFilter)
-      ),
-    [contracts, categoryFilter, typeFilter, monthFilter]
+      contracts.filter((c) => {
+        if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
+        if (typeFilter !== '전체' && c.type !== typeFilter) return false
+        if (monthFilter !== '전체' && c.month !== monthFilter) return false
+        if (keyword) {
+          const agentName = agentInfo(c).name
+          const haystack = [c.customer_name, c.product_name, c.company, agentName].join(' ').toLowerCase()
+          if (!haystack.includes(keyword)) return false
+        }
+        return true
+      }),
+    [contracts, categoryFilter, typeFilter, monthFilter, keyword, agentInfo]
   )
 
   const groups = useMemo(() => {
@@ -145,6 +153,21 @@ export default function Contracts() {
       .map((g) => ({ ...g, companies: [...g.companies.values()].sort((a, b) => b.premium - a.premium) }))
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   }, [filtered, agentInfo])
+
+  useEffect(() => {
+    if (!keyword) return
+    setOpenAgents((prev) => {
+      const next = new Set(prev)
+      groups.forEach((g) => next.add(g.key))
+      return next
+    })
+    setOpenCompanies((prev) => {
+      const next = new Set(prev)
+      groups.forEach((g) => g.companies.forEach((cg) => next.add(`${g.key}|${cg.company}`)))
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyword, groups])
 
   function toggleAgent(key: string) {
     setOpenAgents((prev) => {
@@ -252,7 +275,14 @@ export default function Contracts() {
         </form>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="계약찾기: 고객명, 상품명, 보험사, 담당자"
+          className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white w-64"
+        />
         <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}
           className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
           <option value="전체">전체 기간</option>
