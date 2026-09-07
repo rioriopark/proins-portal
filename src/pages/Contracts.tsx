@@ -112,6 +112,8 @@ export default function Contracts() {
       count: 1,
       premium: form.premium,
       commission: form.commission,
+      // 신규 건은 보험사 확정 계약이 [계약 일괄등록]으로 들어와 매칭되기 전까지 예비계약으로 남긴다.
+      is_preliminary: form.type === '신규',
     })
     if (!error) {
       setForm((f) => ({ ...f, company: '', product_name: '', customer_name: '', premium: 0, commission: 0 }))
