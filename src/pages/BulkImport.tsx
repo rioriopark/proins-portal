@@ -1,5 +1,6 @@
 import { useMemo, useState, type ChangeEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
 import { toAuthEmail } from '../lib/id'
 import type { CompanyCode, Profile } from '../lib/types'
 
@@ -267,6 +268,8 @@ interface FileRow {
 }
 
 export default function BulkImport() {
+  const { profile } = useAuth()
+  const canAccess = profile?.org_id === 'hq'
   const [mode, setMode] = useState<'paste' | 'file'>('paste')
 
   // 공통: 담당자/설계사코드 매핑용 데이터
@@ -560,6 +563,15 @@ export default function BulkImport() {
       setFileMonth('')
       setManualAssign({})
     }
+  }
+
+  if (!canAccess) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-xl font-bold text-slate-800">계약 일괄 등록</h1>
+        <p className="text-sm text-slate-500">프로인스컴퍼니 본사 소속만 사용할 수 있습니다.</p>
+      </div>
+    )
   }
 
   return (
