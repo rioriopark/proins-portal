@@ -200,6 +200,17 @@ export default function Contracts() {
     }
   }
 
+  async function handleDownloadSample() {
+    const XLSX = await import('xlsx')
+    const header = ['담당자명', '보험사', '계약번호', '계약자명', '종목', '영수일', '보험료']
+    const example = ['김은지', '삼성화재', '52616634160000', '홍길동', '장기', monthStart(), '2428500']
+    const ws = XLSX.utils.aoa_to_sheet([header, example])
+    ws['!cols'] = header.map(() => ({ wch: 16 }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '신규계약')
+    XLSX.writeFile(wb, '신규계약_샘플.xlsx')
+  }
+
   // 위촉설계사가 보험사 확정 전 직접 등록하는 예비계약: 본인 앞으로, 신규/장기·일반만, 이번 달만.
   // 수수료는 아직 몰라 0으로 두고, 익월 본사에서 보험사 확정 계약을 업로드하면 매칭 후 이 예비계약은 삭제된다.
   async function handleSelfReportSubmit(e: FormEvent) {
@@ -484,10 +495,19 @@ export default function Contracts() {
 
           {bulkOpen && (
             <div className="p-5 pt-0 space-y-3">
-              <p className="text-xs text-slate-500 font-mono whitespace-pre-wrap break-all">
-                열 순서: 담당자명{'\t'}보험사{'\t'}계약번호{'\t'}계약자명{'\t'}종목{'\t'}영수일{'\t'}보험료
-                {'\n'}예시: 김은지{'\t'}삼성화재{'\t'}52616634160000{'\t'}홍길동{'\t'}장기{'\t'}2026-09-15{'\t'}2428500
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs text-slate-500 font-mono whitespace-pre-wrap break-all">
+                  열 순서: 담당자명{'\t'}보험사{'\t'}계약번호{'\t'}계약자명{'\t'}종목{'\t'}영수일{'\t'}보험료
+                  {'\n'}예시: 김은지{'\t'}삼성화재{'\t'}52616634160000{'\t'}홍길동{'\t'}장기{'\t'}2026-09-15{'\t'}2428500
+                </p>
+                <button
+                  type="button"
+                  onClick={handleDownloadSample}
+                  className="shrink-0 text-xs text-blue-600 hover:underline whitespace-nowrap"
+                >
+                  샘플 엑셀 다운로드
+                </button>
+              </div>
               <textarea
                 value={bulkText}
                 onChange={(e) => setBulkText(e.target.value)}
