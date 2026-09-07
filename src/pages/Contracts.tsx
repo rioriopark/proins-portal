@@ -27,9 +27,13 @@ function monthEnd() {
 }
 
 export default function Contracts() {
-  const { profile } = useAuth()
-  // 계약 등록(신규계약)은 본사관리자와 본사담당자(소속이 본사인 담당자)만 할 수 있다.
-  const canManage = profile?.role === 'hq_admin' || (profile?.role === 'agent' && profile.org_id === 'hq')
+  const { profile, permissions } = useAuth()
+  // 계약 등록(신규계약)은 기본적으로 본사관리자와 본사담당자(소속이 본사인 담당자)만 할 수 있고,
+  // 그 외 개별적으로 "계약관리" 권한을 부여받은 사람(정보관리/조직관리에서 지정)도 예외적으로 가능하다.
+  // can()은 agent가 아니면 자동으로 통과시키므로(지사/지점 관리자까지 다 열림) 여기서는 쓰지 않고,
+  // 실제 개별 부여 여부(permissions)만 직접 확인한다.
+  const canManage =
+    profile?.role === 'hq_admin' || (profile?.role === 'agent' && profile.org_id === 'hq') || permissions.has('contracts')
   // 위촉설계사(소속이 본사가 아닌 담당자)는 본인 예비계약만 직접 등록할 수 있다.
   const isFieldAgent = profile?.role === 'agent' && profile.org_id !== 'hq'
   const [contracts, setContracts] = useState<Contract[]>([])
