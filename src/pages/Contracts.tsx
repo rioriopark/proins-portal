@@ -53,7 +53,7 @@ export default function Contracts() {
     category: '장기' as ContractCategory,
     type: '신규' as ContractType,
     company: '',
-    product_name: '',
+    policy_no: '',
     customer_name: '',
     premium: 0,
     commission: 0,
@@ -64,7 +64,7 @@ export default function Contracts() {
     receipt_date: today(),
     category: '장기' as '장기' | '일반',
     company: '',
-    product_name: '',
+    policy_no: '',
     customer_name: '',
     premium: 0,
   })
@@ -107,7 +107,7 @@ export default function Contracts() {
       category: form.category,
       type: form.type,
       company: form.company,
-      product_name: form.product_name,
+      policy_no: form.policy_no || null,
       customer_name: form.customer_name,
       count: 1,
       premium: form.premium,
@@ -116,7 +116,7 @@ export default function Contracts() {
       is_preliminary: form.type === '신규',
     })
     if (!error) {
-      setForm((f) => ({ ...f, company: '', product_name: '', customer_name: '', premium: 0, commission: 0 }))
+      setForm((f) => ({ ...f, company: '', policy_no: '', customer_name: '', premium: 0, commission: 0 }))
       load()
     } else {
       alert('등록 실패: ' + error.message)
@@ -131,6 +131,10 @@ export default function Contracts() {
       alert('신규계약은 이번 달 영수일로만 등록할 수 있습니다.')
       return
     }
+    if (!selfForm.policy_no.trim()) {
+      alert('증권번호를 입력해야 등록할 수 있습니다.')
+      return
+    }
     const { error } = await supabase.from('contracts').insert({
       agent_id: profile?.id,
       month: selfForm.receipt_date.slice(0, 7),
@@ -138,7 +142,7 @@ export default function Contracts() {
       category: selfForm.category,
       type: '신규',
       company: selfForm.company,
-      product_name: selfForm.product_name,
+      policy_no: selfForm.policy_no,
       customer_name: selfForm.customer_name,
       count: 1,
       premium: selfForm.premium,
@@ -146,7 +150,7 @@ export default function Contracts() {
       is_preliminary: true,
     })
     if (!error) {
-      setSelfForm((f) => ({ ...f, company: '', product_name: '', customer_name: '', premium: 0 }))
+      setSelfForm((f) => ({ ...f, company: '', policy_no: '', customer_name: '', premium: 0 }))
       load()
     } else {
       alert('등록 실패: ' + error.message)
@@ -250,24 +254,32 @@ export default function Contracts() {
     })
   }
 
-  // 위촉설계사가 등록한 예비계약 중, 같은 담당자·보험사·고객명으로 보험사 확정 계약(예비 아님)이
-  // 이미 들어와 있는 것을 찾아 본사관리자/본사담당자가 확인 후 예비계약을 정리할 수 있게 한다.
-  // 상품명은 매칭 기준에서 뺐다 — 계약 일괄등록의 엑셀 붙여넣기 양식엔 상품명 칸이 없어서,
-  // 상품명까지 요구하면 그쪽으로 올라온 확정 계약과는 절대 매칭이 안 된다.
+  // 위촉설계사가 등록한 예비계약 중, 보험사 확정 계약(예비 아님)이 이미 들어와 있는 것을 찾아
+  // 본사관리자/본사담당자가 확인 후 예비계약을 정리할 수 있게 한다.
+  // 증권번호가 이제 예비계약에도 필수라 우선 증권번호로 정확히 매칭하고,
+  // (옛날 데이터 등) 증권번호가 없는 예비계약만 담당자·보험사·고객명으로 대신 매칭한다.
   const preliminaryMatches = useMemo(() => {
     if (!canManage) return []
-    const officialByKey = new Map<string, Contract[]>()
+    const officialByPolicyNo = new Map<string, Contract[]>()
+    const officialByNameKey = new Map<string, Contract[]>()
     for (const c of contracts) {
       if (c.is_preliminary) continue
-      const key = `${c.agent_id ?? c.agent_email ?? ''}|${c.company.trim()}|${c.customer_name.trim()}`
-      if (!officialByKey.has(key)) officialByKey.set(key, [])
-      officialByKey.get(key)!.push(c)
+      if (c.policy_no?.trim()) {
+        const key = c.policy_no.trim()
+        if (!officialByPolicyNo.has(key)) officialByPolicyNo.set(key, [])
+        officialByPolicyNo.get(key)!.push(c)
+      }
+      const nameKey = `${c.agent_id ?? c.agent_email ?? ''}|${c.company.trim()}|${c.customer_name.trim()}`
+      if (!officialByNameKey.has(nameKey)) officialByNameKey.set(nameKey, [])
+      officialByNameKey.get(nameKey)!.push(c)
     }
     return contracts
       .filter((c) => c.is_preliminary)
       .map((prelim) => {
-        const key = `${prelim.agent_id ?? prelim.agent_email ?? ''}|${prelim.company.trim()}|${prelim.customer_name.trim()}`
-        return { prelim, matches: officialByKey.get(key) ?? [] }
+        const byPolicyNo = prelim.policy_no?.trim() ? officialByPolicyNo.get(prelim.policy_no.trim()) : undefined
+        if (byPolicyNo?.length) return { prelim, matches: byPolicyNo }
+        const nameKey = `${prelim.agent_id ?? prelim.agent_email ?? ''}|${prelim.company.trim()}|${prelim.customer_name.trim()}`
+        return { prelim, matches: officialByNameKey.get(nameKey) ?? [] }
       })
       .filter((x) => x.matches.length > 0)
   }, [contracts, canManage])
@@ -357,8 +369,8 @@ export default function Contracts() {
               className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">상품명</label>
-            <input value={form.product_name} onChange={(e) => setForm((f) => ({ ...f, product_name: e.target.value }))}
+            <label className="block text-xs text-slate-500 mb-1">증권번호</label>
+            <input value={form.policy_no} onChange={(e) => setForm((f) => ({ ...f, policy_no: e.target.value }))}
               className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           </div>
           <div>
@@ -397,7 +409,7 @@ export default function Contracts() {
           {selfReportOpen && (
             <form onSubmit={handleSelfReportSubmit} className="p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
               <p className="col-span-2 md:col-span-4 text-xs text-slate-500 -mt-1 mb-1">
-                이번 달 신규 계약(장기·일반)을 미리 등록해두면, 다음 달 보험사 확정 계약이 올라올 때 매칭되어 정리됩니다. 수수료는 확정 후 반영돼요.
+                이번 달 신규 계약(장기·일반)을 증권번호와 함께 미리 등록해두면, 다음 달 보험사 확정 계약이 올라올 때 증권번호로 매칭되어 정리됩니다. 수수료는 확정 후 반영돼요.
               </p>
               <div>
                 <label className="block text-xs text-slate-500 mb-1">영수일 (이번 달만 등록 가능)</label>
@@ -419,8 +431,8 @@ export default function Contracts() {
                   className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">상품명</label>
-                <input value={selfForm.product_name} onChange={(e) => setSelfForm((f) => ({ ...f, product_name: e.target.value }))}
+                <label className="block text-xs text-slate-500 mb-1">증권번호</label>
+                <input value={selfForm.policy_no} onChange={(e) => setSelfForm((f) => ({ ...f, policy_no: e.target.value }))}
                   className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
               </div>
               <div>
@@ -461,7 +473,7 @@ export default function Contracts() {
                 <thead className="text-slate-500 text-xs border-b border-slate-100">
                   <tr>
                     <th className="text-left px-4 py-2">담당자</th>
-                    <th className="text-left px-4 py-2">고객명 / 상품명</th>
+                    <th className="text-left px-4 py-2">고객명 / 증권번호</th>
                     <th className="text-right px-4 py-2">예비 보험료</th>
                     <th className="text-right px-4 py-2">확정 보험료</th>
                     <th className="text-left px-4 py-2">확정 지급월</th>
@@ -472,7 +484,7 @@ export default function Contracts() {
                   {preliminaryMatches.map(({ prelim, matches }) => (
                     <tr key={prelim.id} className="border-t border-slate-50">
                       <td className="px-4 py-2">{agentInfo(prelim).name}</td>
-                      <td className="px-4 py-2">{prelim.customer_name} / {prelim.product_name}</td>
+                      <td className="px-4 py-2">{prelim.customer_name} / {prelim.policy_no}</td>
                       <td className="px-4 py-2 text-right">{prelim.premium.toLocaleString('ko-KR')}원</td>
                       <td className="px-4 py-2 text-right">
                         {matches[0].premium.toLocaleString('ko-KR')}원
