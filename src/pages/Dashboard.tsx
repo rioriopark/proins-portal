@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
@@ -100,6 +100,30 @@ const STAT_COLORS = {
   amber: { bg: 'bg-amber-50', text: 'text-amber-600' },
   teal: { bg: 'bg-teal-50', text: 'text-teal-600' },
 } as const
+
+interface StatCardProps {
+  label: string
+  value: string
+  rate: { pct: number; up: boolean } | null
+  color: keyof typeof STAT_COLORS
+  icon: ReactNode
+}
+function StatCard({ label, value, rate, color, icon }: StatCardProps) {
+  return (
+    <div className="bg-white rounded-xl shadow p-5">
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center mb-3 ${STAT_COLORS[color].bg} ${STAT_COLORS[color].text}`}>
+        {icon}
+      </div>
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="text-lg font-bold mt-1 text-slate-800">{value}</p>
+      {rate && (
+        <p className={`text-xs mt-1 font-medium ${rate.up ? 'text-emerald-600' : 'text-rose-600'}`}>
+          전년 대비 {rate.pct.toFixed(1)}% {rate.up ? '↑' : '↓'}
+        </p>
+      )}
+    </div>
+  )
+}
 
 // 각 보험사가 자체 운영하는 GA/설계사용 업무포털 바로가기 (프로인스포탈 내부 페이지가 아님)
 const PORTAL_LINKS = [
@@ -257,17 +281,26 @@ export default function Dashboard() {
     () => sum(contracts.filter((c) => c.month === lastYearMonth && c.type === '계속'), (c) => c.premium),
     [contracts, lastYearMonth]
   )
+  // 위촉설계사 화면의 신규보험료 카드는 장기/일반 종목별로 나눠서 보여준다.
+  const newPremiumThisMonthByCategory = useMemo(() => {
+    const rows = contracts.filter((c) => c.month === thisMonth && c.type === '신규')
+    return {
+      장기: sum(rows.filter((c) => c.category === '장기'), (c) => c.premium),
+      일반: sum(rows.filter((c) => c.category === '일반'), (c) => c.premium),
+    }
+  }, [contracts, thisMonth])
+  const newPremiumRate = changeRate(newPremiumThisMonth, newPremiumLastYear)
 
   // 위촉설계사는 RLS로 이미 본인 계약만 조회되므로, 라벨도 "나의 ~"로 구분해준다.
   const scopeLabel = isFieldAgent ? '나의 ' : ''
 
-  const statCards = [
+  const baseStatCards = [
     { label: `${scopeLabel}누적 보험료`, value: `${totalPremiumAll.toLocaleString('ko-KR')}원`, rate: ytd.premium, color: 'blue' as const, icon: <IconWon /> },
     { label: `${scopeLabel}누적 계약 건수`, value: `${totalCountAll.toLocaleString('ko-KR')}건`, rate: ytd.count, color: 'emerald' as const, icon: <IconDocCheck /> },
     { label: `${scopeLabel}누적 수수료`, value: `${totalCommissionAll.toLocaleString('ko-KR')}원`, rate: ytd.commission, color: 'violet' as const, icon: <IconWallet /> },
-    { label: `신규보험료(${Number(thisMonthNum)}월)`, value: `${newPremiumThisMonth.toLocaleString('ko-KR')}원`, rate: changeRate(newPremiumThisMonth, newPremiumLastYear), color: 'amber' as const, icon: <IconTrendUp /> },
-    { label: `갱신보험료(${Number(thisMonthNum)}월)`, value: `${renewPremiumThisMonth.toLocaleString('ko-KR')}원`, rate: changeRate(renewPremiumThisMonth, renewPremiumLastYear), color: 'teal' as const, icon: <IconRefresh /> },
   ]
+  const newPremiumCard = { label: `신규보험료(${Number(thisMonthNum)}월)`, value: `${newPremiumThisMonth.toLocaleString('ko-KR')}원`, rate: newPremiumRate, color: 'amber' as const, icon: <IconTrendUp /> }
+  const renewPremiumCard = { label: `갱신보험료(${Number(thisMonthNum)}월)`, value: `${renewPremiumThisMonth.toLocaleString('ko-KR')}원`, rate: changeRate(renewPremiumThisMonth, renewPremiumLastYear), color: 'teal' as const, icon: <IconRefresh /> }
 
   // 갱신센터: 일반/자동차 계약의 영수일+1년을 만기 예정일로 보고 기간별로 집계
   const renewalRows = useMemo(
@@ -298,6 +331,8 @@ export default function Dashboard() {
   const expectedPayout = myStatement ? confirmedIncome - confirmedDeduction : 0
   const estimatedCommission = sum(myContractsThisMonth, (c) => c.commission)
   const expectedClawback = sum(myContractsThisMonth.filter((c) => c.type === '환수'), (c) => Math.abs(c.commission))
+  const newCommissionThisMonth = sum(myContractsThisMonth.filter((c) => c.type === '신규'), (c) => c.commission)
+  const renewCommissionThisMonth = sum(myContractsThisMonth.filter((c) => c.type === '계속'), (c) => c.commission)
 
   // 설계사 실적 TOP5 (이번달, 조회 가능한 범위 내)
   const topAgents = useMemo(() => {
@@ -349,20 +384,33 @@ export default function Dashboard() {
 
       {!isHqStaff && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {statCards.map((s) => (
-            <div key={s.label} className="bg-white rounded-xl shadow p-5">
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center mb-3 ${STAT_COLORS[s.color].bg} ${STAT_COLORS[s.color].text}`}>
-                {s.icon}
+          {baseStatCards.map((s) => <StatCard key={s.label} {...s} />)}
+          {isFieldAgent ? (
+            <div className="bg-white rounded-xl shadow p-5">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center mb-3 bg-amber-50 text-amber-600">
+                <IconTrendUp />
               </div>
-              <p className="text-xs text-slate-500">{s.label}</p>
-              <p className="text-lg font-bold mt-1 text-slate-800">{s.value}</p>
-              {s.rate && (
-                <p className={`text-xs mt-1 font-medium ${s.rate.up ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  전년 대비 {s.rate.pct.toFixed(1)}% {s.rate.up ? '↑' : '↓'}
+              <p className="text-xs text-slate-500 mb-2">신규보험료({Number(thisMonthNum)}월)</p>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-500">장기계약</span>
+                  <span className="font-semibold text-slate-800">{newPremiumThisMonthByCategory.장기.toLocaleString('ko-KR')}원</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-500">일반계약</span>
+                  <span className="font-semibold text-slate-800">{newPremiumThisMonthByCategory.일반.toLocaleString('ko-KR')}원</span>
+                </div>
+              </div>
+              {newPremiumRate && (
+                <p className={`text-xs mt-2 font-medium ${newPremiumRate.up ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  전년 대비 {newPremiumRate.pct.toFixed(1)}% {newPremiumRate.up ? '↑' : '↓'}
                 </p>
               )}
             </div>
-          ))}
+          ) : (
+            <StatCard {...newPremiumCard} />
+          )}
+          <StatCard {...renewPremiumCard} />
         </div>
       )}
 
@@ -411,22 +459,45 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl shadow p-5 flex flex-col">
             <p className="text-sm font-semibold mb-4">수수료 현황</p>
             <div className="grid grid-cols-2 gap-3 mb-5">
-              <div className="bg-slate-50 rounded-lg p-3">
-                <p className="text-xs text-slate-500">이번달 확정</p>
-                <p className="font-bold text-emerald-600 mt-1">{confirmedIncome.toLocaleString('ko-KR')}원</p>
-              </div>
-              <div className="bg-slate-50 rounded-lg p-3">
-                <p className="text-xs text-slate-500">지급예정</p>
-                <p className="font-bold text-blue-600 mt-1">{expectedPayout.toLocaleString('ko-KR')}원</p>
-              </div>
-              <div className="bg-slate-50 rounded-lg p-3">
-                <p className="text-xs text-slate-500">예상수수료</p>
-                <p className="font-bold text-amber-600 mt-1">{estimatedCommission.toLocaleString('ko-KR')}원</p>
-              </div>
-              <div className="bg-slate-50 rounded-lg p-3">
-                <p className="text-xs text-slate-500">환수예정</p>
-                <p className="font-bold text-rose-600 mt-1">{expectedClawback.toLocaleString('ko-KR')}원</p>
-              </div>
+              {isFieldAgent ? (
+                <>
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <p className="text-xs text-slate-500">신규계약</p>
+                    <p className="font-bold text-emerald-600 mt-1">{newCommissionThisMonth.toLocaleString('ko-KR')}원</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <p className="text-xs text-slate-500">예상수수료</p>
+                    <p className="font-bold text-amber-600 mt-1">{estimatedCommission.toLocaleString('ko-KR')}원</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <p className="text-xs text-slate-500">갱신계약</p>
+                    <p className="font-bold text-blue-600 mt-1">{renewCommissionThisMonth.toLocaleString('ko-KR')}원</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <p className="text-xs text-slate-500">환수예정</p>
+                    <p className="font-bold text-rose-600 mt-1">{expectedClawback.toLocaleString('ko-KR')}원</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <p className="text-xs text-slate-500">이번달 확정</p>
+                    <p className="font-bold text-emerald-600 mt-1">{confirmedIncome.toLocaleString('ko-KR')}원</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <p className="text-xs text-slate-500">지급예정</p>
+                    <p className="font-bold text-blue-600 mt-1">{expectedPayout.toLocaleString('ko-KR')}원</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <p className="text-xs text-slate-500">예상수수료</p>
+                    <p className="font-bold text-amber-600 mt-1">{estimatedCommission.toLocaleString('ko-KR')}원</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-3">
+                    <p className="text-xs text-slate-500">환수예정</p>
+                    <p className="font-bold text-rose-600 mt-1">{expectedClawback.toLocaleString('ko-KR')}원</p>
+                  </div>
+                </>
+              )}
             </div>
             <Link
               to="/statement"
