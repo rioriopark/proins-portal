@@ -521,7 +521,14 @@ export default function Contracts() {
                           </td>
                           <td className="px-4 py-2 text-right text-slate-300">-</td>
                           <td className="px-4 py-2 text-slate-300">-</td>
-                          <td className="px-4 py-2" />
+                          <td className="px-4 py-2 text-right">
+                            <button
+                              onClick={() => deleteContract(prelim.id)}
+                              className="text-xs text-rose-600 hover:underline"
+                            >
+                              삭제
+                            </button>
+                          </td>
                         </>
                       )}
                     </tr>
