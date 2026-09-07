@@ -251,7 +251,7 @@ export default function BulkImport() {
   const [agentProfiles, setAgentProfiles] = useState<{ profile_id: string; company_codes: CompanyCode[] }[]>([])
   const [loadedProfiles, setLoadedProfiles] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{ inserted: number; failed: number } | null>(null)
+  const [result, setResult] = useState<{ inserted: number; failed: number; errorMessage?: string } | null>(null)
 
   async function ensureProfiles() {
     if (loadedProfiles) return
@@ -299,15 +299,21 @@ export default function BulkImport() {
       }))
     let inserted = 0
     let failed = 0
+    let errorMessage: string | undefined
     const chunkSize = 200
     for (let i = 0; i < payload.length; i += chunkSize) {
       const chunk = payload.slice(i, i + chunkSize)
       const { error, data } = await supabase.from('contracts').insert(chunk).select('id')
-      if (error) failed += chunk.length
-      else inserted += data?.length ?? 0
+      if (error) {
+        failed += chunk.length
+        if (!errorMessage) errorMessage = error.message
+        console.error('계약 일괄 등록 실패:', error)
+      } else {
+        inserted += data?.length ?? 0
+      }
     }
     setBusy(false)
-    setResult({ inserted, failed })
+    setResult({ inserted, failed, errorMessage })
     if (failed === 0) setText('')
   }
 
@@ -470,15 +476,21 @@ export default function BulkImport() {
       }))
     let inserted = 0
     let failed = 0
+    let errorMessage: string | undefined
     const chunkSize = 200
     for (let i = 0; i < payload.length; i += chunkSize) {
       const chunk = payload.slice(i, i + chunkSize)
       const { error, data } = await supabase.from('contracts').insert(chunk).select('id')
-      if (error) failed += chunk.length
-      else inserted += data?.length ?? 0
+      if (error) {
+        failed += chunk.length
+        if (!errorMessage) errorMessage = error.message
+        console.error('계약 일괄 등록 실패:', error)
+      } else {
+        inserted += data?.length ?? 0
+      }
     }
     setBusy(false)
-    setResult({ inserted, failed })
+    setResult({ inserted, failed, errorMessage })
     if (failed === 0) {
       setFileName('')
       setHeaders([])
@@ -755,10 +767,15 @@ export default function BulkImport() {
       )}
 
       {result && (
-        <p className="text-sm">
-          완료: <span className="text-emerald-600 font-medium">{result.inserted}건 성공</span>
-          {result.failed > 0 && <span className="text-red-600 font-medium"> · {result.failed}건 실패</span>}
-        </p>
+        <div className="text-sm">
+          <p>
+            완료: <span className="text-emerald-600 font-medium">{result.inserted}건 성공</span>
+            {result.failed > 0 && <span className="text-red-600 font-medium"> · {result.failed}건 실패</span>}
+          </p>
+          {result.errorMessage && (
+            <p className="text-red-600 text-xs mt-1">실패 사유: {result.errorMessage}</p>
+          )}
+        </div>
       )}
     </div>
   )
