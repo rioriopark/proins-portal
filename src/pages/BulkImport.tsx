@@ -3,18 +3,21 @@ import { supabase } from '../lib/supabase'
 import { toAuthEmail } from '../lib/id'
 import type { CompanyCode, Profile } from '../lib/types'
 
-const HEADER_HINT = '담당자아이디\t지급월\t종목\t보험사\t보험료\t수수료(선택)'
-const EXAMPLE = 'shinminhye\t2026-07\t장기\tDB손해보험\t2428500\t339988'
+const HEADER_HINT = '담당자아이디\t보험사\t계약번호\t계약자명\t종목\t영수일\t보험료'
+const EXAMPLE = 'shinminhye\tDB손해보험\t52616634160000\t홍길동\t장기\t2026-07-15\t2428500'
 
 const INSURERS = ['삼성화재', 'DB손보', '현대해상', 'KB손보', '메리츠화재', '롯데손해보험', '라이나손보', '한화손해보험', 'AIG손해보험']
 
 interface ParsedRow {
   raw: string[]
   agent_email: string
-  month: string
-  category: string
-  type: string
   company: string
+  policy_no: string
+  customer_name: string
+  category: string
+  receipt_date: string
+  month: string
+  type: string
   count: number
   premium: number
   commission: number
@@ -22,23 +25,28 @@ interface ParsedRow {
   error?: string
 }
 
-// 담당자아이디/지급월/종목/보험사/보험료만 있어도 등록 가능하도록, 구분은 '신규'·건수는 1건으로 기본값을 채운다.
-// 수수료는 마지막에 선택으로 넣을 수 있고, 비워두면 0으로 들어간다(나중에 보험사 확정분으로 갱신 가능).
+// 담당자아이디/보험사/계약번호/계약자명/종목/영수일/보험료만 있어도 등록 가능하도록,
+// 구분은 '신규'·건수는 1건으로 기본값을 채우고, 지급월은 영수일에서 자동으로 뽑아낸다.
+// 수수료는 아직 몰라 0으로 들어간다(나중에 보험사 확정분으로 갱신 가능).
 function parseSheet(text: string): ParsedRow[] {
   const lines = text.trim().split(/\r?\n/).filter((l) => l.trim().length > 0)
   return lines.map((line) => {
     const cols = line.split(/\t|,/).map((c) => c.trim())
-    const [agentId, month, category, company, premium, commission] = cols
+    const [agentId, company, policyNo, customerName, category, receiptDateRaw, premium] = cols
+    const receiptDate = normalizeDate(receiptDateRaw ?? '')
     return {
       raw: cols,
       agent_email: agentId ? toAuthEmail(agentId) : '',
-      month: month ?? '',
-      category: category ?? '',
-      type: '신규',
       company: company ?? '',
+      policy_no: policyNo ?? '',
+      customer_name: customerName ?? '',
+      category: normalizeCategory(category ?? ''),
+      receipt_date: receiptDate,
+      month: receiptDate ? receiptDate.slice(0, 7) : '',
+      type: '신규',
       count: 1,
-      premium: Number(premium ?? 0),
-      commission: Number(commission ?? 0),
+      premium: toNumber(premium ?? ''),
+      commission: 0,
     }
   })
 }
@@ -288,7 +296,7 @@ export default function BulkImport() {
       const matched = profiles.find((p) => p.email.toLowerCase() === r.agent_email.toLowerCase())
       let error: string | undefined
       if (!r.agent_email) error = '아이디 없음'
-      else if (!r.month || !/^\d{4}-\d{2}$/.test(r.month)) error = '지급월 형식 오류 (YYYY-MM)'
+      else if (!r.month || !/^\d{4}-\d{2}$/.test(r.month)) error = '영수일 형식 오류 (YYYY-MM-DD)'
       else if (!['장기', '일반', '자동차'].includes(r.category)) error = '종목 값 오류'
       return { ...r, matched, error }
     })
@@ -308,6 +316,9 @@ export default function BulkImport() {
         category: r.category,
         type: r.type,
         company: r.company,
+        policy_no: r.policy_no || null,
+        customer_name: r.customer_name,
+        receipt_date: r.receipt_date || null,
         count: r.count,
         premium: r.premium,
         commission: r.commission,
@@ -574,8 +585,8 @@ export default function BulkImport() {
         <>
           <p className="text-sm text-slate-500">
             엑셀에서 아래 순서대로 열을 만들어 셀을 드래그 선택 후 복사(Ctrl+C)한 다음, 아래 칸에 붙여넣기(Ctrl+V)하세요.
-            담당자아이디·지급월·종목·보험사·보험료만 입력해도 등록되며, 구분은 자동으로 '신규', 건수는 1건으로 처리됩니다.
-            수수료는 선택 입력이라 비워두면 0으로 들어갑니다.
+            담당자아이디·보험사·계약번호·계약자명·종목·영수일·보험료만 입력해도 등록되며,
+            지급월은 영수일에서 자동으로 뽑고 구분은 '신규', 건수는 1건, 수수료는 0원으로 처리됩니다(나중에 보험사 확정분으로 갱신 가능).
             담당자가 아직 가입 전이어도 아이디만 맞으면 나중에 가입 시 자동으로 연결됩니다.
           </p>
 
@@ -609,13 +620,13 @@ export default function BulkImport() {
                   <tr>
                     <th className="text-left px-3 py-2">아이디</th>
                     <th className="text-left px-3 py-2">담당자매칭</th>
-                    <th className="text-left px-3 py-2">지급월</th>
-                    <th className="text-left px-3 py-2">종목</th>
-                    <th className="text-left px-3 py-2">구분</th>
                     <th className="text-left px-3 py-2">보험사</th>
-                    <th className="text-right px-3 py-2">건수</th>
+                    <th className="text-left px-3 py-2">계약번호</th>
+                    <th className="text-left px-3 py-2">계약자명</th>
+                    <th className="text-left px-3 py-2">종목</th>
+                    <th className="text-left px-3 py-2">영수일</th>
+                    <th className="text-left px-3 py-2">지급월</th>
                     <th className="text-right px-3 py-2">보험료</th>
-                    <th className="text-right px-3 py-2">수수료</th>
                     <th className="text-left px-3 py-2">상태</th>
                   </tr>
                 </thead>
@@ -624,13 +635,13 @@ export default function BulkImport() {
                     <tr key={i} className={`border-t border-slate-100 ${r.error ? 'bg-red-50' : ''}`}>
                       <td className="px-3 py-1.5">{r.agent_email}</td>
                       <td className="px-3 py-1.5">{r.matched ? r.matched.name : '(미가입)'}</td>
-                      <td className="px-3 py-1.5">{r.month}</td>
-                      <td className="px-3 py-1.5">{r.category}</td>
-                      <td className="px-3 py-1.5">{r.type}</td>
                       <td className="px-3 py-1.5">{r.company}</td>
-                      <td className="px-3 py-1.5 text-right">{r.count}</td>
+                      <td className="px-3 py-1.5">{r.policy_no}</td>
+                      <td className="px-3 py-1.5">{r.customer_name}</td>
+                      <td className="px-3 py-1.5">{r.category}</td>
+                      <td className="px-3 py-1.5">{r.receipt_date}</td>
+                      <td className="px-3 py-1.5">{r.month}</td>
                       <td className="px-3 py-1.5 text-right">{r.premium.toLocaleString('ko-KR')}</td>
-                      <td className="px-3 py-1.5 text-right">{r.commission.toLocaleString('ko-KR')}</td>
                       <td className="px-3 py-1.5 text-red-600">{r.error ?? ''}</td>
                     </tr>
                   ))}
