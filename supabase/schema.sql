@@ -38,6 +38,8 @@ create table contracts (
   product_name text default '',
   customer_name text default '',
   receipt_date date,                 -- 영수일 (건별 상세 데이터가 없으면 null)
+  expiry_date date,                  -- 보험종기/만기일 (건별 상세 데이터가 없으면 null)
+  collection_status text,            -- 수금상태 (보험사 파일의 정상집금여부 등 원문 그대로 저장)
   count int not null default 0,
   premium numeric not null default 0,
   commission numeric not null default 0, -- 지급률 적용 전 원 수수료
