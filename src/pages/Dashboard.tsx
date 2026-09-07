@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import type { Banner, Contract, EducationEvent, Profile, Statement } from '../lib/types'
+import type { Banner, Contract, EducationEvent, Profile } from '../lib/types'
 
 // 별도 만기일 필드가 없어 영수일 + 1년을 계약 만기(갱신 예정일)로 추정한다.
 function addYears(dateStr: string, years: number): string {
@@ -178,21 +178,6 @@ const RENEWAL_BUCKETS = [
   { days: 7, label: '7일 이내', color: 'bg-rose-500' },
 ]
 
-const ZERO_STMT_SUBSET = {
-  recruit_first: 0, recruit_installment: 0, maintain: 0, clawback_revive: 0, general: 0, auto: 0,
-  mgmt_fee: 0, collection_fee: 0, personal_incentive: 0, corporate_incentive: 0, general_performance: 0, other_incentive: 0,
-  industrial_accident_ins: 0, employment_ins: 0, employment_ins_support: 0, income_tax: 0, resident_tax: 0,
-  incentive_offset: 0, other_deduction: 0, hq_support_offset: 0, workplace_cost: 0, unit_cost: 0, risk_reserve: 0, loan: 0,
-}
-const INCOME_SUM_FIELDS: (keyof typeof ZERO_STMT_SUBSET)[] = [
-  'recruit_first', 'recruit_installment', 'maintain', 'clawback_revive', 'general', 'auto',
-  'mgmt_fee', 'collection_fee', 'personal_incentive', 'corporate_incentive', 'general_performance', 'other_incentive',
-]
-const DEDUCTION_SUM_FIELDS: (keyof typeof ZERO_STMT_SUBSET)[] = [
-  'industrial_accident_ins', 'employment_ins', 'employment_ins_support', 'income_tax', 'resident_tax',
-  'incentive_offset', 'other_deduction', 'hq_support_offset', 'workplace_cost', 'unit_cost', 'risk_reserve', 'loan',
-]
-
 export default function Dashboard() {
   const { profile } = useAuth()
   // 본사관리자(및 지사/지점 관리자): 전체 현황 그대로.
@@ -206,7 +191,6 @@ export default function Dashboard() {
   const [agents, setAgents] = useState<Profile[]>([])
   const [invites, setInvites] = useState<{ email: string; name: string }[]>([])
   const [eduEvents, setEduEvents] = useState<EducationEvent[]>([])
-  const [myStatement, setMyStatement] = useState<Statement | null>(null)
   const [showAllNotices, setShowAllNotices] = useState(false)
   const [showAllEdu, setShowAllEdu] = useState(false)
 
@@ -225,13 +209,6 @@ export default function Dashboard() {
   const thisMonthNum = today.slice(5, 7)
   const thisMonth = today.slice(0, 7)
   const lastYearMonth = `${lastYear}-${thisMonthNum}`
-
-  useEffect(() => {
-    if (!profile) return
-    supabase.from('statements').select('*').eq('agent_id', profile.id).eq('month', thisMonth).maybeSingle()
-      .then(({ data }) => setMyStatement(data))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, thisMonth])
 
   const activeBanners = useMemo(() => {
     return showAllNotices ? banners : banners.slice(0, 4)
@@ -299,7 +276,6 @@ export default function Dashboard() {
     { label: `${scopeLabel}누적 계약 건수`, value: `${totalCountAll.toLocaleString('ko-KR')}건`, rate: ytd.count, color: 'emerald' as const, icon: <IconDocCheck /> },
     { label: `${scopeLabel}누적 수수료`, value: `${totalCommissionAll.toLocaleString('ko-KR')}원`, rate: ytd.commission, color: 'violet' as const, icon: <IconWallet /> },
   ]
-  const newPremiumCard = { label: `신규보험료(${Number(thisMonthNum)}월)`, value: `${newPremiumThisMonth.toLocaleString('ko-KR')}원`, rate: newPremiumRate, color: 'amber' as const, icon: <IconTrendUp /> }
   const renewPremiumCard = { label: `갱신보험료(${Number(thisMonthNum)}월)`, value: `${renewPremiumThisMonth.toLocaleString('ko-KR')}원`, rate: changeRate(renewPremiumThisMonth, renewPremiumLastYear), color: 'teal' as const, icon: <IconRefresh /> }
 
   // 갱신센터: 일반/자동차 계약의 영수일+1년을 만기 예정일로 보고 기간별로 집계
@@ -326,9 +302,6 @@ export default function Dashboard() {
     () => contracts.filter((c) => c.month === thisMonth && (c.agent_id === profile?.id)),
     [contracts, thisMonth, profile]
   )
-  const confirmedIncome = myStatement ? INCOME_SUM_FIELDS.reduce((s, k) => s + Number(myStatement[k] ?? 0), 0) : 0
-  const confirmedDeduction = myStatement ? DEDUCTION_SUM_FIELDS.reduce((s, k) => s + Number(myStatement[k] ?? 0), 0) : 0
-  const expectedPayout = myStatement ? confirmedIncome - confirmedDeduction : 0
   const estimatedCommission = sum(myContractsThisMonth, (c) => c.commission)
   const expectedClawback = sum(myContractsThisMonth.filter((c) => c.type === '환수'), (c) => Math.abs(c.commission))
   const newCommissionThisMonth = sum(myContractsThisMonth.filter((c) => c.type === '신규'), (c) => c.commission)
@@ -385,31 +358,27 @@ export default function Dashboard() {
       {!isHqStaff && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {baseStatCards.map((s) => <StatCard key={s.label} {...s} />)}
-          {isFieldAgent ? (
-            <div className="bg-white rounded-xl shadow p-5">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center mb-3 bg-amber-50 text-amber-600">
-                <IconTrendUp />
-              </div>
-              <p className="text-xs text-slate-500 mb-2">신규보험료({Number(thisMonthNum)}월)</p>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">장기계약</span>
-                  <span className="font-semibold text-slate-800">{newPremiumThisMonthByCategory.장기.toLocaleString('ko-KR')}원</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">일반계약</span>
-                  <span className="font-semibold text-slate-800">{newPremiumThisMonthByCategory.일반.toLocaleString('ko-KR')}원</span>
-                </div>
-              </div>
-              {newPremiumRate && (
-                <p className={`text-xs mt-2 font-medium ${newPremiumRate.up ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  전년 대비 {newPremiumRate.pct.toFixed(1)}% {newPremiumRate.up ? '↑' : '↓'}
-                </p>
-              )}
+          <div className="bg-white rounded-xl shadow p-5">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center mb-3 bg-amber-50 text-amber-600">
+              <IconTrendUp />
             </div>
-          ) : (
-            <StatCard {...newPremiumCard} />
-          )}
+            <p className="text-xs text-slate-500 mb-2">신규보험료({Number(thisMonthNum)}월)</p>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">장기계약</span>
+                <span className="font-semibold text-slate-800">{newPremiumThisMonthByCategory.장기.toLocaleString('ko-KR')}원</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">일반계약</span>
+                <span className="font-semibold text-slate-800">{newPremiumThisMonthByCategory.일반.toLocaleString('ko-KR')}원</span>
+              </div>
+            </div>
+            {newPremiumRate && (
+              <p className={`text-xs mt-2 font-medium ${newPremiumRate.up ? 'text-emerald-600' : 'text-rose-600'}`}>
+                전년 대비 {newPremiumRate.pct.toFixed(1)}% {newPremiumRate.up ? '↑' : '↓'}
+              </p>
+            )}
+          </div>
           <StatCard {...renewPremiumCard} />
         </div>
       )}
@@ -459,45 +428,22 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl shadow p-5 flex flex-col">
             <p className="text-sm font-semibold mb-4">수수료 현황</p>
             <div className="grid grid-cols-2 gap-3 mb-5">
-              {isFieldAgent ? (
-                <>
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">신규계약</p>
-                    <p className="font-bold text-emerald-600 mt-1">{newCommissionThisMonth.toLocaleString('ko-KR')}원</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">예상수수료</p>
-                    <p className="font-bold text-amber-600 mt-1">{estimatedCommission.toLocaleString('ko-KR')}원</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">갱신계약</p>
-                    <p className="font-bold text-blue-600 mt-1">{renewCommissionThisMonth.toLocaleString('ko-KR')}원</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">환수예정</p>
-                    <p className="font-bold text-rose-600 mt-1">{expectedClawback.toLocaleString('ko-KR')}원</p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">이번달 확정</p>
-                    <p className="font-bold text-emerald-600 mt-1">{confirmedIncome.toLocaleString('ko-KR')}원</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">지급예정</p>
-                    <p className="font-bold text-blue-600 mt-1">{expectedPayout.toLocaleString('ko-KR')}원</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">예상수수료</p>
-                    <p className="font-bold text-amber-600 mt-1">{estimatedCommission.toLocaleString('ko-KR')}원</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">환수예정</p>
-                    <p className="font-bold text-rose-600 mt-1">{expectedClawback.toLocaleString('ko-KR')}원</p>
-                  </div>
-                </>
-              )}
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">신규계약</p>
+                <p className="font-bold text-emerald-600 mt-1">{newCommissionThisMonth.toLocaleString('ko-KR')}원</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">예상수수료</p>
+                <p className="font-bold text-amber-600 mt-1">{estimatedCommission.toLocaleString('ko-KR')}원</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">갱신계약</p>
+                <p className="font-bold text-blue-600 mt-1">{renewCommissionThisMonth.toLocaleString('ko-KR')}원</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">환수예정</p>
+                <p className="font-bold text-rose-600 mt-1">{expectedClawback.toLocaleString('ko-KR')}원</p>
+              </div>
             </div>
             <Link
               to="/statement"
