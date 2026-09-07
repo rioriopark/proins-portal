@@ -17,9 +17,19 @@ function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
+// 신규계약은 등록 시점 기준 이번 달 안에서만 영수일을 입력할 수 있도록 범위를 제한한다.
+function monthStart() {
+  return `${today().slice(0, 7)}-01`
+}
+function monthEnd() {
+  const [y, m] = today().slice(0, 7).split('-').map(Number)
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+}
+
 export default function Contracts() {
-  const { profile, can } = useAuth()
-  const canManage = can('contracts')
+  const { profile } = useAuth()
+  // 계약 등록(신규계약)은 본사관리자와 본사담당자(소속이 본사인 담당자)만 할 수 있다.
+  const canManage = profile?.role === 'hq_admin' || (profile?.role === 'agent' && profile.org_id === 'hq')
   const [contracts, setContracts] = useState<Contract[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
@@ -70,6 +80,10 @@ export default function Contracts() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (form.receipt_date < monthStart() || form.receipt_date > monthEnd()) {
+      alert('신규계약은 이번 달 영수일로만 등록할 수 있습니다.')
+      return
+    }
     const { error } = await supabase.from('contracts').insert({
       agent_id: form.agent_id || profile?.id,
       month: form.receipt_date.slice(0, 7),
@@ -240,8 +254,9 @@ export default function Contracts() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">영수일</label>
-            <input type="date" value={form.receipt_date} onChange={(e) => setForm((f) => ({ ...f, receipt_date: e.target.value }))}
+            <label className="block text-xs text-slate-500 mb-1">영수일 (이번 달만 등록 가능)</label>
+            <input type="date" value={form.receipt_date} min={monthStart()} max={monthEnd()}
+              onChange={(e) => setForm((f) => ({ ...f, receipt_date: e.target.value }))}
               className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           </div>
           <div>
