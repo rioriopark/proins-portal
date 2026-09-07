@@ -390,8 +390,13 @@ export default function BulkImport() {
     return m
   }, [agentProfiles, profiles])
 
+  // 보험사 파일 자체에 사용인코드/사용인명이 둘 다 비어있는 행(담당자 정보 없음)은
+  // 미매칭으로 남기지 않고 박세환 앞으로 자동 배정한다.
+  const UNASSIGNED_FALLBACK_EMAIL = '34004152@proins.local'
+
   const fileRows = useMemo<FileRow[]>(() => {
     if (!dataRows.length) return []
+    const fallbackProfile = profiles.find((p) => p.email === UNASSIGNED_FALLBACK_EMAIL)
     const get = (row: string[], key: FieldKey) => {
       const idx = mapping[key]
       return idx >= 0 && idx < row.length ? (row[idx] ?? '').trim() : ''
@@ -413,7 +418,8 @@ export default function BulkImport() {
         const codeKey = agentCode ? `${insurer}|${agentCode}` : ''
         const autoProfile = codeKey ? codeMap.get(codeKey) : undefined
         const nameProfile = !autoProfile && agentName ? profiles.find((p) => p.name.trim() === agentName) : undefined
-        const matchedAuto = autoProfile ?? nameProfile
+        const noIdentifier = !agentCode && !agentName
+        const matchedAuto = autoProfile ?? nameProfile ?? (noIdentifier ? fallbackProfile : undefined)
         const agentKey = matchedAuto ? `p:${matchedAuto.id}` : agentCode ? `c:${agentCode}` : agentName ? `n:${agentName}` : 'unknown'
         const manualId = manualAssign[agentKey]
         const profile = matchedAuto ?? (manualId ? profiles.find((p) => p.id === manualId) : undefined)
