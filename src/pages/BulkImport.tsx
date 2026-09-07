@@ -4,13 +4,14 @@ import { useAuth } from '../lib/auth'
 import { toAuthEmail } from '../lib/id'
 import type { CompanyCode, Profile } from '../lib/types'
 
-const HEADER_HINT = '담당자아이디\t보험사\t계약번호\t계약자명\t종목\t영수일\t보험료'
-const EXAMPLE = 'shinminhye\tDB손해보험\t52616634160000\t홍길동\t장기\t2026-07-15\t2428500'
+const HEADER_HINT = '담당자명\t보험사\t계약번호\t계약자명\t종목\t영수일\t보험료'
+const EXAMPLE = '김은지\t삼성화재\t52616634160000\t홍길동\t장기\t2026-09-15\t2428500'
 
 const INSURERS = ['삼성화재', 'DB손보', '현대해상', 'KB손보', '메리츠화재', '롯데손해보험', '라이나손보', '한화손해보험', 'AIG손해보험']
 
 interface ParsedRow {
   raw: string[]
+  agentIdentifier: string
   agent_email: string
   company: string
   policy_no: string
@@ -26,9 +27,11 @@ interface ParsedRow {
   error?: string
 }
 
-// 담당자아이디/보험사/계약번호/계약자명/종목/영수일/보험료만 있어도 등록 가능하도록,
+// 담당자명/보험사/계약번호/계약자명/종목/영수일/보험료만 있어도 등록 가능하도록,
 // 구분은 '신규'·건수는 1건으로 기본값을 채우고, 지급월은 영수일에서 자동으로 뽑아낸다.
 // 수수료는 아직 몰라 0으로 들어간다(나중에 보험사 확정분으로 갱신 가능).
+// 첫 열은 이름으로 우선 매칭하고(rows에서 profiles와 대조), 이름으로 못 찾으면 아이디로 간주해
+// 예전처럼 미가입 담당자도 가입 시 자동 연결되도록 agent_email에 기본값을 채워둔다.
 function parseSheet(text: string): ParsedRow[] {
   const lines = text.trim().split(/\r?\n/).filter((l) => l.trim().length > 0)
   return lines.map((line) => {
@@ -37,6 +40,7 @@ function parseSheet(text: string): ParsedRow[] {
     const receiptDate = normalizeDate(receiptDateRaw ?? '')
     return {
       raw: cols,
+      agentIdentifier: (agentId ?? '').trim(),
       agent_email: agentId ? toAuthEmail(agentId) : '',
       company: company ?? '',
       policy_no: policyNo ?? '',
@@ -296,12 +300,14 @@ export default function BulkImport() {
   const rows = useMemo<ParsedRow[]>(() => {
     if (!text.trim()) return []
     return parseSheet(text).map((r) => {
-      const matched = profiles.find((p) => p.email.toLowerCase() === r.agent_email.toLowerCase())
+      const byName = r.agentIdentifier ? profiles.find((p) => p.name.trim() === r.agentIdentifier) : undefined
+      const agent_email = byName ? byName.email : r.agent_email
+      const matched = byName ?? profiles.find((p) => p.email.toLowerCase() === agent_email.toLowerCase())
       let error: string | undefined
-      if (!r.agent_email) error = '아이디 없음'
+      if (!agent_email) error = '담당자 없음'
       else if (!r.month || !/^\d{4}-\d{2}$/.test(r.month)) error = '영수일 형식 오류 (YYYY-MM-DD)'
       else if (!['장기', '일반', '자동차'].includes(r.category)) error = '종목 값 오류'
-      return { ...r, matched, error }
+      return { ...r, agent_email, matched, error }
     })
   }, [text, profiles])
 
@@ -348,7 +354,7 @@ export default function BulkImport() {
 
   async function handleDownloadSample() {
     const XLSX = await import('xlsx')
-    const header = ['담당자아이디', '보험사', '계약번호', '계약자명', '종목', '영수일', '보험료']
+    const header = ['담당자명', '보험사', '계약번호', '계약자명', '종목', '영수일', '보험료']
     const example = EXAMPLE.split('\t')
     const ws = XLSX.utils.aoa_to_sheet([header, example])
     ws['!cols'] = header.map(() => ({ wch: 16 }))
@@ -608,9 +614,9 @@ export default function BulkImport() {
         <>
           <p className="text-sm text-slate-500">
             엑셀에서 아래 순서대로 열을 만들어 셀을 드래그 선택 후 복사(Ctrl+C)한 다음, 아래 칸에 붙여넣기(Ctrl+V)하세요.
-            담당자아이디·보험사·계약번호·계약자명·종목·영수일·보험료만 입력해도 등록되며,
+            담당자명·보험사·계약번호·계약자명·종목·영수일·보험료만 입력해도 등록되며,
             지급월은 영수일에서 자동으로 뽑고 구분은 '신규', 건수는 1건, 수수료는 0원으로 처리됩니다(나중에 보험사 확정분으로 갱신 가능).
-            담당자가 아직 가입 전이어도 아이디만 맞으면 나중에 가입 시 자동으로 연결됩니다.
+            첫 열은 이름으로 먼저 찾고, 이름으로 못 찾으면 아이디로 간주해서 아직 가입 전인 담당자도 나중에 가입 시 자동으로 연결됩니다.
           </p>
 
           <div className="bg-white rounded-xl shadow p-5 space-y-3">
@@ -650,7 +656,7 @@ export default function BulkImport() {
               <table className="w-full text-xs">
                 <thead className="bg-slate-100 text-slate-600">
                   <tr>
-                    <th className="text-left px-3 py-2">아이디</th>
+                    <th className="text-left px-3 py-2">담당자명</th>
                     <th className="text-left px-3 py-2">담당자매칭</th>
                     <th className="text-left px-3 py-2">보험사</th>
                     <th className="text-left px-3 py-2">계약번호</th>
@@ -665,7 +671,7 @@ export default function BulkImport() {
                 <tbody>
                   {rows.slice(0, 50).map((r, i) => (
                     <tr key={i} className={`border-t border-slate-100 ${r.error ? 'bg-red-50' : ''}`}>
-                      <td className="px-3 py-1.5">{r.agent_email}</td>
+                      <td className="px-3 py-1.5">{r.agentIdentifier}</td>
                       <td className="px-3 py-1.5">{r.matched ? r.matched.name : '(미가입)'}</td>
                       <td className="px-3 py-1.5">{r.company}</td>
                       <td className="px-3 py-1.5">{r.policy_no}</td>
