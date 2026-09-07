@@ -263,7 +263,8 @@ export default function Contracts() {
   // 증권번호가 이제 예비계약에도 필수라 우선 증권번호로 정확히 매칭하고,
   // (옛날 데이터 등) 증권번호가 없는 예비계약만 담당자·보험사·고객명으로 대신 매칭한다.
   const preliminaryMatches = useMemo(() => {
-    if (!canManage) return []
+    // 본사관리자/본사담당자는 전체를, 위촉설계사는 본인 것만(RLS로 이미 그렇게만 조회됨) 볼 수 있다.
+    if (!canManage && !isFieldAgent) return []
     const officialByPolicyNo = new Map<string, Contract[]>()
     const officialByNameKey = new Map<string, Contract[]>()
     for (const c of contracts) {
@@ -285,7 +286,7 @@ export default function Contracts() {
         const nameKey = `${prelim.agent_id ?? prelim.agent_email ?? ''}|${prelim.company.trim()}|${prelim.customer_name.trim()}`
         return { prelim, matches: officialByNameKey.get(nameKey) ?? [] }
       })
-  }, [contracts, canManage])
+  }, [contracts, canManage, isFieldAgent])
 
   const canReassign = profile?.role === 'hq_admin'
   const agentOptions = [
@@ -456,7 +457,7 @@ export default function Contracts() {
         </div>
       )}
 
-      {canManage && (
+      {(canManage || isFieldAgent) && (
         <div className="bg-white rounded-xl shadow overflow-hidden">
           <button
             type="button"
@@ -501,12 +502,16 @@ export default function Contracts() {
                           </td>
                           <td className="px-4 py-2">{matches[0].month}</td>
                           <td className="px-4 py-2 text-right">
-                            <button
-                              onClick={() => deleteContract(prelim.id)}
-                              className="text-xs text-white bg-slate-800 rounded-md px-3 py-1.5 hover:bg-slate-700"
-                            >
-                              확정 처리(예비 삭제)
-                            </button>
+                            {canManage ? (
+                              <button
+                                onClick={() => deleteContract(prelim.id)}
+                                className="text-xs text-white bg-slate-800 rounded-md px-3 py-1.5 hover:bg-slate-700"
+                              >
+                                확정 처리(예비 삭제)
+                              </button>
+                            ) : (
+                              <span className="text-xs text-slate-400">본사 확인 대기</span>
+                            )}
                           </td>
                         </>
                       ) : (
