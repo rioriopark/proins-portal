@@ -35,6 +35,7 @@ create table contracts (
   category text not null,            -- '장기' | '일반' | '자동차'
   type text not null,                -- '신규' | '계속' | '환수' | '부활' | '비례공동'
   company text default '',
+  policy_no text,                    -- 계약번호/증권번호 (건별 상세 데이터가 없으면 null)
   product_name text default '',
   customer_name text default '',
   receipt_date date,                 -- 영수일 (건별 상세 데이터가 없으면 null)

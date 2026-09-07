@@ -126,7 +126,7 @@ export default function Contracts() {
         if (monthFilter !== '전체' && c.month !== monthFilter) return false
         if (keyword) {
           const agentName = agentInfo(c).name
-          const haystack = [c.customer_name, c.product_name, c.company, agentName].join(' ').toLowerCase()
+          const haystack = [c.customer_name, c.product_name, c.company, c.policy_no, agentName].join(' ').toLowerCase()
           if (!haystack.includes(keyword)) return false
         }
         return true
@@ -283,7 +283,7 @@ export default function Contracts() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="계약찾기: 고객명, 상품명, 보험사, 담당자"
+          placeholder="계약찾기: 고객명, 상품명, 보험사, 계약번호, 담당자"
           className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white w-64"
         />
         <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}
@@ -369,6 +369,7 @@ export default function Contracts() {
                                 <table className="w-full text-xs border border-slate-100 rounded-md overflow-hidden">
                                   <thead className="bg-slate-50 text-slate-500">
                                     <tr>
+                                      <th className="text-left px-3 py-1.5">계약번호</th>
                                       <th className="text-left px-3 py-1.5">계약자명</th>
                                       <th className="text-left px-3 py-1.5">상품명</th>
                                       <th className="text-left px-3 py-1.5">영수일</th>
@@ -382,6 +383,7 @@ export default function Contracts() {
                                       const rate = rateFor(c, agentInfo(c))
                                       return (
                                         <tr key={c.id} className="border-t border-slate-100">
+                                          <td className="px-3 py-1.5">{c.policy_no ?? '-'}</td>
                                           <td className="px-3 py-1.5">{c.customer_name}</td>
                                           <td className="px-3 py-1.5">{c.product_name}</td>
                                           <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
@@ -404,7 +406,7 @@ export default function Contracts() {
                                       )
                                     })}
                                     <tr className="border-t border-slate-200 font-semibold">
-                                      <td className="px-3 py-1.5" colSpan={3}>합계</td>
+                                      <td className="px-3 py-1.5" colSpan={4}>합계</td>
                                       <td className="px-3 py-1.5 text-right">{cg.premium.toLocaleString('ko-KR')}</td>
                                       <td className="px-3 py-1.5 text-right">{Math.round(cg.commission).toLocaleString('ko-KR')}</td>
                                       {canReassign && <td />}

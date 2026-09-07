@@ -45,7 +45,7 @@ function parseSheet(text: string): ParsedRow[] {
 
 type FieldKey =
   | 'agentCode' | 'agentName' | 'month' | 'category' | 'type' | 'count' | 'premium' | 'commission'
-  | 'productName' | 'customerName' | 'receiptDate' | 'expiryDate' | 'collectionStatus'
+  | 'policyNo' | 'productName' | 'customerName' | 'receiptDate' | 'expiryDate' | 'collectionStatus'
 
 const FIELD_META: { key: FieldKey; label: string; required: boolean; keywords: string[] }[] = [
   { key: 'agentCode', label: '설계사코드/사번', required: false, keywords: [] },
@@ -56,6 +56,7 @@ const FIELD_META: { key: FieldKey; label: string; required: boolean; keywords: s
   { key: 'count', label: '건수', required: false, keywords: ['건수', '계약건수'] },
   { key: 'premium', label: '보험료', required: true, keywords: ['보험료', '납입보험료', '월보험료', '초회보험료'] },
   { key: 'commission', label: '수수료', required: true, keywords: ['수수료', '지급수수료', '수수료액', '커미션'] },
+  { key: 'policyNo', label: '계약번호(증권번호)', required: false, keywords: ['계약번호', '증권번호', '증권No', '보험증권번호'] },
   { key: 'productName', label: '상품명', required: false, keywords: ['상품명', '상품'] },
   { key: 'customerName', label: '고객명', required: false, keywords: ['계약자명', '고객명', '계약자', '피보험자명'] },
   { key: 'receiptDate', label: '영수일', required: false, keywords: ['영수일', '접수일', '청약일', '응당일'] },
@@ -132,7 +133,7 @@ function pickBestColumn(headers: string[], body: string[][], predicate: (h: stri
 function emptyMapping(): Record<FieldKey, number> {
   return {
     agentCode: -1, agentName: -1, month: -1, category: -1, type: -1, count: -1, premium: -1, commission: -1,
-    productName: -1, customerName: -1, receiptDate: -1, expiryDate: -1, collectionStatus: -1,
+    policyNo: -1, productName: -1, customerName: -1, receiptDate: -1, expiryDate: -1, collectionStatus: -1,
   }
 }
 
@@ -232,6 +233,7 @@ interface FileRow {
   month: string
   category: string
   type: string
+  policyNo: string
   productName: string
   customerName: string
   receiptDate: string
@@ -432,6 +434,7 @@ export default function BulkImport() {
 
         return {
           key: `r${i}`, agentKey, agentLabel, profile, month, category, type,
+          policyNo: get(row, 'policyNo'),
           productName: get(row, 'productName'),
           customerName: get(row, 'customerName'),
           receiptDate: normalizeDate(get(row, 'receiptDate')),
@@ -492,6 +495,7 @@ export default function BulkImport() {
         category: r.category,
         type: r.type,
         company: insurer,
+        policy_no: r.policyNo || null,
         product_name: r.productName,
         customer_name: r.customerName,
         receipt_date: r.receiptDate || null,
@@ -760,6 +764,7 @@ export default function BulkImport() {
                   <table className="w-full text-xs">
                     <thead className="bg-slate-50 text-slate-500">
                       <tr>
+                        <th className="text-left px-3 py-1.5">계약번호</th>
                         <th className="text-left px-3 py-1.5">고객명</th>
                         <th className="text-left px-3 py-1.5">상품명</th>
                         <th className="text-left px-3 py-1.5">종목/구분</th>
@@ -774,6 +779,7 @@ export default function BulkImport() {
                     <tbody>
                       {g.rows.map((r) => (
                         <tr key={r.key} className={`border-t border-slate-100 ${r.error ? 'bg-red-50' : ''}`}>
+                          <td className="px-3 py-1.5">{r.policyNo}</td>
                           <td className="px-3 py-1.5">{r.customerName}</td>
                           <td className="px-3 py-1.5 max-w-52 truncate" title={r.productName}>{r.productName}</td>
                           <td className="px-3 py-1.5">{r.category}/{r.type}</td>
