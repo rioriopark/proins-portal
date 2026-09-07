@@ -180,12 +180,11 @@ const RENEWAL_BUCKETS = [
 
 export default function Dashboard() {
   const { profile } = useAuth()
-  // 본사관리자(및 지사/지점 관리자): 전체 현황 그대로.
-  // 위촉설계사(소속이 본사가 아닌 담당자): 본인 실적/수수료 위주.
-  // 본사담당자(소속이 본사인 담당자): 커미션이 아닌 임금 기반이라 관련 위젯을 뺀 최소 화면.
+  // 본사관리자(및 지사/지점 관리자)와 본사담당자(소속이 본사인 담당자)는 동일한 구성을 보되,
+  // 본사담당자는 커미션이 아닌 임금 기반이라 "수수료 현황"만 제외한다.
+  // 위촉설계사(소속이 본사가 아닌 담당자)는 다른 설계사 실적(TOP5)을 볼 권한이 없어 그것만 제외한다.
   const isFieldAgent = profile?.role === 'agent' && profile.org_id !== 'hq'
   const isHqStaff = profile?.role === 'agent' && profile.org_id === 'hq'
-  const isManager = profile != null && profile.role !== 'agent'
   const [contracts, setContracts] = useState<Contract[]>([])
   const [banners, setBanners] = useState<Banner[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
@@ -270,6 +269,8 @@ export default function Dashboard() {
 
   // 위촉설계사는 RLS로 이미 본인 계약만 조회되므로, 라벨도 "나의 ~"로 구분해준다.
   const scopeLabel = isFieldAgent ? '나의 ' : ''
+  // 갱신센터는 항상, 수수료 현황은 본사담당자만 제외, TOP5는 위촉설계사만 제외 — 보이는 카드 수에 맞춰 그리드 열 수를 정한다.
+  const middleCardCount = 1 + (isHqStaff ? 0 : 1) + (isFieldAgent ? 0 : 1)
 
   const baseStatCards = [
     { label: `${scopeLabel}누적 보험료`, value: `${totalPremiumAll.toLocaleString('ko-KR')}원`, rate: ytd.premium, color: 'blue' as const, icon: <IconWon /> },
@@ -324,7 +325,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {!isHqStaff && <PortalLinksBar />}
+      <PortalLinksBar />
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
@@ -355,9 +356,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {!isHqStaff && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {baseStatCards.map((s) => <StatCard key={s.label} {...s} />)}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {baseStatCards.map((s) => <StatCard key={s.label} {...s} />)}
           <div className="bg-white rounded-xl shadow p-5">
             <div className="w-9 h-9 rounded-full flex items-center justify-center mb-3 bg-amber-50 text-amber-600">
               <IconTrendUp />
@@ -380,22 +380,9 @@ export default function Dashboard() {
             )}
           </div>
           <StatCard {...renewPremiumCard} />
-        </div>
-      )}
+      </div>
 
-      {isHqStaff ? (
-        <div className="bg-white rounded-xl shadow p-5 flex flex-col items-start gap-2 max-w-sm">
-          <p className="text-sm font-semibold">임금명세서</p>
-          <p className="text-xs text-slate-500">이번달 임금명세서를 확인하세요.</p>
-          <Link
-            to="/wage-statement"
-            className="mt-1 text-sm font-medium text-white bg-slate-800 rounded-md px-4 py-2 hover:bg-slate-700"
-          >
-            임금명세서 보기
-          </Link>
-        </div>
-      ) : (
-        <div className={`grid grid-cols-1 gap-4 ${isManager ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
+      <div className={`grid grid-cols-1 gap-4 ${middleCardCount === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
           <div className="bg-white rounded-xl shadow p-5 flex flex-col">
             <p className="text-sm font-semibold mb-4">갱신센터</p>
             <div className="grid grid-cols-4 gap-2 text-center mb-3">
@@ -425,35 +412,37 @@ export default function Dashboard() {
             </Link>
           </div>
 
-          <div className="bg-white rounded-xl shadow p-5 flex flex-col">
-            <p className="text-sm font-semibold mb-4">수수료 현황</p>
-            <div className="grid grid-cols-2 gap-3 mb-5">
-              <div className="bg-slate-50 rounded-lg p-3">
-                <p className="text-xs text-slate-500">신규계약</p>
-                <p className="font-bold text-emerald-600 mt-1">{newCommissionThisMonth.toLocaleString('ko-KR')}원</p>
+          {!isHqStaff && (
+            <div className="bg-white rounded-xl shadow p-5 flex flex-col">
+              <p className="text-sm font-semibold mb-4">수수료 현황</p>
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500">신규계약</p>
+                  <p className="font-bold text-emerald-600 mt-1">{newCommissionThisMonth.toLocaleString('ko-KR')}원</p>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500">예상수수료</p>
+                  <p className="font-bold text-amber-600 mt-1">{estimatedCommission.toLocaleString('ko-KR')}원</p>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500">갱신계약</p>
+                  <p className="font-bold text-blue-600 mt-1">{renewCommissionThisMonth.toLocaleString('ko-KR')}원</p>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500">환수예정</p>
+                  <p className="font-bold text-rose-600 mt-1">{expectedClawback.toLocaleString('ko-KR')}원</p>
+                </div>
               </div>
-              <div className="bg-slate-50 rounded-lg p-3">
-                <p className="text-xs text-slate-500">예상수수료</p>
-                <p className="font-bold text-amber-600 mt-1">{estimatedCommission.toLocaleString('ko-KR')}원</p>
-              </div>
-              <div className="bg-slate-50 rounded-lg p-3">
-                <p className="text-xs text-slate-500">갱신계약</p>
-                <p className="font-bold text-blue-600 mt-1">{renewCommissionThisMonth.toLocaleString('ko-KR')}원</p>
-              </div>
-              <div className="bg-slate-50 rounded-lg p-3">
-                <p className="text-xs text-slate-500">환수예정</p>
-                <p className="font-bold text-rose-600 mt-1">{expectedClawback.toLocaleString('ko-KR')}원</p>
-              </div>
+              <Link
+                to="/statement"
+                className="mt-auto text-center text-sm font-medium text-white bg-slate-800 rounded-md py-2 hover:bg-slate-700"
+              >
+                수수료명세서 보기
+              </Link>
             </div>
-            <Link
-              to="/statement"
-              className="mt-auto text-center text-sm font-medium text-white bg-slate-800 rounded-md py-2 hover:bg-slate-700"
-            >
-              수수료명세서 보기
-            </Link>
-          </div>
+          )}
 
-          {isManager && (
+          {!isFieldAgent && (
             <div className="bg-white rounded-xl shadow p-5">
               <div className="flex items-center gap-1.5 mb-4">
                 <IconTrophy />
@@ -494,7 +483,6 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow p-5">
