@@ -3,8 +3,8 @@ import { supabase } from '../lib/supabase'
 import { toAuthEmail } from '../lib/id'
 import type { CompanyCode, Profile } from '../lib/types'
 
-const HEADER_HINT = '담당자아이디\t지급월\t종목\t구분\t보험사\t건수\t보험료\t수수료'
-const EXAMPLE = 'shinminhye\t2026-07\t장기\t신규\tDB손해보험\t4\t2428500\t339988'
+const HEADER_HINT = '담당자아이디\t지급월\t종목\t보험사\t보험료\t수수료(선택)'
+const EXAMPLE = 'shinminhye\t2026-07\t장기\tDB손해보험\t2428500\t339988'
 
 const INSURERS = ['삼성화재', 'DB손보', '현대해상', 'KB손보', '메리츠화재', '롯데손해보험', '라이나손보', '한화손해보험', 'AIG손해보험']
 
@@ -22,19 +22,21 @@ interface ParsedRow {
   error?: string
 }
 
+// 담당자아이디/지급월/종목/보험사/보험료만 있어도 등록 가능하도록, 구분은 '신규'·건수는 1건으로 기본값을 채운다.
+// 수수료는 마지막에 선택으로 넣을 수 있고, 비워두면 0으로 들어간다(나중에 보험사 확정분으로 갱신 가능).
 function parseSheet(text: string): ParsedRow[] {
   const lines = text.trim().split(/\r?\n/).filter((l) => l.trim().length > 0)
   return lines.map((line) => {
     const cols = line.split(/\t|,/).map((c) => c.trim())
-    const [agentId, month, category, type, company, count, premium, commission] = cols
+    const [agentId, month, category, company, premium, commission] = cols
     return {
       raw: cols,
       agent_email: agentId ? toAuthEmail(agentId) : '',
       month: month ?? '',
       category: category ?? '',
-      type: type ?? '',
+      type: '신규',
       company: company ?? '',
-      count: Number(count ?? 0),
+      count: 1,
       premium: Number(premium ?? 0),
       commission: Number(commission ?? 0),
     }
@@ -572,6 +574,8 @@ export default function BulkImport() {
         <>
           <p className="text-sm text-slate-500">
             엑셀에서 아래 순서대로 열을 만들어 셀을 드래그 선택 후 복사(Ctrl+C)한 다음, 아래 칸에 붙여넣기(Ctrl+V)하세요.
+            담당자아이디·지급월·종목·보험사·보험료만 입력해도 등록되며, 구분은 자동으로 '신규', 건수는 1건으로 처리됩니다.
+            수수료는 선택 입력이라 비워두면 0으로 들어갑니다.
             담당자가 아직 가입 전이어도 아이디만 맞으면 나중에 가입 시 자동으로 연결됩니다.
           </p>
 
