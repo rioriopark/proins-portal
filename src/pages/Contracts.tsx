@@ -30,6 +30,7 @@ export default function Contracts() {
   const [search, setSearch] = useState('')
   const [openAgents, setOpenAgents] = useState<Set<string>>(new Set())
   const [openCompanies, setOpenCompanies] = useState<Set<string>>(new Set())
+  const [newContractOpen, setNewContractOpen] = useState(false)
   const [form, setForm] = useState({
     agent_id: profile?.id ?? '',
     receipt_date: today(),
@@ -215,7 +216,17 @@ export default function Contracts() {
       <h1 className="text-xl font-bold text-slate-800">계약관리</h1>
 
       {canManage && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+        <div className="bg-white rounded-xl shadow overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setNewContractOpen((v) => !v)}
+            className="w-full flex items-center gap-1.5 bg-slate-100 px-4 py-2.5 text-left hover:bg-slate-200"
+          >
+            <span className="inline-block w-3 text-slate-400">{newContractOpen ? '▾' : '▸'}</span>
+            <span className="font-semibold text-sm text-slate-700">신규계약</span>
+          </button>
+          {newContractOpen && (
+        <form onSubmit={handleSubmit} className="p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
           <div className="col-span-2">
             <label className="block text-xs text-slate-500 mb-1">담당자</label>
             <select
@@ -276,6 +287,8 @@ export default function Contracts() {
             계약 등록
           </button>
         </form>
+          )}
+        </div>
       )}
 
       <div className="flex flex-wrap gap-3">
