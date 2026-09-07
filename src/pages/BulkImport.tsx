@@ -325,6 +325,8 @@ export default function BulkImport() {
   const [skippedFiles, setSkippedFiles] = useState<string[]>([])
   const [headers, setHeaders] = useState<string[]>([])
   const [dataRows, setDataRows] = useState<string[][]>([])
+  // dataRows의 각 행이 어느 파일에서 왔는지에 맞는 지급월(파일마다 따로 자동인식됨). 열에 지급월이 없을 때만 쓰인다.
+  const [rowMonths, setRowMonths] = useState<string[]>([])
   const [mapping, setMapping] = useState<Record<FieldKey, number>>(emptyMapping())
   const [fileMonth, setFileMonth] = useState('')
   const [manualAssign, setManualAssign] = useState<Record<string, string>>({})
@@ -342,7 +344,7 @@ export default function BulkImport() {
       const XLSX = await import('xlsx')
       let canonicalHeaders: string[] | null = null
       let combinedBody: string[][] = []
-      let month = ''
+      let combinedRowMonths: string[] = []
       const names: string[] = []
       const skipped: string[] = []
       for (const f of files) {
@@ -353,7 +355,9 @@ export default function BulkImport() {
         if (!grid.length) { skipped.push(`${f.name} (빈 파일)`); continue }
         const headerIdx = findHeaderRowIndex(grid)
         const hdrs = grid[headerIdx].map((c) => String(c ?? '').trim())
-        const body = grid.slice(headerIdx + 1).map((r) => hdrs.map((_, i) => String(r[i] ?? '').trim()))
+        const body = grid.slice(headerIdx + 1)
+          .map((r) => hdrs.map((_, i) => String(r[i] ?? '').trim()))
+          .filter((row) => row.some((cell) => cell))
         if (!canonicalHeaders) {
           canonicalHeaders = hdrs
         } else if (hdrs.length !== canonicalHeaders.length) {
@@ -361,16 +365,17 @@ export default function BulkImport() {
           continue
         }
         combinedBody = combinedBody.concat(body)
+        combinedRowMonths = combinedRowMonths.concat(Array(body.length).fill(guessFileMonth(grid, headerIdx)))
         names.push(f.name)
-        if (!month) month = guessFileMonth(grid, headerIdx)
       }
       if (!canonicalHeaders) { setFileNames([]); setSkippedFiles(skipped); return }
       setFileNames(names)
       setSkippedFiles(skipped)
       setHeaders(canonicalHeaders)
       setDataRows(combinedBody)
+      setRowMonths(combinedRowMonths)
       setMapping(guessMapping(canonicalHeaders, combinedBody))
-      setFileMonth(month)
+      setFileMonth('')
       setManualAssign({})
       setResult(null)
     } finally {
@@ -404,14 +409,13 @@ export default function BulkImport() {
       return idx >= 0 && idx < row.length ? (row[idx] ?? '').trim() : ''
     }
     return dataRows
-      .filter((row) => row.some((cell) => cell))
       .map((row, i) => {
         const agentCode = get(row, 'agentCode')
         const agentName = get(row, 'agentName')
         const rawCategory = get(row, 'category')
         const rawType = get(row, 'type')
         const rawMonth = get(row, 'month')
-        const month = rawMonth ? normalizeMonth(rawMonth) : fileMonth
+        const month = rawMonth ? normalizeMonth(rawMonth) : (rowMonths[i] || fileMonth)
         const category = rawCategory ? normalizeCategory(rawCategory) : inferCategoryFallback(insurer, headers, row)
         const type = rawType || inferTypeFallback(insurer, headers, row)
         const premium = toNumber(get(row, 'premium'))
@@ -444,7 +448,7 @@ export default function BulkImport() {
           premium, commission, error,
         }
       })
-  }, [dataRows, mapping, fileMonth, insurer, headers, codeMap, profiles, manualAssign])
+  }, [dataRows, rowMonths, mapping, fileMonth, insurer, headers, codeMap, profiles, manualAssign])
 
   const unresolvedAgents = useMemo(() => {
     const map = new Map<string, string>()
@@ -527,6 +531,7 @@ export default function BulkImport() {
       setSkippedFiles([])
       setHeaders([])
       setDataRows([])
+      setRowMonths([])
       setMapping(emptyMapping())
       setFileMonth('')
       setManualAssign({})
@@ -703,7 +708,7 @@ export default function BulkImport() {
                 {mapping.month < 0 && (
                   <label className="block text-xs pt-1">
                     <span className="block text-slate-500 mb-1">
-                      지급월 (파일에 열이 없어 값 하나를 전체 행에 적용합니다 · 안내문에서 자동 인식 시도함)
+                      지급월 (열이 없는 파일은 안내문에서 자동 인식하며, 실패한 파일에만 이 값을 적용합니다)
                     </span>
                     <input
                       type="month"
