@@ -171,6 +171,12 @@ const DEDUCTION_SUM_FIELDS: (keyof typeof ZERO_STMT_SUBSET)[] = [
 
 export default function Dashboard() {
   const { profile } = useAuth()
+  // 본사관리자(및 지사/지점 관리자): 전체 현황 그대로.
+  // 위촉설계사(소속이 본사가 아닌 담당자): 본인 실적/수수료 위주.
+  // 본사담당자(소속이 본사인 담당자): 커미션이 아닌 임금 기반이라 관련 위젯을 뺀 최소 화면.
+  const isFieldAgent = profile?.role === 'agent' && profile.org_id !== 'hq'
+  const isHqStaff = profile?.role === 'agent' && profile.org_id === 'hq'
+  const isManager = profile != null && profile.role !== 'agent'
   const [contracts, setContracts] = useState<Contract[]>([])
   const [banners, setBanners] = useState<Banner[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
@@ -252,10 +258,13 @@ export default function Dashboard() {
     [contracts, lastYearMonth]
   )
 
+  // 위촉설계사는 RLS로 이미 본인 계약만 조회되므로, 라벨도 "나의 ~"로 구분해준다.
+  const scopeLabel = isFieldAgent ? '나의 ' : ''
+
   const statCards = [
-    { label: '누적 보험료', value: `${totalPremiumAll.toLocaleString('ko-KR')}원`, rate: ytd.premium, color: 'blue' as const, icon: <IconWon /> },
-    { label: '누적 계약 건수', value: `${totalCountAll.toLocaleString('ko-KR')}건`, rate: ytd.count, color: 'emerald' as const, icon: <IconDocCheck /> },
-    { label: '누적 수수료', value: `${totalCommissionAll.toLocaleString('ko-KR')}원`, rate: ytd.commission, color: 'violet' as const, icon: <IconWallet /> },
+    { label: `${scopeLabel}누적 보험료`, value: `${totalPremiumAll.toLocaleString('ko-KR')}원`, rate: ytd.premium, color: 'blue' as const, icon: <IconWon /> },
+    { label: `${scopeLabel}누적 계약 건수`, value: `${totalCountAll.toLocaleString('ko-KR')}건`, rate: ytd.count, color: 'emerald' as const, icon: <IconDocCheck /> },
+    { label: `${scopeLabel}누적 수수료`, value: `${totalCommissionAll.toLocaleString('ko-KR')}원`, rate: ytd.commission, color: 'violet' as const, icon: <IconWallet /> },
     { label: `신규보험료(${Number(thisMonthNum)}월)`, value: `${newPremiumThisMonth.toLocaleString('ko-KR')}원`, rate: changeRate(newPremiumThisMonth, newPremiumLastYear), color: 'amber' as const, icon: <IconTrendUp /> },
     { label: `갱신보험료(${Number(thisMonthNum)}월)`, value: `${renewPremiumThisMonth.toLocaleString('ko-KR')}원`, rate: changeRate(renewPremiumThisMonth, renewPremiumLastYear), color: 'teal' as const, icon: <IconRefresh /> },
   ]
@@ -307,7 +316,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <PortalLinksBar />
+      {!isHqStaff && <PortalLinksBar />}
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
@@ -338,120 +347,137 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {statCards.map((s) => (
-          <div key={s.label} className="bg-white rounded-xl shadow p-5">
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center mb-3 ${STAT_COLORS[s.color].bg} ${STAT_COLORS[s.color].text}`}>
-              {s.icon}
+      {!isHqStaff && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          {statCards.map((s) => (
+            <div key={s.label} className="bg-white rounded-xl shadow p-5">
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center mb-3 ${STAT_COLORS[s.color].bg} ${STAT_COLORS[s.color].text}`}>
+                {s.icon}
+              </div>
+              <p className="text-xs text-slate-500">{s.label}</p>
+              <p className="text-lg font-bold mt-1 text-slate-800">{s.value}</p>
+              {s.rate && (
+                <p className={`text-xs mt-1 font-medium ${s.rate.up ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  전년 대비 {s.rate.pct.toFixed(1)}% {s.rate.up ? '↑' : '↓'}
+                </p>
+              )}
             </div>
-            <p className="text-xs text-slate-500">{s.label}</p>
-            <p className="text-lg font-bold mt-1 text-slate-800">{s.value}</p>
-            {s.rate && (
-              <p className={`text-xs mt-1 font-medium ${s.rate.up ? 'text-emerald-600' : 'text-rose-600'}`}>
-                전년 대비 {s.rate.pct.toFixed(1)}% {s.rate.up ? '↑' : '↓'}
-              </p>
-            )}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl shadow p-5 flex flex-col">
-          <p className="text-sm font-semibold mb-4">갱신센터</p>
-          <div className="grid grid-cols-4 gap-2 text-center mb-3">
-            {renewalBuckets.map((b) => (
-              <div key={b.days}>
-                <p className="text-xs text-slate-400">{b.label}</p>
-                <p className="text-lg font-bold text-slate-800 mt-1">{b.count}건</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">{b.premium.toLocaleString('ko-KR')}원</p>
-              </div>
-            ))}
-          </div>
-          <div className="flex items-end gap-1.5 h-10 mb-5">
-            {renewalBuckets.map((b) => (
-              <div key={b.days} className="flex-1 flex items-end">
-                <div
-                  className={`w-full rounded-t ${b.color}`}
-                  style={{ height: `${Math.max(6, (b.count / maxBucketCount) * 100)}%` }}
-                />
-              </div>
-            ))}
-          </div>
+      {isHqStaff ? (
+        <div className="bg-white rounded-xl shadow p-5 flex flex-col items-start gap-2 max-w-sm">
+          <p className="text-sm font-semibold">임금명세서</p>
+          <p className="text-xs text-slate-500">이번달 임금명세서를 확인하세요.</p>
           <Link
-            to="/renewals"
-            className="mt-auto text-center text-sm font-medium text-white bg-slate-800 rounded-md py-2 hover:bg-slate-700"
+            to="/wage-statement"
+            className="mt-1 text-sm font-medium text-white bg-slate-800 rounded-md px-4 py-2 hover:bg-slate-700"
           >
-            갱신관리 바로가기
+            임금명세서 보기
           </Link>
         </div>
-
-        <div className="bg-white rounded-xl shadow p-5 flex flex-col">
-          <p className="text-sm font-semibold mb-4">수수료 현황</p>
-          <div className="grid grid-cols-2 gap-3 mb-5">
-            <div className="bg-slate-50 rounded-lg p-3">
-              <p className="text-xs text-slate-500">이번달 확정</p>
-              <p className="font-bold text-emerald-600 mt-1">{confirmedIncome.toLocaleString('ko-KR')}원</p>
+      ) : (
+        <div className={`grid grid-cols-1 gap-4 ${isManager ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
+          <div className="bg-white rounded-xl shadow p-5 flex flex-col">
+            <p className="text-sm font-semibold mb-4">갱신센터</p>
+            <div className="grid grid-cols-4 gap-2 text-center mb-3">
+              {renewalBuckets.map((b) => (
+                <div key={b.days}>
+                  <p className="text-xs text-slate-400">{b.label}</p>
+                  <p className="text-lg font-bold text-slate-800 mt-1">{b.count}건</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{b.premium.toLocaleString('ko-KR')}원</p>
+                </div>
+              ))}
             </div>
-            <div className="bg-slate-50 rounded-lg p-3">
-              <p className="text-xs text-slate-500">지급예정</p>
-              <p className="font-bold text-blue-600 mt-1">{expectedPayout.toLocaleString('ko-KR')}원</p>
+            <div className="flex items-end gap-1.5 h-10 mb-5">
+              {renewalBuckets.map((b) => (
+                <div key={b.days} className="flex-1 flex items-end">
+                  <div
+                    className={`w-full rounded-t ${b.color}`}
+                    style={{ height: `${Math.max(6, (b.count / maxBucketCount) * 100)}%` }}
+                  />
+                </div>
+              ))}
             </div>
-            <div className="bg-slate-50 rounded-lg p-3">
-              <p className="text-xs text-slate-500">예상수수료</p>
-              <p className="font-bold text-amber-600 mt-1">{estimatedCommission.toLocaleString('ko-KR')}원</p>
-            </div>
-            <div className="bg-slate-50 rounded-lg p-3">
-              <p className="text-xs text-slate-500">환수예정</p>
-              <p className="font-bold text-rose-600 mt-1">{expectedClawback.toLocaleString('ko-KR')}원</p>
-            </div>
+            <Link
+              to="/renewals"
+              className="mt-auto text-center text-sm font-medium text-white bg-slate-800 rounded-md py-2 hover:bg-slate-700"
+            >
+              갱신관리 바로가기
+            </Link>
           </div>
-          <Link
-            to="/statement"
-            className="mt-auto text-center text-sm font-medium text-white bg-slate-800 rounded-md py-2 hover:bg-slate-700"
-          >
-            수수료명세서 보기
-          </Link>
-        </div>
 
-        <div className="bg-white rounded-xl shadow p-5">
-          <div className="flex items-center gap-1.5 mb-4">
-            <IconTrophy />
-            <p className="text-sm font-semibold">설계사 실적 TOP 5 (이번달)</p>
+          <div className="bg-white rounded-xl shadow p-5 flex flex-col">
+            <p className="text-sm font-semibold mb-4">수수료 현황</p>
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">이번달 확정</p>
+                <p className="font-bold text-emerald-600 mt-1">{confirmedIncome.toLocaleString('ko-KR')}원</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">지급예정</p>
+                <p className="font-bold text-blue-600 mt-1">{expectedPayout.toLocaleString('ko-KR')}원</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">예상수수료</p>
+                <p className="font-bold text-amber-600 mt-1">{estimatedCommission.toLocaleString('ko-KR')}원</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs text-slate-500">환수예정</p>
+                <p className="font-bold text-rose-600 mt-1">{expectedClawback.toLocaleString('ko-KR')}원</p>
+              </div>
+            </div>
+            <Link
+              to="/statement"
+              className="mt-auto text-center text-sm font-medium text-white bg-slate-800 rounded-md py-2 hover:bg-slate-700"
+            >
+              수수료명세서 보기
+            </Link>
           </div>
-          {topAgents.length === 0 ? (
-            <p className="text-sm text-slate-400 py-8 text-center">이번달 등록된 실적이 없습니다.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="text-slate-400 text-xs">
-                <tr>
-                  <th className="text-left py-1.5 font-medium w-8">순위</th>
-                  <th className="text-left py-1.5 font-medium">설계사</th>
-                  <th className="text-right py-1.5 font-medium">보험료(원)</th>
-                  <th className="text-right py-1.5 font-medium">계약건수</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topAgents.map((a, i) => (
-                  <tr key={a.key} className="border-t border-slate-50">
-                    <td className="py-2">
-                      <span
-                        className={`inline-flex w-5 h-5 rounded-full text-[11px] font-bold items-center justify-center text-white ${
-                          i === 0 ? 'bg-amber-400' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-amber-700' : 'bg-slate-200 text-slate-500'
-                        }`}
-                      >
-                        {i + 1}
-                      </span>
-                    </td>
-                    <td className="py-2 font-medium text-slate-700">{agentName(a.sample)}</td>
-                    <td className="py-2 text-right">{a.premium.toLocaleString('ko-KR')}</td>
-                    <td className="py-2 text-right">{a.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          {isManager && (
+            <div className="bg-white rounded-xl shadow p-5">
+              <div className="flex items-center gap-1.5 mb-4">
+                <IconTrophy />
+                <p className="text-sm font-semibold">설계사 실적 TOP 5 (이번달)</p>
+              </div>
+              {topAgents.length === 0 ? (
+                <p className="text-sm text-slate-400 py-8 text-center">이번달 등록된 실적이 없습니다.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="text-slate-400 text-xs">
+                    <tr>
+                      <th className="text-left py-1.5 font-medium w-8">순위</th>
+                      <th className="text-left py-1.5 font-medium">설계사</th>
+                      <th className="text-right py-1.5 font-medium">보험료(원)</th>
+                      <th className="text-right py-1.5 font-medium">계약건수</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topAgents.map((a, i) => (
+                      <tr key={a.key} className="border-t border-slate-50">
+                        <td className="py-2">
+                          <span
+                            className={`inline-flex w-5 h-5 rounded-full text-[11px] font-bold items-center justify-center text-white ${
+                              i === 0 ? 'bg-amber-400' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-amber-700' : 'bg-slate-200 text-slate-500'
+                            }`}
+                          >
+                            {i + 1}
+                          </span>
+                        </td>
+                        <td className="py-2 font-medium text-slate-700">{agentName(a.sample)}</td>
+                        <td className="py-2 text-right">{a.premium.toLocaleString('ko-KR')}</td>
+                        <td className="py-2 text-right">{a.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           )}
         </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow p-5">
