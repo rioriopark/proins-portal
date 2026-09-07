@@ -258,8 +258,8 @@ export default function Contracts() {
     })
   }
 
-  // 위촉설계사가 등록한 예비계약 중, 보험사 확정 계약(예비 아님)이 이미 들어와 있는 것을 찾아
-  // 본사관리자/본사담당자가 확인 후 예비계약을 정리할 수 있게 한다.
+  // 위촉설계사가 등록한 예비계약을 전부 보여주되(매칭 대기 중인 것 포함), 보험사 확정 계약(예비 아님)이
+  // 이미 들어와 있으면 같이 찾아서 본사관리자/본사담당자가 확인 후 예비계약을 정리할 수 있게 한다.
   // 증권번호가 이제 예비계약에도 필수라 우선 증권번호로 정확히 매칭하고,
   // (옛날 데이터 등) 증권번호가 없는 예비계약만 담당자·보험사·고객명으로 대신 매칭한다.
   const preliminaryMatches = useMemo(() => {
@@ -285,7 +285,6 @@ export default function Contracts() {
         const nameKey = `${prelim.agent_id ?? prelim.agent_email ?? ''}|${prelim.company.trim()}|${prelim.customer_name.trim()}`
         return { prelim, matches: officialByNameKey.get(nameKey) ?? [] }
       })
-      .filter((x) => x.matches.length > 0)
   }, [contracts, canManage])
 
   const canReassign = profile?.role === 'hq_admin'
@@ -471,7 +470,7 @@ export default function Contracts() {
           </button>
           {matchOpen && (
             preliminaryMatches.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-6">확정 계약과 매칭된 예비계약이 없습니다.</p>
+              <p className="text-sm text-slate-400 text-center py-6">등록된 예비계약이 없습니다.</p>
             ) : (
               <table className="w-full text-sm">
                 <thead className="text-slate-500 text-xs border-b border-slate-100">
@@ -479,6 +478,7 @@ export default function Contracts() {
                     <th className="text-left px-4 py-2">담당자</th>
                     <th className="text-left px-4 py-2">고객명 / 증권번호</th>
                     <th className="text-right px-4 py-2">예비 보험료</th>
+                    <th className="text-left px-4 py-2">상태</th>
                     <th className="text-right px-4 py-2">확정 보험료</th>
                     <th className="text-left px-4 py-2">확정 지급월</th>
                     <th className="px-4 py-2" />
@@ -490,19 +490,35 @@ export default function Contracts() {
                       <td className="px-4 py-2">{agentInfo(prelim).name}</td>
                       <td className="px-4 py-2">{prelim.customer_name} / {prelim.policy_no}</td>
                       <td className="px-4 py-2 text-right">{prelim.premium.toLocaleString('ko-KR')}원</td>
-                      <td className="px-4 py-2 text-right">
-                        {matches[0].premium.toLocaleString('ko-KR')}원
-                        {matches.length > 1 && <span className="text-xs text-slate-400"> 외 {matches.length - 1}건</span>}
-                      </td>
-                      <td className="px-4 py-2">{matches[0].month}</td>
-                      <td className="px-4 py-2 text-right">
-                        <button
-                          onClick={() => deleteContract(prelim.id)}
-                          className="text-xs text-white bg-slate-800 rounded-md px-3 py-1.5 hover:bg-slate-700"
-                        >
-                          확정 처리(예비 삭제)
-                        </button>
-                      </td>
+                      {matches.length > 0 ? (
+                        <>
+                          <td className="px-4 py-2">
+                            <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">확정 계약 매칭됨</span>
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            {matches[0].premium.toLocaleString('ko-KR')}원
+                            {matches.length > 1 && <span className="text-xs text-slate-400"> 외 {matches.length - 1}건</span>}
+                          </td>
+                          <td className="px-4 py-2">{matches[0].month}</td>
+                          <td className="px-4 py-2 text-right">
+                            <button
+                              onClick={() => deleteContract(prelim.id)}
+                              className="text-xs text-white bg-slate-800 rounded-md px-3 py-1.5 hover:bg-slate-700"
+                            >
+                              확정 처리(예비 삭제)
+                            </button>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-2">
+                            <span className="text-[11px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">대기중</span>
+                          </td>
+                          <td className="px-4 py-2 text-right text-slate-300">-</td>
+                          <td className="px-4 py-2 text-slate-300">-</td>
+                          <td className="px-4 py-2" />
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
