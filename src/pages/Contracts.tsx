@@ -214,7 +214,15 @@ export default function Contracts() {
     return ''
   }
 
+  async function deleteContract(contractId: string) {
+    if (!confirm('이 계약을 삭제할까요? 되돌릴 수 없습니다.')) return
+    const { error } = await supabase.from('contracts').delete().eq('id', contractId)
+    if (error) alert('삭제 실패: ' + error.message)
+    else load()
+  }
+
   async function reassignAgent(contractId: string, value: string) {
+    if (value === 'delete') { deleteContract(contractId); return }
     const [kind, key] = value.split(/:(.+)/)
     const patch =
       kind === 'p'
@@ -427,6 +435,7 @@ export default function Contracts() {
                                                 {agentOptions.map((o) => (
                                                   <option key={o.value} value={o.value}>{o.label}</option>
                                                 ))}
+                                                <option value="delete" style={{ color: '#dc2626' }}>삭제</option>
                                               </select>
                                             </td>
                                           )}

@@ -467,6 +467,9 @@ create policy "contracts_update_scope" on contracts
       and exists (select 1 from profiles p where p.id = contracts.agent_id and is_org_descendant(my_org(), p.org_id))
     )
   );
+-- 계약 삭제(담당자 변경 드롭다운의 "삭제")는 본사관리자만 가능
+create policy "contracts_delete_hq_admin" on contracts
+  for delete using (my_role() = 'hq_admin');
 
 -- pending_invites: hq_admin 은 전체, branch_admin/store_manager 는 자기 하위 조직만 초대 가능. 본인 이메일 초대장은 회원가입 전 자기 자신도 조회 가능(가입 화면 안내용은 생략, service 단에서만 사용)
 create policy "invites_manage_scope" on pending_invites
