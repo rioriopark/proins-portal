@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Contract, ContractCategory, Profile } from '../lib/types'
 
@@ -50,8 +50,10 @@ export default function Renewals() {
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const { data } = await supabase.from('contracts').select('*').in('category', ['일반', '자동차'])
-      setContracts(data ?? [])
+      const data = await fetchAllRows<Contract>((from, to) =>
+        supabase.from('contracts').select('*').in('category', ['일반', '자동차']).range(from, to)
+      )
+      setContracts(data)
       if (canManage) {
         const [{ data: p }, { data: i }] = await Promise.all([
           supabase.from('profiles').select('*').order('name'),

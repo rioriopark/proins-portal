@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Contract, ContractCategory, ContractType, Profile } from '../lib/types'
 
@@ -44,12 +44,15 @@ export default function Contracts() {
 
   async function load() {
     setLoading(true)
-    const { data: c } = await supabase
-      .from('contracts')
-      .select('*')
-      .order('receipt_date', { ascending: false })
-      .order('created_at', { ascending: false })
-    setContracts(c ?? [])
+    const c = await fetchAllRows<Contract>((from, to) =>
+      supabase
+        .from('contracts')
+        .select('*')
+        .order('receipt_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .range(from, to)
+    )
+    setContracts(c)
     if (canManage) {
       const { data: p } = await supabase.from('profiles').select('*').order('name')
       setAgents(p ?? [])

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Contract, Profile } from '../lib/types'
 
@@ -27,8 +27,10 @@ export default function Collections() {
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const { data } = await supabase.from('contracts').select('*').not('collection_status', 'is', null)
-      setContracts(data ?? [])
+      const data = await fetchAllRows<Contract>((from, to) =>
+        supabase.from('contracts').select('*').not('collection_status', 'is', null).range(from, to)
+      )
+      setContracts(data)
       if (canManage) {
         const [{ data: p }, { data: i }] = await Promise.all([
           supabase.from('profiles').select('*').order('name'),

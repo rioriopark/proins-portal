@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Banner, Contract, EducationEvent, Profile, Statement } from '../lib/types'
 
@@ -181,7 +181,7 @@ export default function Dashboard() {
   const [showAllEdu, setShowAllEdu] = useState(false)
 
   useEffect(() => {
-    supabase.from('contracts').select('*').then(({ data }) => setContracts(data ?? []))
+    fetchAllRows<Contract>((from, to) => supabase.from('contracts').select('*').range(from, to)).then(setContracts)
     supabase.from('banners').select('*').order('created_at', { ascending: false }).then(({ data }) => setBanners(data ?? []))
     supabase.from('profiles').select('*').then(({ data }) => setAgents(data ?? []))
     supabase.from('pending_invites').select('email, name').then(({ data }) => setInvites(data ?? []))
