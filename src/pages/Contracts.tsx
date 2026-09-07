@@ -192,6 +192,8 @@ export default function Contracts() {
   const filtered = useMemo(
     () =>
       contracts.filter((c) => {
+        // 예비계약(확정 전)은 계약 리스트에 안 보이고 "예비계약 확인"에서만 관리한다.
+        if (c.is_preliminary) return false
         if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
         if (typeFilter !== '전체' && c.type !== typeFilter) return false
         if (monthFilter !== '전체' && c.month !== monthFilter) return false
@@ -646,12 +648,7 @@ export default function Contracts() {
                                       return (
                                         <tr key={c.id} className="border-t border-slate-100">
                                           <td className="px-3 py-1.5">{c.policy_no ?? '-'}</td>
-                                          <td className="px-3 py-1.5">
-                                            {c.customer_name}
-                                            {c.is_preliminary && (
-                                              <span className="ml-1.5 text-[10px] font-semibold text-amber-600 bg-amber-50 px-1 py-0.5 rounded">예비</span>
-                                            )}
-                                          </td>
+                                          <td className="px-3 py-1.5">{c.customer_name}</td>
                                           <td className="px-3 py-1.5">{c.product_name}</td>
                                           <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
                                           <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
