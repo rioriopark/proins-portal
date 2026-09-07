@@ -5,7 +5,7 @@ import { toAuthEmail } from '../lib/id'
 import type { CompanyCode, Profile } from '../lib/types'
 
 const HEADER_HINT = '담당자명\t보험사\t계약번호\t계약자명\t종목\t영수일\t보험료'
-const EXAMPLE = '김은지\t삼성화재\t52616634160000\t홍길동\t장기\t2026-09-15\t2428500'
+const EXAMPLE = '김은지\t삼성화재\t52616634160000\t홍길동\t일반\t2026-09-15\t2428500'
 
 const INSURERS = ['삼성화재', 'DB손보', '현대해상', 'KB손보', '메리츠화재', '롯데손해보험', '라이나손보', '한화손해보험', 'AIG손해보험']
 

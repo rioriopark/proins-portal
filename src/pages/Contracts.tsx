@@ -203,7 +203,7 @@ export default function Contracts() {
   async function handleDownloadSample() {
     const XLSX = await import('xlsx')
     const header = ['담당자명', '보험사', '계약번호', '계약자명', '종목', '영수일', '보험료']
-    const example = ['김은지', '삼성화재', '52616634160000', '홍길동', '장기', monthStart(), '2428500']
+    const example = ['김은지', '삼성화재', '52616634160000', '홍길동', '일반', monthStart(), '2428500']
     const ws = XLSX.utils.aoa_to_sheet([header, example])
     ws['!cols'] = header.map(() => ({ wch: 16 }))
     const wb = XLSX.utils.book_new()
@@ -498,7 +498,7 @@ export default function Contracts() {
               <div className="flex items-start justify-between gap-3">
                 <p className="text-xs text-slate-500 font-mono whitespace-pre-wrap break-all">
                   열 순서: 담당자명{'\t'}보험사{'\t'}계약번호{'\t'}계약자명{'\t'}종목{'\t'}영수일{'\t'}보험료
-                  {'\n'}예시: 김은지{'\t'}삼성화재{'\t'}52616634160000{'\t'}홍길동{'\t'}장기{'\t'}2026-09-15{'\t'}2428500
+                  {'\n'}예시: 김은지{'\t'}삼성화재{'\t'}52616634160000{'\t'}홍길동{'\t'}일반{'\t'}2026-09-15{'\t'}2428500
                 </p>
                 <button
                   type="button"
