@@ -346,6 +346,17 @@ export default function BulkImport() {
     if (failed === 0) setText('')
   }
 
+  async function handleDownloadSample() {
+    const XLSX = await import('xlsx')
+    const header = ['담당자아이디', '보험사', '계약번호', '계약자명', '종목', '영수일', '보험료']
+    const example = EXAMPLE.split('\t')
+    const ws = XLSX.utils.aoa_to_sheet([header, example])
+    ws['!cols'] = header.map(() => ({ wch: 16 }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '계약 일괄등록')
+    XLSX.writeFile(wb, '계약_일괄등록_샘플.xlsx')
+  }
+
   // ---- 파일 업로드 모드 ----
   const [insurer, setInsurer] = useState('')
   const [fileNames, setFileNames] = useState<string[]>([])
@@ -603,10 +614,19 @@ export default function BulkImport() {
           </p>
 
           <div className="bg-white rounded-xl shadow p-5 space-y-3">
-            <p className="text-xs font-mono text-slate-500 whitespace-pre-wrap break-all">
-              열 순서: {HEADER_HINT}
-              {'\n'}예시: {EXAMPLE}
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-xs font-mono text-slate-500 whitespace-pre-wrap break-all">
+                열 순서: {HEADER_HINT}
+                {'\n'}예시: {EXAMPLE}
+              </p>
+              <button
+                type="button"
+                onClick={handleDownloadSample}
+                className="shrink-0 text-xs text-blue-600 hover:underline whitespace-nowrap"
+              >
+                샘플 엑셀 다운로드
+              </button>
+            </div>
             <textarea
               value={text}
               onFocus={ensureProfiles}
