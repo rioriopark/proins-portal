@@ -58,6 +58,10 @@ export default function Contracts() {
     premium: 0,
     commission: 0,
   })
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkText, setBulkText] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkResult, setBulkResult] = useState<{ inserted: number; failed: number; errorMessage?: string } | null>(null)
   const [selfReportOpen, setSelfReportOpen] = useState(false)
   const [matchOpen, setMatchOpen] = useState(false)
   const [selfForm, setSelfForm] = useState({
@@ -124,6 +128,75 @@ export default function Contracts() {
       load()
     } else {
       alert('등록 실패: ' + error.message)
+    }
+  }
+
+  // 신규계약 옆 "엑셀 일괄등록": 담당자명·보험사·계약번호·계약자명·종목·영수일·보험료를 붙여넣어 한 번에 여러 건 등록.
+  // 단일 등록 폼과 동일하게 전부 이번 달 영수일 + 증권번호 필수 + 신규(예비계약)로 들어간다.
+  interface BulkRow {
+    raw: string[]
+    agentName: string
+    matched?: Profile
+    company: string
+    policyNo: string
+    customerName: string
+    category: string
+    receiptDate: string
+    month: string
+    premium: number
+    error?: string
+  }
+  const bulkRows = useMemo<BulkRow[]>(() => {
+    if (!bulkText.trim()) return []
+    return bulkText.trim().split(/\r?\n/).filter((l) => l.trim()).map((line) => {
+      const cols = line.split(/\t|,/).map((c) => c.trim())
+      const [agentName, company, policyNo, customerName, category, receiptDateRaw, premiumRaw] = cols
+      const receiptDate = (receiptDateRaw ?? '').replace(/[./]/g, '-')
+      const month = /^\d{4}-\d{2}/.test(receiptDate) ? receiptDate.slice(0, 7) : ''
+      const matched = agents.find((a) => a.name.trim() === (agentName ?? '').trim())
+      const premium = Number(String(premiumRaw ?? '').replace(/[,\s원]/g, '')) || 0
+      let error: string | undefined
+      if (!matched) error = '담당자 매칭 안 됨'
+      else if (!receiptDate || receiptDate < monthStart() || receiptDate > monthEnd()) error = '영수일은 이번 달만 가능'
+      else if (!['장기', '일반', '자동차'].includes(category ?? '')) error = '종목 값 오류'
+      else if (!policyNo) error = '증권번호 없음'
+      return { raw: cols, agentName: agentName ?? '', matched, company: company ?? '', policyNo: policyNo ?? '', customerName: customerName ?? '', category: category ?? '', receiptDate, month, premium, error }
+    })
+  }, [bulkText, agents])
+  const bulkValidCount = bulkRows.filter((r) => !r.error).length
+
+  async function handleBulkImport() {
+    setBulkBusy(true)
+    const payload = bulkRows.filter((r) => !r.error).map((r) => ({
+      agent_id: r.matched!.id,
+      month: r.month,
+      receipt_date: r.receiptDate,
+      category: r.category,
+      type: '신규',
+      company: r.company,
+      policy_no: r.policyNo,
+      customer_name: r.customerName,
+      count: 1,
+      premium: r.premium,
+      commission: 0,
+      is_preliminary: true,
+    }))
+    let inserted = 0
+    let failed = 0
+    let errorMessage: string | undefined
+    const { error, data } = await supabase.from('contracts').insert(payload).select('id')
+    if (error) {
+      failed = payload.length
+      errorMessage = error.message
+      console.error('신규계약 일괄등록 실패:', error)
+    } else {
+      inserted = data?.length ?? 0
+    }
+    setBulkBusy(false)
+    setBulkResult({ inserted, failed, errorMessage })
+    if (!error) {
+      setBulkText('')
+      load()
     }
   }
 
@@ -336,6 +409,7 @@ export default function Contracts() {
             <span className="font-semibold text-sm text-slate-700">신규계약</span>
           </button>
           {newContractOpen && (
+        <>
         <form onSubmit={handleSubmit} className="p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
           <div className="col-span-2">
             <label className="block text-xs text-slate-500 mb-1">담당자</label>
@@ -394,10 +468,59 @@ export default function Contracts() {
             <input type="number" value={form.commission} onChange={(e) => setForm((f) => ({ ...f, commission: Number(e.target.value) }))}
               className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           </div>
-          <button type="submit" className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium h-fit">
-            계약 등록
-          </button>
+          <div className="flex gap-2">
+            <button type="submit" className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium h-fit">
+              계약 등록
+            </button>
+            <button
+              type="button"
+              onClick={() => setBulkOpen((v) => !v)}
+              className="border border-slate-300 text-slate-600 rounded-md px-4 py-2 text-sm font-medium h-fit hover:bg-slate-50"
+            >
+              엑셀 일괄등록
+            </button>
+          </div>
         </form>
+
+          {bulkOpen && (
+            <div className="p-5 pt-0 space-y-3">
+              <p className="text-xs text-slate-500 font-mono whitespace-pre-wrap break-all">
+                열 순서: 담당자명{'\t'}보험사{'\t'}계약번호{'\t'}계약자명{'\t'}종목{'\t'}영수일{'\t'}보험료
+                {'\n'}예시: 김은지{'\t'}삼성화재{'\t'}52616634160000{'\t'}홍길동{'\t'}장기{'\t'}2026-09-15{'\t'}2428500
+              </p>
+              <textarea
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+                rows={6}
+                placeholder="여기에 엑셀 데이터를 붙여넣으세요"
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono"
+              />
+              {bulkRows.length > 0 && (
+                <div className="text-sm text-slate-600">
+                  총 {bulkRows.length}행 · 유효 {bulkValidCount}행
+                  {bulkValidCount < bulkRows.length && (
+                    <span className="text-red-600"> (오류 {bulkRows.length - bulkValidCount}행: {bulkRows.find((r) => r.error)?.error})</span>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={bulkBusy || bulkValidCount === 0}
+                onClick={handleBulkImport}
+                className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium disabled:opacity-40"
+              >
+                {bulkBusy ? '등록 중…' : `${bulkValidCount}건 일괄 등록`}
+              </button>
+              {bulkResult && (
+                <p className="text-sm">
+                  완료: <span className="text-emerald-600 font-medium">{bulkResult.inserted}건 성공</span>
+                  {bulkResult.failed > 0 && <span className="text-red-600 font-medium"> · {bulkResult.failed}건 실패</span>}
+                  {bulkResult.errorMessage && <span className="block text-xs text-red-600 mt-1">사유: {bulkResult.errorMessage}</span>}
+                </p>
+              )}
+            </div>
+          )}
+          </>
           )}
         </div>
       )}
