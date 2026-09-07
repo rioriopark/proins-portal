@@ -319,7 +319,8 @@ export default function BulkImport() {
 
   // ---- 파일 업로드 모드 ----
   const [insurer, setInsurer] = useState('')
-  const [fileName, setFileName] = useState('')
+  const [fileNames, setFileNames] = useState<string[]>([])
+  const [skippedFiles, setSkippedFiles] = useState<string[]>([])
   const [headers, setHeaders] = useState<string[]>([])
   const [dataRows, setDataRows] = useState<string[][]>([])
   const [mapping, setMapping] = useState<Record<FieldKey, number>>(emptyMapping())
@@ -327,27 +328,47 @@ export default function BulkImport() {
   const [manualAssign, setManualAssign] = useState<Record<string, string>>({})
   const [fileBusy, setFileBusy] = useState(false)
 
+  // 여러 파일을 한 번에 올리면 첫 파일의 헤더를 기준으로 나머지를 이어붙인다.
+  // 열 구성이 다른 파일이 섞이면 열 매핑이 어긋나므로, 그런 파일은 건너뛰고 알려준다.
   async function handleFile(e: ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]
+    const files = Array.from(e.target.files ?? [])
     e.target.value = ''
-    if (!f) return
+    if (files.length === 0) return
     await ensureProfiles()
     setFileBusy(true)
     try {
       const XLSX = await import('xlsx')
-      const buf = await f.arrayBuffer()
-      const wb = XLSX.read(buf, { type: 'array' })
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as (string | number)[][]
-      if (!grid.length) return
-      const headerIdx = findHeaderRowIndex(grid)
-      const hdrs = grid[headerIdx].map((c) => String(c ?? '').trim())
-      const body = grid.slice(headerIdx + 1).map((r) => hdrs.map((_, i) => String(r[i] ?? '').trim()))
-      setFileName(f.name)
-      setHeaders(hdrs)
-      setDataRows(body)
-      setMapping(guessMapping(hdrs, body))
-      setFileMonth(guessFileMonth(grid, headerIdx))
+      let canonicalHeaders: string[] | null = null
+      let combinedBody: string[][] = []
+      let month = ''
+      const names: string[] = []
+      const skipped: string[] = []
+      for (const f of files) {
+        const buf = await f.arrayBuffer()
+        const wb = XLSX.read(buf, { type: 'array' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as (string | number)[][]
+        if (!grid.length) { skipped.push(`${f.name} (빈 파일)`); continue }
+        const headerIdx = findHeaderRowIndex(grid)
+        const hdrs = grid[headerIdx].map((c) => String(c ?? '').trim())
+        const body = grid.slice(headerIdx + 1).map((r) => hdrs.map((_, i) => String(r[i] ?? '').trim()))
+        if (!canonicalHeaders) {
+          canonicalHeaders = hdrs
+        } else if (hdrs.length !== canonicalHeaders.length) {
+          skipped.push(`${f.name} (다른 파일과 열 구성이 달라 건너뜀)`)
+          continue
+        }
+        combinedBody = combinedBody.concat(body)
+        names.push(f.name)
+        if (!month) month = guessFileMonth(grid, headerIdx)
+      }
+      if (!canonicalHeaders) { setFileNames([]); setSkippedFiles(skipped); return }
+      setFileNames(names)
+      setSkippedFiles(skipped)
+      setHeaders(canonicalHeaders)
+      setDataRows(combinedBody)
+      setMapping(guessMapping(canonicalHeaders, combinedBody))
+      setFileMonth(month)
       setManualAssign({})
       setResult(null)
     } finally {
@@ -492,7 +513,8 @@ export default function BulkImport() {
     setBusy(false)
     setResult({ inserted, failed, errorMessage })
     if (failed === 0) {
-      setFileName('')
+      setFileNames([])
+      setSkippedFiles([])
       setHeaders([])
       setDataRows([])
       setMapping(emptyMapping())
@@ -620,17 +642,25 @@ export default function BulkImport() {
                 </select>
               </label>
               <label className="text-sm">
-                <span className="block text-xs font-medium text-slate-500 mb-1">엑셀 파일</span>
+                <span className="block text-xs font-medium text-slate-500 mb-1">엑셀 파일 (여러 개 선택 가능)</span>
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
+                  multiple
                   disabled={!insurer || fileBusy}
                   onChange={handleFile}
                   className="text-sm disabled:opacity-40"
                 />
               </label>
-              {fileName && <span className="text-xs text-slate-500">{fileName} · {dataRows.length}행 읽음</span>}
+              {fileNames.length > 0 && (
+                <span className="text-xs text-slate-500">
+                  {fileNames.length === 1 ? fileNames[0] : `${fileNames.length}개 파일`} · {dataRows.length}행 읽음
+                </span>
+              )}
             </div>
+            {skippedFiles.length > 0 && (
+              <p className="text-xs text-amber-600">건너뛴 파일: {skippedFiles.join(', ')}</p>
+            )}
 
             {headers.length > 0 && (
               <div className="border-t border-slate-100 pt-4 space-y-2">
