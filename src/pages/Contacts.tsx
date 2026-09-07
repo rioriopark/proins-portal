@@ -266,7 +266,9 @@ export default function Contacts() {
                   )}
                   <td className="text-center px-3 py-2 text-slate-500 break-words"><ExpandableCell value={c.company} /></td>
                   <td className="text-center px-3 py-2 font-medium break-words"><ExpandableCell value={c.name} /></td>
-                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.title} /></td>
+                  <td className="text-center px-3 py-2 break-words" title={c.title}>
+                    {c.title.length > 5 ? `${c.title.slice(0, 5)}…` : c.title}
+                  </td>
                   <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.business} /></td>
                   <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.office_phone} /></td>
                   <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.fax} /></td>
