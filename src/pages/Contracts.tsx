@@ -248,21 +248,23 @@ export default function Contracts() {
     })
   }
 
-  // 위촉설계사가 등록한 예비계약 중, 같은 담당자·고객명·상품명으로 보험사 확정 계약(예비 아님)이
+  // 위촉설계사가 등록한 예비계약 중, 같은 담당자·보험사·고객명으로 보험사 확정 계약(예비 아님)이
   // 이미 들어와 있는 것을 찾아 본사관리자/본사담당자가 확인 후 예비계약을 정리할 수 있게 한다.
+  // 상품명은 매칭 기준에서 뺐다 — 계약 일괄등록의 엑셀 붙여넣기 양식엔 상품명 칸이 없어서,
+  // 상품명까지 요구하면 그쪽으로 올라온 확정 계약과는 절대 매칭이 안 된다.
   const preliminaryMatches = useMemo(() => {
     if (!canManage) return []
     const officialByKey = new Map<string, Contract[]>()
     for (const c of contracts) {
       if (c.is_preliminary) continue
-      const key = `${c.agent_id ?? c.agent_email ?? ''}|${c.customer_name.trim()}|${c.product_name.trim()}`
+      const key = `${c.agent_id ?? c.agent_email ?? ''}|${c.company.trim()}|${c.customer_name.trim()}`
       if (!officialByKey.has(key)) officialByKey.set(key, [])
       officialByKey.get(key)!.push(c)
     }
     return contracts
       .filter((c) => c.is_preliminary)
       .map((prelim) => {
-        const key = `${prelim.agent_id ?? prelim.agent_email ?? ''}|${prelim.customer_name.trim()}|${prelim.product_name.trim()}`
+        const key = `${prelim.agent_id ?? prelim.agent_email ?? ''}|${prelim.company.trim()}|${prelim.customer_name.trim()}`
         return { prelim, matches: officialByKey.get(key) ?? [] }
       })
       .filter((x) => x.matches.length > 0)
