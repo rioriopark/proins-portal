@@ -56,6 +56,8 @@ export default function Contacts() {
   const [loading, setLoading] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState<'전체' | '보험사담당자' | '임직원' | '업무지원'>('전체')
   const [companyFilter, setCompanyFilter] = useState('전체')
+  const [titleFilter, setTitleFilter] = useState('전체')
+  const [businessFilter, setBusinessFilter] = useState('전체')
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -81,18 +83,40 @@ export default function Contacts() {
     [items]
   )
 
+  // 직급/부서·담당업무 필터 목록은 선택된 보험사 안에서만 나오는 값으로 좁혀서 보여준다.
+  const titles = useMemo(
+    () =>
+      [...new Set(
+        items
+          .filter((i) => i.category === '보험사담당자' && (companyFilter === '전체' || i.company === companyFilter))
+          .map((i) => i.title)
+      )].filter(Boolean),
+    [items, companyFilter]
+  )
+  const businesses = useMemo(
+    () =>
+      [...new Set(
+        items
+          .filter((i) => i.category === '보험사담당자' && (companyFilter === '전체' || i.company === companyFilter))
+          .map((i) => i.business)
+      )].filter(Boolean),
+    [items, companyFilter]
+  )
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return items.filter((i) => {
       if (categoryFilter !== '전체' && i.category !== categoryFilter) return false
       if (categoryFilter === '보험사담당자' && companyFilter !== '전체' && i.company !== companyFilter) return false
+      if (categoryFilter === '보험사담당자' && titleFilter !== '전체' && i.title !== titleFilter) return false
+      if (categoryFilter === '보험사담당자' && businessFilter !== '전체' && i.business !== businessFilter) return false
       if (q) {
         const hay = `${i.name} ${i.company} ${i.title} ${i.business} ${i.email} ${i.phone} ${i.note}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
       return true
     })
-  }, [items, categoryFilter, companyFilter, search])
+  }, [items, categoryFilter, companyFilter, titleFilter, businessFilter, search])
 
   function startCreate() {
     setForm(emptyForm)
@@ -202,7 +226,7 @@ export default function Contacts() {
 
       <div className="flex flex-wrap gap-2 items-center">
         {(['전체', '보험사담당자', '임직원', '업무지원'] as const).map((c) => (
-          <button key={c} onClick={() => { setCategoryFilter(c); setCompanyFilter('전체') }}
+          <button key={c} onClick={() => { setCategoryFilter(c); setCompanyFilter('전체'); setTitleFilter('전체'); setBusinessFilter('전체') }}
             className={`px-3 py-1.5 rounded-md text-sm font-medium ${categoryFilter === c ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
             {c}
           </button>
@@ -217,16 +241,31 @@ export default function Contacts() {
 
       {categoryFilter === '보험사담당자' && (
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => setCompanyFilter('전체')}
+          <button onClick={() => { setCompanyFilter('전체'); setTitleFilter('전체'); setBusinessFilter('전체') }}
             className={`px-2.5 py-1 rounded text-xs font-medium ${companyFilter === '전체' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
             전체
           </button>
           {companies.map((c) => (
-            <button key={c} onClick={() => setCompanyFilter(c)}
+            <button key={c} onClick={() => { setCompanyFilter(c); setTitleFilter('전체'); setBusinessFilter('전체') }}
               className={`px-2.5 py-1 rounded text-xs font-medium ${companyFilter === c ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
               {c}
             </button>
           ))}
+        </div>
+      )}
+
+      {categoryFilter === '보험사담당자' && (
+        <div className="flex flex-wrap gap-3">
+          <select value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)}
+            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+            <option value="전체">전체 직급/부서</option>
+            {titles.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={businessFilter} onChange={(e) => setBusinessFilter(e.target.value)}
+            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+            <option value="전체">전체 담당업무</option>
+            {businesses.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
         </div>
       )}
 
