@@ -137,15 +137,15 @@ function StatCard({ label, value, rate, color, icon }: StatCardProps) {
 
 // 각 보험사가 자체 운영하는 GA/설계사용 업무포털 바로가기 (프로인스포탈 내부 페이지가 아님)
 const PORTAL_LINKS = [
-  { name: '삼성화재', portal: '드림포탈', url: 'https://login.samsungfire.com/nl/p/login/ui/SPGENLP00000', badge: '삼성', color: 'bg-blue-600', logo: samsungLogo },
-  { name: 'DB손보', portal: '영업포탈', url: 'https://www.mdbins.com', badge: 'DB', color: 'bg-sky-600', logo: dbLogo },
-  { name: '현대해상', portal: '영업포탈', url: 'https://sp.hi.co.kr', badge: '현대', color: 'bg-orange-500', logo: hyundaiLogo },
-  { name: 'KB손보', portal: '전용포탈', url: 'https://sales.kbinsure.co.kr', badge: 'KB', color: 'bg-amber-500', logo: kbLogo },
-  { name: '메리츠화재', portal: '영업포탈', url: 'https://sales.meritzfire.com', badge: '메리츠', color: 'bg-teal-600', logo: meritzLogo },
+  { name: '삼성화재보험', portal: '드림포탈', url: 'https://login.samsungfire.com/nl/p/login/ui/SPGENLP00000', badge: '삼성', color: 'bg-blue-600', logo: samsungLogo },
+  { name: 'DB손해보험', portal: '영업포탈', url: 'https://www.mdbins.com', badge: 'DB', color: 'bg-sky-600', logo: dbLogo },
+  { name: '현대해상보험', portal: '영업포탈', url: 'https://sp.hi.co.kr', badge: '현대', color: 'bg-orange-500', logo: hyundaiLogo },
+  { name: 'KB손해보험', portal: '전용포탈', url: 'https://sales.kbinsure.co.kr', badge: 'KB', color: 'bg-amber-500', logo: kbLogo },
+  { name: '메리츠화재보험', portal: '영업포탈', url: 'https://sales.meritzfire.com', badge: '메리츠', color: 'bg-teal-600', logo: meritzLogo },
   { name: '롯데손해보험', portal: '영업포탈', url: 'http://lottero.lotteins.co.kr', badge: '롯데', color: 'bg-red-600', logo: lotteLogo },
-  { name: '라이나손보', portal: '영업포탈', url: 'https://ga.linagi.com/', badge: '라이나', color: 'bg-indigo-600', logo: linaLogo },
+  { name: '라이나손해보험', portal: '영업포탈', url: 'https://ga.linagi.com/', badge: '라이나', color: 'bg-indigo-600', logo: linaLogo },
   { name: '한화손해보험', portal: '스마트포탈', url: 'https://portal.hwgeneralins.com/', badge: '한화', color: 'bg-rose-600', logo: hanwhaLogo },
-  { name: '흥국화재', portal: '영업포탈', url: 'https://sales.heungkukfire.co.kr/', badge: '흥국', color: 'bg-pink-600', logo: heungkukLogo },
+  { name: '흥국화재보험', portal: '영업포탈', url: 'https://sales.heungkukfire.co.kr/', badge: '흥국', color: 'bg-pink-600', logo: heungkukLogo },
   { name: 'AIG손해보험', portal: '', url: 'https://sso.aig.co.kr/gaLogin/gaLogin.jsp', badge: 'AIG', color: 'bg-slate-700', forceEdge: true, logo: aigLogo },
 ]
 
