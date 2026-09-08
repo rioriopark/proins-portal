@@ -3,6 +3,12 @@ import { Link } from 'react-router-dom'
 import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Banner, Contract, EducationEvent, Profile } from '../lib/types'
+import dbLogo from '../assets/insurer-logos/db.png'
+import hyundaiLogo from '../assets/insurer-logos/hyundai.svg'
+import kbLogo from '../assets/insurer-logos/kb.png'
+import meritzLogo from '../assets/insurer-logos/meritz.svg'
+import lotteLogo from '../assets/insurer-logos/lotte.jpg'
+import aigLogo from '../assets/insurer-logos/aig.svg'
 
 // 별도 만기일 필드가 없어 영수일 + 1년을 계약 만기(갱신 예정일)로 추정한다.
 function addYears(dateStr: string, years: number): string {
@@ -128,14 +134,14 @@ function StatCard({ label, value, rate, color, icon }: StatCardProps) {
 // 각 보험사가 자체 운영하는 GA/설계사용 업무포털 바로가기 (프로인스포탈 내부 페이지가 아님)
 const PORTAL_LINKS = [
   { name: '삼성화재', portal: '드림포탈', url: 'https://login.samsungfire.com/nl/p/login/ui/SPGENLP00000', badge: '삼성', color: 'bg-blue-600' },
-  { name: 'DB손보', portal: '영업포탈', url: 'https://www.mdbins.com', badge: 'DB', color: 'bg-sky-600' },
-  { name: '현대해상', portal: '영업포탈', url: 'https://sp.hi.co.kr', badge: '현대', color: 'bg-orange-500' },
-  { name: 'KB손보', portal: '전용포탈', url: 'https://sales.kbinsure.co.kr', badge: 'KB', color: 'bg-amber-500' },
-  { name: '메리츠화재', portal: '영업포탈', url: 'https://sales.meritzfire.com', badge: '메리츠', color: 'bg-teal-600' },
-  { name: '롯데손해보험', portal: '영업포탈', url: 'http://lottero.lotteins.co.kr', badge: '롯데', color: 'bg-red-600' },
+  { name: 'DB손보', portal: '영업포탈', url: 'https://www.mdbins.com', badge: 'DB', color: 'bg-sky-600', logo: dbLogo },
+  { name: '현대해상', portal: '영업포탈', url: 'https://sp.hi.co.kr', badge: '현대', color: 'bg-orange-500', logo: hyundaiLogo },
+  { name: 'KB손보', portal: '전용포탈', url: 'https://sales.kbinsure.co.kr', badge: 'KB', color: 'bg-amber-500', logo: kbLogo },
+  { name: '메리츠화재', portal: '영업포탈', url: 'https://sales.meritzfire.com', badge: '메리츠', color: 'bg-teal-600', logo: meritzLogo },
+  { name: '롯데손해보험', portal: '영업포탈', url: 'http://lottero.lotteins.co.kr', badge: '롯데', color: 'bg-red-600', logo: lotteLogo },
   { name: '라이나손보', portal: '영업포탈', url: 'https://ga.linagi.com/', badge: '라이나', color: 'bg-indigo-600' },
   { name: '한화손해보험', portal: '스마트포탈', url: 'https://portal.hwgeneralins.com/', badge: '한화', color: 'bg-rose-600' },
-  { name: 'AIG손해보험', portal: '', url: 'https://sso.aig.co.kr/gaLogin/gaLogin.jsp', badge: 'AIG', color: 'bg-slate-700', forceEdge: true },
+  { name: 'AIG손해보험', portal: '', url: 'https://sso.aig.co.kr/gaLogin/gaLogin.jsp', badge: 'AIG', color: 'bg-slate-700', forceEdge: true, logo: aigLogo },
 ]
 
 // Windows의 microsoft-edge: URI 프로토콜을 이용해 항상 Edge로 열리도록 강제한다.
@@ -157,11 +163,17 @@ function PortalLinksBar() {
             className="flex flex-col items-center w-20 text-center group"
             title={`${p.name} ${p.portal}`.trim()}
           >
-            <div
-              className={`w-12 h-12 rounded-2xl ${p.color} text-white flex items-center justify-center text-xs font-bold shadow-sm group-hover:opacity-90`}
-            >
-              {p.badge}
-            </div>
+            {p.logo ? (
+              <div className="h-12 min-w-[3rem] px-1.5 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:opacity-90">
+                <img src={p.logo} alt={p.name} className="h-full max-h-8 max-w-[4.5rem] object-contain" />
+              </div>
+            ) : (
+              <div
+                className={`w-12 h-12 rounded-2xl ${p.color} text-white flex items-center justify-center text-xs font-bold shadow-sm group-hover:opacity-90`}
+              >
+                {p.badge}
+              </div>
+            )}
             <span className="text-[11px] text-slate-600 mt-1.5 leading-tight">{p.name}</span>
             {p.portal && <span className="text-[10px] text-slate-400 leading-tight">{p.portal}</span>}
           </a>
