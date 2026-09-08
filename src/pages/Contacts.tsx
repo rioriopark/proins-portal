@@ -292,7 +292,7 @@ export default function Contacts() {
                 <th className="text-center px-3 py-2 w-[13em] box-content break-words">팩스번호</th>
                 <th className="text-center px-3 py-2 w-[13em] box-content break-words">휴대폰번호</th>
                 <th className="text-center px-3 py-2 w-[20em] box-content break-words">이메일주소</th>
-                <th className="text-center px-3 py-2">기타</th>
+                <th className="text-center px-3 py-2 w-[15em] box-content break-words">기타</th>
                 {canWrite && <th className="px-3 py-2"></th>}
               </tr>
             </thead>
