@@ -256,6 +256,7 @@ interface FileRow {
   agentKey: string
   agentLabel: string
   profile?: Profile
+  insurer: string
   month: string
   category: string
   type: string
@@ -269,6 +270,19 @@ interface FileRow {
   premium: number
   commission: number
   error?: string
+}
+
+// 파일 하나 = 보험사 하나. 여러 보험사 파일을 한 번에 올려도 파일별로 헤더/열 매핑/보험사가
+// 다를 수 있으므로 파일마다 따로 보관했다가 표시할 때만 합친다.
+interface FileGroup {
+  id: string
+  fileName: string
+  insurer: string
+  headers: string[]
+  dataRows: string[][]
+  rowMonths: string[]
+  mapping: Record<FieldKey, number>
+  fileMonth: string
 }
 
 export default function BulkImport() {
@@ -364,20 +378,13 @@ export default function BulkImport() {
   }
 
   // ---- 파일 업로드 모드 ----
-  const [insurer, setInsurer] = useState('')
-  const [fileNames, setFileNames] = useState<string[]>([])
+  const [fileGroups, setFileGroups] = useState<FileGroup[]>([])
   const [skippedFiles, setSkippedFiles] = useState<string[]>([])
-  const [headers, setHeaders] = useState<string[]>([])
-  const [dataRows, setDataRows] = useState<string[][]>([])
-  // dataRows의 각 행이 어느 파일에서 왔는지에 맞는 지급월(파일마다 따로 자동인식됨). 열에 지급월이 없을 때만 쓰인다.
-  const [rowMonths, setRowMonths] = useState<string[]>([])
-  const [mapping, setMapping] = useState<Record<FieldKey, number>>(emptyMapping())
-  const [fileMonth, setFileMonth] = useState('')
   const [manualAssign, setManualAssign] = useState<Record<string, string>>({})
   const [fileBusy, setFileBusy] = useState(false)
 
-  // 여러 파일을 한 번에 올리면 첫 파일의 헤더를 기준으로 나머지를 이어붙인다.
-  // 열 구성이 다른 파일이 섞이면 열 매핑이 어긋나므로, 그런 파일은 건너뛰고 알려준다.
+  // 여러 보험사 파일을 한 번에 선택해도 파일마다 헤더/열 구성이 다르므로 파일별로 따로 처리한다.
+  // 보험사는 파일명에서 우선 추정하고, 못 찾으면 업로드 후 직접 선택하게 한다.
   async function handleFile(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
     e.target.value = ''
@@ -386,10 +393,7 @@ export default function BulkImport() {
     setFileBusy(true)
     try {
       const XLSX = await import('xlsx')
-      let canonicalHeaders: string[] | null = null
-      let combinedBody: string[][] = []
-      let combinedRowMonths: string[] = []
-      const names: string[] = []
+      const groups: FileGroup[] = []
       const skipped: string[] = []
       for (const f of files) {
         const buf = await f.arrayBuffer()
@@ -402,29 +406,33 @@ export default function BulkImport() {
         const body = grid.slice(headerIdx + 1)
           .map((r) => hdrs.map((_, i) => String(r[i] ?? '').trim()))
           .filter((row) => row.some((cell) => cell))
-        if (!canonicalHeaders) {
-          canonicalHeaders = hdrs
-        } else if (hdrs.length !== canonicalHeaders.length) {
-          skipped.push(`${f.name} (다른 파일과 열 구성이 달라 건너뜀)`)
-          continue
-        }
-        combinedBody = combinedBody.concat(body)
-        combinedRowMonths = combinedRowMonths.concat(Array(body.length).fill(guessFileMonth(grid, headerIdx)))
-        names.push(f.name)
+        if (!body.length) { skipped.push(`${f.name} (내용 없음)`); continue }
+        groups.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          fileName: f.name,
+          insurer: INSURERS.find((c) => f.name.includes(c)) ?? '',
+          headers: hdrs,
+          dataRows: body,
+          rowMonths: Array(body.length).fill(guessFileMonth(grid, headerIdx)),
+          mapping: guessMapping(hdrs, body),
+          fileMonth: '',
+        })
       }
-      if (!canonicalHeaders) { setFileNames([]); setSkippedFiles(skipped); return }
-      setFileNames(names)
+      setFileGroups(groups)
       setSkippedFiles(skipped)
-      setHeaders(canonicalHeaders)
-      setDataRows(combinedBody)
-      setRowMonths(combinedRowMonths)
-      setMapping(guessMapping(canonicalHeaders, combinedBody))
-      setFileMonth('')
       setManualAssign({})
       setResult(null)
     } finally {
       setFileBusy(false)
     }
+  }
+
+  function updateGroup(id: string, patch: Partial<FileGroup>) {
+    setFileGroups((prev) => prev.map((g) => (g.id === id ? { ...g, ...patch } : g)))
+  }
+
+  function removeGroup(id: string) {
+    setFileGroups((prev) => prev.filter((g) => g.id !== id))
   }
 
   const codeMap = useMemo(() => {
@@ -446,26 +454,28 @@ export default function BulkImport() {
   const UNASSIGNED_FALLBACK_EMAIL = '34004152@proins.local'
 
   const fileRows = useMemo<FileRow[]>(() => {
-    if (!dataRows.length) return []
+    if (!fileGroups.length) return []
     const fallbackProfile = profiles.find((p) => p.email === UNASSIGNED_FALLBACK_EMAIL)
-    const get = (row: string[], key: FieldKey) => {
-      const idx = mapping[key]
-      return idx >= 0 && idx < row.length ? (row[idx] ?? '').trim() : ''
-    }
-    return dataRows
-      .map((row, i) => {
+    const rows: FileRow[] = []
+    let rowIndex = 0
+    for (const g of fileGroups) {
+      const get = (row: string[], key: FieldKey) => {
+        const idx = g.mapping[key]
+        return idx >= 0 && idx < row.length ? (row[idx] ?? '').trim() : ''
+      }
+      g.dataRows.forEach((row, i) => {
         const agentCode = get(row, 'agentCode')
         const agentName = get(row, 'agentName')
         const rawCategory = get(row, 'category')
         const rawType = get(row, 'type')
         const rawMonth = get(row, 'month')
-        const month = rawMonth ? normalizeMonth(rawMonth) : (rowMonths[i] || fileMonth)
-        const category = rawCategory ? normalizeCategory(rawCategory) : inferCategoryFallback(insurer, headers, row)
-        const type = rawType || inferTypeFallback(insurer, headers, row)
+        const month = rawMonth ? normalizeMonth(rawMonth) : (g.rowMonths[i] || g.fileMonth)
+        const category = rawCategory ? normalizeCategory(rawCategory) : inferCategoryFallback(g.insurer, g.headers, row)
+        const type = rawType || inferTypeFallback(g.insurer, g.headers, row)
         const premium = toNumber(get(row, 'premium'))
         const commission = toNumber(get(row, 'commission'))
 
-        const codeKey = agentCode ? `${insurer}|${agentCode}` : ''
+        const codeKey = agentCode ? `${g.insurer}|${agentCode}` : ''
         const autoProfile = codeKey ? codeMap.get(codeKey) : undefined
         const nameProfile = !autoProfile && agentName ? profiles.find((p) => p.name.trim() === agentName) : undefined
         const noIdentifier = !agentCode && !agentName
@@ -476,23 +486,26 @@ export default function BulkImport() {
         const agentLabel = matchedAuto ? matchedAuto.name : agentCode || agentName || '(식별불가)'
 
         let error: string | undefined
-        if (!month || !/^\d{4}-\d{2}$/.test(month)) error = '지급월 형식 오류'
+        if (!g.insurer) error = '보험사 미지정'
+        else if (!month || !/^\d{4}-\d{2}$/.test(month)) error = '지급월 형식 오류'
         else if (!['장기', '일반', '자동차'].includes(category)) error = '종목 값 오류'
         else if (!profile) error = '담당자 미매칭'
 
-        return {
-          key: `r${i}`, agentKey, agentLabel, profile, month, category, type,
+        rows.push({
+          key: `r${rowIndex++}`, agentKey, agentLabel, profile, insurer: g.insurer, month, category, type,
           policyNo: get(row, 'policyNo'),
           productName: get(row, 'productName'),
           customerName: get(row, 'customerName'),
           receiptDate: normalizeDate(get(row, 'receiptDate')),
           expiryDate: normalizeDate(get(row, 'expiryDate')),
           collectionStatus: get(row, 'collectionStatus'),
-          count: mapping.count >= 0 ? toNumber(get(row, 'count')) || 1 : 1,
+          count: g.mapping.count >= 0 ? toNumber(get(row, 'count')) || 1 : 1,
           premium, commission, error,
-        }
+        })
       })
-  }, [dataRows, rowMonths, mapping, fileMonth, insurer, headers, codeMap, profiles, manualAssign])
+    }
+    return rows
+  }, [fileGroups, codeMap, profiles, manualAssign])
 
   const unresolvedAgents = useMemo(() => {
     const map = new Map<string, string>()
@@ -529,8 +542,6 @@ export default function BulkImport() {
   }, [fileRows])
 
   const fileValidCount = fileRows.filter((r) => !r.error).length
-  const identifierMissing = mapping.agentCode < 0 && mapping.agentName < 0
-  const missingRequired = FIELD_META.filter((f) => f.required && mapping[f.key] < 0)
 
   async function handleFileImport() {
     setBusy(true)
@@ -542,7 +553,7 @@ export default function BulkImport() {
         month: r.month,
         category: r.category,
         type: r.type,
-        company: insurer,
+        company: r.insurer,
         policy_no: r.policyNo || null,
         product_name: r.productName,
         customer_name: r.customerName,
@@ -571,13 +582,8 @@ export default function BulkImport() {
     setBusy(false)
     setResult({ inserted, failed, errorMessage })
     if (failed === 0) {
-      setFileNames([])
+      setFileGroups([])
       setSkippedFiles([])
-      setHeaders([])
-      setDataRows([])
-      setRowMonths([])
-      setMapping(emptyMapping())
-      setFileMonth('')
       setManualAssign({})
     }
   }
@@ -702,93 +708,109 @@ export default function BulkImport() {
       {mode === 'file' && (
         <>
           <p className="text-sm text-slate-500">
-            보험사 업무포털에서 계약내용을 엑셀(xlsx/xls/csv)로 내려받아 그대로 업로드하세요.
-            보험사마다 열 이름이 달라 자동으로 추정한 뒤 확인할 수 있고, 담당자는 마이스페이스에 등록된 보험사별 설계사코드로 자동 매칭됩니다.
-            매칭되지 않으면 아래에서 직접 담당자를 지정하면 되고, 계약은 합산하지 않고 건별로 저장되어(고객명·상품명·만기일 보존) 담당자별로 정리됩니다.
+            보험사 업무포털에서 계약내용을 엑셀(xlsx/xls/csv)로 내려받아 그대로 업로드하세요. 서로 다른 보험사 파일도 한 번에 여러 개 선택할 수 있습니다.
+            보험사는 파일명에서 자동으로 추정하고, 열 이름도 파일마다 자동으로 추정한 뒤 확인할 수 있습니다.
+            담당자는 마이스페이스에 등록된 보험사별 설계사코드로 자동 매칭되고, 매칭되지 않으면 아래에서 직접 지정하면 됩니다.
+            계약은 합산하지 않고 건별로 저장되어(고객명·상품명·만기일 보존) 담당자별로 정리됩니다.
           </p>
 
           <div className="bg-white rounded-xl shadow p-5 space-y-4">
-            <div className="flex flex-wrap items-end gap-4">
-              <label className="text-sm">
-                <span className="block text-xs font-medium text-slate-500 mb-1">보험사</span>
-                <select
-                  value={insurer}
-                  onChange={(e) => setInsurer(e.target.value)}
-                  className="border border-slate-300 rounded-md px-3 py-2 text-sm min-w-40"
-                >
-                  <option value="">선택하세요</option>
-                  {INSURERS.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </label>
-              <label className="text-sm">
-                <span className="block text-xs font-medium text-slate-500 mb-1">엑셀 파일 (여러 개 선택 가능)</span>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  multiple
-                  disabled={!insurer || fileBusy}
-                  onChange={handleFile}
-                  className="text-sm disabled:opacity-40"
-                />
-              </label>
-              {fileNames.length > 0 && (
-                <span className="text-xs text-slate-500">
-                  {fileNames.length === 1 ? fileNames[0] : `${fileNames.length}개 파일`} · {dataRows.length}행 읽음
-                </span>
-              )}
-            </div>
+            <label className="text-sm block">
+              <span className="block text-xs font-medium text-slate-500 mb-1">엑셀 파일 (보험사가 다른 파일도 한 번에 선택 가능)</span>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                multiple
+                disabled={fileBusy}
+                onChange={handleFile}
+                className="text-sm disabled:opacity-40"
+              />
+            </label>
             {skippedFiles.length > 0 && (
               <p className="text-xs text-amber-600">건너뛴 파일: {skippedFiles.join(', ')}</p>
             )}
 
-            {headers.length > 0 && (
-              <div className="border-t border-slate-100 pt-4 space-y-2">
-                <p className="text-xs font-semibold text-slate-500">열 매핑 확인 (자동 추정됨 · 필요시 변경)</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {FIELD_META.map((f) => (
-                    <label key={f.key} className="text-xs">
-                      <span className="block text-slate-500 mb-1">
-                        {f.label}{f.required && <span className="text-red-500"> *</span>}
-                      </span>
-                      <select
-                        value={mapping[f.key]}
-                        onChange={(e) => setMapping((m) => ({ ...m, [f.key]: Number(e.target.value) }))}
-                        className="w-full border border-slate-300 rounded-md px-2 py-1.5"
-                      >
-                        <option value={-1}>(사용 안 함)</option>
-                        {headers.map((h, i) => (
-                          <option key={i} value={i}>{h || `${i + 1}번째 열`}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
+            {fileGroups.map((g) => {
+              const identifierMissing = g.mapping.agentCode < 0 && g.mapping.agentName < 0
+              const missingRequired = FIELD_META.filter((f) => f.required && g.mapping[f.key] < 0)
+              return (
+                <div key={g.id} className="border border-slate-200 rounded-lg p-4 space-y-3">
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div className="flex flex-wrap items-end gap-4">
+                      <label className="text-sm">
+                        <span className="block text-xs font-medium text-slate-500 mb-1">보험사</span>
+                        <select
+                          value={g.insurer}
+                          onChange={(e) => updateGroup(g.id, { insurer: e.target.value })}
+                          className="border border-slate-300 rounded-md px-3 py-2 text-sm min-w-40"
+                        >
+                          <option value="">선택하세요</option>
+                          {INSURERS.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </label>
+                      <span className="text-xs text-slate-500">{g.fileName} · {g.dataRows.length}행</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeGroup(g.id)}
+                      className="text-xs text-slate-400 hover:text-red-500"
+                    >
+                      제거
+                    </button>
+                  </div>
+                  {!g.insurer && (
+                    <p className="text-xs text-red-600">보험사를 선택하지 않으면 이 파일의 계약은 등록되지 않습니다.</p>
+                  )}
+
+                  <div className="border-t border-slate-100 pt-3 space-y-2">
+                    <p className="text-xs font-semibold text-slate-500">열 매핑 확인 (자동 추정됨 · 필요시 변경)</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {FIELD_META.map((f) => (
+                        <label key={f.key} className="text-xs">
+                          <span className="block text-slate-500 mb-1">
+                            {f.label}{f.required && <span className="text-red-500"> *</span>}
+                          </span>
+                          <select
+                            value={g.mapping[f.key]}
+                            onChange={(e) => updateGroup(g.id, { mapping: { ...g.mapping, [f.key]: Number(e.target.value) } })}
+                            className="w-full border border-slate-300 rounded-md px-2 py-1.5"
+                          >
+                            <option value={-1}>(사용 안 함)</option>
+                            {g.headers.map((h, i) => (
+                              <option key={i} value={i}>{h || `${i + 1}번째 열`}</option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+                    {(identifierMissing || missingRequired.length > 0) && (
+                      <p className="text-xs text-red-600">
+                        {identifierMissing && '설계사코드/사번 또는 담당자명 중 하나는 반드시 매핑해야 합니다. '}
+                        {missingRequired.length > 0 && `필수 항목 미지정: ${missingRequired.map((f) => f.label).join(', ')}`}
+                      </p>
+                    )}
+                    {g.mapping.month < 0 && (
+                      <label className="block text-xs pt-1">
+                        <span className="block text-slate-500 mb-1">
+                          지급월 (열이 없으면 안내문에서 자동 인식하며, 실패했을 때만 이 값을 적용합니다)
+                        </span>
+                        <input
+                          type="month"
+                          value={g.fileMonth}
+                          onChange={(e) => updateGroup(g.id, { fileMonth: e.target.value })}
+                          className="border border-slate-300 rounded-md px-2 py-1.5"
+                        />
+                      </label>
+                    )}
+                    {g.mapping.category < 0 && g.insurer !== '삼성화재' && (
+                      <p className="text-xs text-amber-600">
+                        이 파일에서 종목(장기/일반/자동차) 열을 찾지 못했습니다. 열 매핑에서 직접 지정해주세요.
+                      </p>
+                    )}
+                  </div>
                 </div>
-                {(identifierMissing || missingRequired.length > 0) && (
-                  <p className="text-xs text-red-600">
-                    {identifierMissing && '설계사코드/사번 또는 담당자명 중 하나는 반드시 매핑해야 합니다. '}
-                    {missingRequired.length > 0 && `필수 항목 미지정: ${missingRequired.map((f) => f.label).join(', ')}`}
-                  </p>
-                )}
-                {mapping.month < 0 && (
-                  <label className="block text-xs pt-1">
-                    <span className="block text-slate-500 mb-1">
-                      지급월 (열이 없는 파일은 안내문에서 자동 인식하며, 실패한 파일에만 이 값을 적용합니다)
-                    </span>
-                    <input
-                      type="month"
-                      value={fileMonth}
-                      onChange={(e) => setFileMonth(e.target.value)}
-                      className="border border-slate-300 rounded-md px-2 py-1.5"
-                    />
-                  </label>
-                )}
-                {mapping.category < 0 && insurer !== '삼성화재' && (
-                  <p className="text-xs text-amber-600">
-                    이 파일에서 종목(장기/일반/자동차) 열을 찾지 못했습니다. 열 매핑에서 직접 지정해주세요.
-                  </p>
-                )}
-              </div>
-            )}
+              )
+            })}
 
             {unresolvedAgents.length > 0 && (
               <div className="border-t border-slate-100 pt-4 space-y-2">
@@ -833,6 +855,7 @@ export default function BulkImport() {
                   <table className="w-full text-xs">
                     <thead className="bg-slate-50 text-slate-500">
                       <tr>
+                        <th className="text-left px-3 py-1.5">보험사</th>
                         <th className="text-left px-3 py-1.5">계약번호</th>
                         <th className="text-left px-3 py-1.5">고객명</th>
                         <th className="text-left px-3 py-1.5">상품명</th>
@@ -848,6 +871,7 @@ export default function BulkImport() {
                     <tbody>
                       {g.rows.map((r) => (
                         <tr key={r.key} className={`border-t border-slate-100 ${r.error ? 'bg-red-50' : ''}`}>
+                          <td className="px-3 py-1.5">{r.insurer}</td>
                           <td className="px-3 py-1.5">{r.policyNo}</td>
                           <td className="px-3 py-1.5">{r.customerName}</td>
                           <td className="px-3 py-1.5 max-w-52 truncate" title={r.productName}>{r.productName}</td>
