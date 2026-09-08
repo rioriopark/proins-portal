@@ -280,7 +280,7 @@ export default function Contacts() {
                 {canWrite && <th className="px-2 py-2 w-[2em] box-content"></th>}
                 <th className="text-center px-3 py-2 w-[5em] box-content break-words">회사</th>
                 <th className="text-center px-3 py-2 w-[5em] box-content break-words">이름</th>
-                <th className="text-center px-3 py-2 w-36 box-content whitespace-nowrap">부서/직급</th>
+                <th className="text-center px-3 py-2 w-36 box-content break-words">부서/직급</th>
                 <th className="text-center px-3 py-2 w-[10em] box-content break-words">담당업무</th>
                 <th className="text-center px-3 py-2 w-[12em] box-content break-words">전화번호</th>
                 <th className="text-center px-3 py-2 w-[13em] box-content break-words">팩스번호</th>
@@ -305,9 +305,7 @@ export default function Contacts() {
                   )}
                   <td className="text-center px-3 py-2 text-slate-500 break-words"><ExpandableCell value={c.company} /></td>
                   <td className="text-center px-3 py-2 font-medium break-words"><ExpandableCell value={c.name} /></td>
-                  <td className="text-center px-3 py-2 whitespace-nowrap" title={c.title}>
-                    {c.title.length > 8 ? `${c.title.slice(0, 8)}…` : c.title}
-                  </td>
+                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.title} /></td>
                   <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.business} /></td>
                   <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.office_phone} /></td>
                   <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.fax} /></td>
