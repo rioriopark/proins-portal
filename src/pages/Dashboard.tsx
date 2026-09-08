@@ -180,7 +180,6 @@ function PortalLinksBar() {
               </div>
             )}
             <span className="text-[11px] text-slate-600 mt-1.5 leading-tight">{p.name}</span>
-            {p.portal && <span className="text-[10px] text-slate-400 leading-tight">{p.portal}</span>}
           </a>
         ))}
       </div>
