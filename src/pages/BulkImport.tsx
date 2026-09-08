@@ -452,10 +452,13 @@ export default function BulkImport() {
   // 보험사 파일 자체에 사용인코드/사용인명이 둘 다 비어있는 행(담당자 정보 없음)은
   // 미매칭으로 남기지 않고 박세환 앞으로 자동 배정한다.
   const UNASSIGNED_FALLBACK_EMAIL = '34004152@proins.local'
+  const fallbackProfile = useMemo(
+    () => profiles.find((p) => p.email === UNASSIGNED_FALLBACK_EMAIL),
+    [profiles],
+  )
 
   const fileRows = useMemo<FileRow[]>(() => {
     if (!fileGroups.length) return []
-    const fallbackProfile = profiles.find((p) => p.email === UNASSIGNED_FALLBACK_EMAIL)
     const rows: FileRow[] = []
     let rowIndex = 0
     for (const g of fileGroups) {
@@ -814,7 +817,24 @@ export default function BulkImport() {
 
             {unresolvedAgents.length > 0 && (
               <div className="border-t border-slate-100 pt-4 space-y-2">
-                <p className="text-xs font-semibold text-amber-600">담당자 미매칭 ({unresolvedAgents.length}건) · 직접 지정하세요</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-amber-600">담당자 미매칭 ({unresolvedAgents.length}건) · 직접 지정하세요</p>
+                  {fallbackProfile && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setManualAssign((m) => {
+                          const next = { ...m }
+                          for (const [key] of unresolvedAgents) next[key] = fallbackProfile.id
+                          return next
+                        })
+                      }
+                      className="text-xs text-indigo-600 hover:underline shrink-0"
+                    >
+                      전체 {fallbackProfile.name}(으)로 지정
+                    </button>
+                  )}
+                </div>
                 <div className="space-y-1.5">
                   {unresolvedAgents.map(([key, label]) => (
                     <div key={key} className="flex items-center gap-2 text-sm">
