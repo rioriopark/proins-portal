@@ -158,23 +158,23 @@ function PortalLinksBar() {
   return (
     <div className="bg-white rounded-xl shadow p-4">
       <p className="text-xs font-semibold text-slate-500 mb-3">보험사 업무포털 바로가기</p>
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-10 gap-x-2 gap-y-4">
         {PORTAL_LINKS.map((p) => (
           <a
             key={p.name}
             href={portalHref(p)}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex flex-col items-center w-20 text-center group"
+            className="flex flex-col items-center text-center group"
             title={`${p.name} ${p.portal}`.trim()}
           >
             {p.logo ? (
-              <div className="h-12 min-w-[3rem] px-1.5 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:opacity-90">
-                <img src={p.logo} alt={p.name} className="h-full max-h-8 max-w-[4.5rem] object-contain" />
+              <div className="h-12 w-full max-w-[3.25rem] px-1.5 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:opacity-90">
+                <img src={p.logo} alt={p.name} className="h-full max-h-8 max-w-full object-contain" />
               </div>
             ) : (
               <div
-                className={`w-12 h-12 rounded-2xl ${p.color} text-white flex items-center justify-center text-xs font-bold shadow-sm group-hover:opacity-90`}
+                className={`h-12 w-full max-w-[3rem] rounded-2xl ${p.color} text-white flex items-center justify-center text-xs font-bold shadow-sm group-hover:opacity-90`}
               >
                 {p.badge}
               </div>
