@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Contact } from '../lib/types'
@@ -174,21 +174,9 @@ export default function Contacts() {
     else load()
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">업무 연락처</h1>
-          <p className="text-sm text-slate-500 mt-1">내부 직원과 보험사 담당자 연락처입니다.</p>
-        </div>
-        {canWrite && (
-          <button onClick={startCreate} className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium">
-            + 연락처 등록
-          </button>
-        )}
-      </div>
-
-      {showForm && (
+  // 신규 등록 폼은 상단에, 수정 폼은 해당 행 바로 위에 끼워 넣어 보여준다.
+  function renderContactForm() {
+    return (
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
           <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm">
@@ -223,7 +211,24 @@ export default function Contacts() {
             </button>
           </div>
         </form>
-      )}
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">업무 연락처</h1>
+          <p className="text-sm text-slate-500 mt-1">내부 직원과 보험사 담당자 연락처입니다.</p>
+        </div>
+        {canWrite && (
+          <button onClick={startCreate} className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium">
+            + 연락처 등록
+          </button>
+        )}
+      </div>
+
+      {showForm && !editingId && renderContactForm()}
 
       <div className="flex flex-wrap gap-2 items-center">
         {(['전체', '보험사담당자', '임직원', '업무지원'] as const).map((c) => (
@@ -293,7 +298,15 @@ export default function Contacts() {
             </thead>
             <tbody>
               {filtered.map((c, idx) => (
-                <tr key={c.id}
+                <Fragment key={c.id}>
+                {showForm && editingId === c.id && (
+                  <tr>
+                    <td colSpan={canWrite ? 11 : 9} className="p-0">
+                      {renderContactForm()}
+                    </td>
+                  </tr>
+                )}
+                <tr
                   onDragOver={canWrite ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOverIndex(idx) } : undefined}
                   onDragLeave={canWrite ? () => setOverIndex((o) => (o === idx ? null : o)) : undefined}
                   onDrop={canWrite ? (e) => { e.preventDefault(); handleDrop(Number(e.dataTransfer.getData('text/plain')), idx) } : undefined}
@@ -320,6 +333,7 @@ export default function Contacts() {
                     </td>
                   )}
                 </tr>
+                </Fragment>
               ))}
             </tbody>
           </table>
