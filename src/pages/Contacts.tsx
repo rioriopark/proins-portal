@@ -192,11 +192,11 @@ export default function Contacts() {
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           <input placeholder="담당업무" value={form.business} onChange={(e) => setForm((f) => ({ ...f, business: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input placeholder="전화번호" value={form.office_phone} onChange={(e) => setForm((f) => ({ ...f, office_phone: e.target.value }))}
+          <input placeholder="전화번호" maxLength={12} value={form.office_phone} onChange={(e) => setForm((f) => ({ ...f, office_phone: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input placeholder="팩스번호" value={form.fax} onChange={(e) => setForm((f) => ({ ...f, fax: e.target.value }))}
+          <input placeholder="팩스번호" maxLength={15} value={form.fax} onChange={(e) => setForm((f) => ({ ...f, fax: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input placeholder="휴대폰번호" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+          <input placeholder="휴대폰번호" maxLength={13} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           <input placeholder="이메일주소" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
