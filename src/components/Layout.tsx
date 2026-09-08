@@ -99,7 +99,7 @@ export default function Layout() {
     <div className="flex min-h-screen">
       <aside className="w-60 shrink-0 h-screen sticky top-0 flex flex-col text-white bg-slate-800">
         <div className="px-5 py-6 border-b border-white/10 flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-red-600 flex flex-col items-center justify-center leading-none shrink-0 font-black text-white text-[9px] tracking-tighter">
+          <div className="w-10 h-10 rounded-xl bg-red-600 flex flex-col items-center justify-center leading-none shrink-0 font-black text-white text-[13px] tracking-tighter">
             <span>PRO</span>
             <span>I NS</span>
           </div>
