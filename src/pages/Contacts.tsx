@@ -84,12 +84,13 @@ export default function Contacts() {
   )
 
   // 직급/부서·담당업무 필터 목록은 선택된 보험사 안에서만 나오는 값으로 좁혀서 보여준다.
+  // 앞뒤 공백 차이로 같은 값이 중복 표시되지 않도록 trim한 값으로 목록을 만든다.
   const titles = useMemo(
     () =>
       [...new Set(
         items
           .filter((i) => i.category === '보험사담당자' && (companyFilter === '전체' || i.company === companyFilter))
-          .map((i) => i.title)
+          .map((i) => i.title.trim())
       )].filter(Boolean),
     [items, companyFilter]
   )
@@ -98,7 +99,7 @@ export default function Contacts() {
       [...new Set(
         items
           .filter((i) => i.category === '보험사담당자' && (companyFilter === '전체' || i.company === companyFilter))
-          .map((i) => i.business)
+          .map((i) => i.business.trim())
       )].filter(Boolean),
     [items, companyFilter]
   )
@@ -108,8 +109,8 @@ export default function Contacts() {
     return items.filter((i) => {
       if (categoryFilter !== '전체' && i.category !== categoryFilter) return false
       if (categoryFilter === '보험사담당자' && companyFilter !== '전체' && i.company !== companyFilter) return false
-      if (categoryFilter === '보험사담당자' && titleFilter !== '전체' && i.title !== titleFilter) return false
-      if (categoryFilter === '보험사담당자' && businessFilter !== '전체' && i.business !== businessFilter) return false
+      if (categoryFilter === '보험사담당자' && titleFilter !== '전체' && i.title.trim() !== titleFilter) return false
+      if (categoryFilter === '보험사담당자' && businessFilter !== '전체' && i.business.trim() !== businessFilter) return false
       if (q) {
         const hay = `${i.name} ${i.company} ${i.title} ${i.business} ${i.email} ${i.phone} ${i.note}`.toLowerCase()
         if (!hay.includes(q)) return false
