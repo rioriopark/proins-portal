@@ -200,7 +200,7 @@ export default function Contacts() {
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           <input placeholder="이메일주소" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input placeholder="기타" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+          <input placeholder="기타/주소" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm col-span-2" />
           <div className="flex gap-2">
             <button type="submit" className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium">
@@ -292,7 +292,7 @@ export default function Contacts() {
                 <th className="text-center px-3 py-2 w-[13em] box-content break-words">팩스번호</th>
                 <th className="text-center px-3 py-2 w-[13em] box-content break-words">휴대폰번호</th>
                 <th className="text-center px-3 py-2 w-[20em] box-content break-words">이메일주소</th>
-                <th className="text-center px-3 py-2 w-[15em] box-content break-words">기타</th>
+                <th className="text-center px-3 py-2 w-[15em] box-content break-words">기타/주소</th>
                 {canWrite && <th className="px-3 py-2"></th>}
               </tr>
             </thead>
