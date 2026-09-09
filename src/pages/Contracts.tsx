@@ -74,6 +74,8 @@ export default function Contracts() {
   const [bulkResult, setBulkResult] = useState<{ inserted: number; failed: number; errorMessage?: string } | null>(null)
   const [selfReportOpen, setSelfReportOpen] = useState(false)
   const [matchOpen, setMatchOpen] = useState(false)
+  const [editingPrelimId, setEditingPrelimId] = useState<string | null>(null)
+  const [prelimEditForm, setPrelimEditForm] = useState({ policy_no: '', customer_name: '', premium: 0 })
   const [selfForm, setSelfForm] = useState({
     receipt_date: today(),
     category: '장기' as '장기' | '일반',
@@ -452,6 +454,30 @@ export default function Contracts() {
     else load()
   }
 
+  function startEditPrelim(prelim: Contract) {
+    setEditingPrelimId(prelim.id)
+    setPrelimEditForm({
+      policy_no: prelim.policy_no ?? '',
+      customer_name: prelim.customer_name,
+      premium: prelim.premium,
+    })
+  }
+
+  async function savePrelimEdit(contractId: string) {
+    const { error } = await supabase.rpc('update_preliminary_contract', {
+      contract_id: contractId,
+      new_policy_no: prelimEditForm.policy_no || null,
+      new_customer_name: prelimEditForm.customer_name,
+      new_premium: prelimEditForm.premium,
+    })
+    if (error) {
+      alert('수정 실패: ' + error.message)
+      return
+    }
+    setEditingPrelimId(null)
+    load()
+  }
+
   async function updateMemo(contractId: string, memo: string) {
     const { error } = await supabase.rpc('set_contract_memo', { contract_id: contractId, new_memo: memo || null })
     if (error) alert('메모 저장 실패: ' + error.message)
@@ -696,11 +722,45 @@ export default function Contracts() {
                   </tr>
                 </thead>
                 <tbody>
-                  {preliminaryMatches.map(({ prelim, matches }) => (
+                  {preliminaryMatches.map(({ prelim, matches }) => {
+                    const editing = matches.length === 0 && editingPrelimId === prelim.id
+                    return (
                     <tr key={prelim.id} className="border-t border-slate-50">
                       <td className="px-4 py-2">{agentInfo(prelim).name}</td>
-                      <td className="px-4 py-2">{prelim.customer_name} / {prelim.policy_no}</td>
-                      <td className="px-4 py-2 text-right">{prelim.premium.toLocaleString('ko-KR')}원</td>
+                      <td className="px-4 py-2">
+                        {editing ? (
+                          <div className="flex flex-col gap-1">
+                            <input
+                              type="text"
+                              value={prelimEditForm.customer_name}
+                              onChange={(e) => setPrelimEditForm((f) => ({ ...f, customer_name: e.target.value }))}
+                              placeholder="고객명"
+                              className="border border-slate-300 rounded px-1.5 py-1 text-xs w-40"
+                            />
+                            <input
+                              type="text"
+                              value={prelimEditForm.policy_no}
+                              onChange={(e) => setPrelimEditForm((f) => ({ ...f, policy_no: e.target.value }))}
+                              placeholder="증권번호"
+                              className="border border-slate-300 rounded px-1.5 py-1 text-xs w-40"
+                            />
+                          </div>
+                        ) : (
+                          <>{prelim.customer_name} / {prelim.policy_no}</>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        {editing ? (
+                          <input
+                            type="number"
+                            value={prelimEditForm.premium}
+                            onChange={(e) => setPrelimEditForm((f) => ({ ...f, premium: Number(e.target.value) }))}
+                            className="border border-slate-300 rounded px-1.5 py-1 text-xs w-28 text-right"
+                          />
+                        ) : (
+                          `${prelim.premium.toLocaleString('ko-KR')}원`
+                        )}
+                      </td>
                       {matches.length > 0 ? (
                         <>
                           <td className="px-4 py-2">
@@ -731,18 +791,43 @@ export default function Contracts() {
                           </td>
                           <td className="px-4 py-2 text-right text-slate-300">-</td>
                           <td className="px-4 py-2 text-slate-300">-</td>
-                          <td className="px-4 py-2 text-right">
-                            <button
-                              onClick={() => deleteContract(prelim.id)}
-                              className="text-xs text-rose-600 hover:underline"
-                            >
-                              삭제
-                            </button>
+                          <td className="px-4 py-2 text-right space-x-2">
+                            {editing ? (
+                              <>
+                                <button
+                                  onClick={() => savePrelimEdit(prelim.id)}
+                                  className="text-xs text-white bg-slate-800 rounded-md px-2.5 py-1 hover:bg-slate-700"
+                                >
+                                  저장
+                                </button>
+                                <button
+                                  onClick={() => setEditingPrelimId(null)}
+                                  className="text-xs text-slate-500 hover:underline"
+                                >
+                                  취소
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => startEditPrelim(prelim)}
+                                  className="text-xs text-indigo-600 hover:underline"
+                                >
+                                  수정
+                                </button>
+                                <button
+                                  onClick={() => deleteContract(prelim.id)}
+                                  className="text-xs text-rose-600 hover:underline"
+                                >
+                                  삭제
+                                </button>
+                              </>
+                            )}
                           </td>
                         </>
                       )}
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             )

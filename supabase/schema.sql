@@ -435,6 +435,34 @@ end;
 $$;
 grant execute on function set_contract_memo(uuid, text) to authenticated;
 
+-- ── 계약관리: 예비계약(대기중)의 증권번호/고객명/보험료를 본인 또는 관리자가 수정 ──
+-- 확정 매칭 전(is_preliminary이고 아직 확정 계약과 안 엮인) 건만 대상으로 한다.
+create or replace function update_preliminary_contract(
+  contract_id uuid, new_policy_no text, new_customer_name text, new_premium numeric
+)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update contracts
+  set policy_no = new_policy_no,
+      customer_name = new_customer_name,
+      premium = new_premium
+  where id = contract_id
+    and is_preliminary = true
+    and (
+      agent_id = auth.uid()
+      or my_role() = 'hq_admin'
+      or has_menu_permission('contracts')
+      or has_menu_permission('bulk_import')
+      or (
+        agent_id is not null
+        and my_role() in ('branch_admin','store_manager')
+        and exists (select 1 from profiles p where p.id = contracts.agent_id and is_org_descendant(my_org(), p.org_id))
+      )
+    );
+end;
+$$;
+grant execute on function update_preliminary_contract(uuid, text, text, numeric) to authenticated;
+
 -- ── 갱신관리: 담당자 변경만 지정된 직급/개인에 한해 허용하는 함수 ──
 -- contracts 전체 update 권한을 넓히지 않고, 본사관리자/본부장/지점장/지사장 직함과
 -- 담당자 이윤희(예외적으로 지정)만 agent_id/agent_email을 바꿀 수 있게 한다.
