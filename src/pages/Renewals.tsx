@@ -100,24 +100,38 @@ export default function Renewals() {
 
   const keyword = search.trim().toLowerCase()
 
-  const withExpiry = useMemo(
-    () =>
-      contracts
-        .filter((c) => {
-          if (c.renewal_status) return false
-          if (!(c.expiry_date || c.receipt_date)) return false
-          // 보험기간이 1년 미만인 단기성 계약(행사·공사기간 담보 등)은 매년 갱신 대상이 아니므로 제외한다.
-          if (c.expiry_date && c.receipt_date && c.expiry_date < addYears(c.receipt_date, 1)) return false
-          if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
-          if (keyword) {
-            const haystack = [c.policy_no, c.customer_name, c.insured_name].join(' ').toLowerCase()
-            if (!haystack.includes(keyword)) return false
-          }
-          return true
-        })
-        .map((c) => ({ c, expiry: c.expiry_date ?? addYears(c.receipt_date!, 1), estimated: !c.expiry_date })),
-    [contracts, categoryFilter, keyword],
-  )
+  const withExpiry = useMemo(() => {
+    const rows = contracts
+      .filter((c) => {
+        if (c.renewal_status) return false
+        if (!(c.expiry_date || c.receipt_date)) return false
+        // 보험기간이 1년 미만인 단기성 계약(행사·공사기간 담보 등)은 매년 갱신 대상이 아니므로 제외한다.
+        if (c.expiry_date && c.receipt_date && c.expiry_date < addYears(c.receipt_date, 1)) return false
+        if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
+        if (keyword) {
+          const haystack = [c.policy_no, c.customer_name, c.insured_name].join(' ').toLowerCase()
+          if (!haystack.includes(keyword)) return false
+        }
+        return true
+      })
+      .map((c) => ({ c, expiry: c.expiry_date ?? addYears(c.receipt_date!, 1), estimated: !c.expiry_date }))
+
+    // 증권번호가 같은 계약이 여러 건이면(과거 갱신 이력 등) 보험시기가 가장 최근인 1건만 남긴다.
+    // 화면 표시만 걸러낼 뿐 DB의 계약 데이터 자체는 그대로 둔다.
+    const latestByPolicy = new Map<string, (typeof rows)[number]>()
+    const noPolicyNo: typeof rows = []
+    for (const r of rows) {
+      if (!r.c.policy_no) {
+        noPolicyNo.push(r)
+        continue
+      }
+      const existing = latestByPolicy.get(r.c.policy_no)
+      if (!existing || (r.c.receipt_date ?? '') > (existing.c.receipt_date ?? '')) {
+        latestByPolicy.set(r.c.policy_no, r)
+      }
+    }
+    return [...latestByPolicy.values(), ...noPolicyNo]
+  }, [contracts, categoryFilter, keyword])
 
   // 갱신완료를 고르면, 만기 다음날을 영수일로 하는 예비계약을 등록해 "계약관리 > 예비계약 확인"에서
   // 보험사 확정 계약이 들어왔을 때 매칭·확정할 수 있게 한다.
