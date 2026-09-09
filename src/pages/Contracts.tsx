@@ -1,14 +1,17 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import type { Contract, ContractCategory, ContractType, Profile } from '../lib/types'
+import type { Contract, ContractCategory, ContractType, Organization, OrgType, Profile } from '../lib/types'
 
 const CATEGORIES: ContractCategory[] = ['장기', '일반', '자동차']
 const TYPES: ContractType[] = ['신규', '계속', '환수', '부활', '비례공동']
+// 담당자 목록 정렬 우선순위: 본사 > 직영(센터) > 지점. REGION(지사)이 쓰이는 경우 본사와 직영 사이에 둔다.
+const ORG_TYPE_PRIORITY: Record<OrgType, number> = { HQ: 0, REGION: 1, CENTER: 2, STORE: 3 }
 
 interface Invite {
   email: string
   name: string
+  org_id: string
   rate_long: number
   rate_general: number
 }
@@ -45,6 +48,7 @@ export default function Contracts() {
   const [contracts, setContracts] = useState<Contract[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
+  const [orgs, setOrgs] = useState<Organization[]>([])
   const [loading, setLoading] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState<'전체' | ContractCategory>('전체')
   const [typeFilter, setTypeFilter] = useState<'전체' | ContractType>('전체')
@@ -93,8 +97,10 @@ export default function Contracts() {
     if (canManage) {
       const { data: p } = await supabase.from('profiles').select('*').order('name')
       setAgents(p ?? [])
-      const { data: i } = await supabase.from('pending_invites').select('email, name, rate_long, rate_general')
+      const { data: i } = await supabase.from('pending_invites').select('email, name, org_id, rate_long, rate_general')
       setInvites(i ?? [])
+      const { data: o } = await supabase.from('organizations').select('*')
+      setOrgs(o ?? [])
     }
     setLoading(false)
   }
@@ -261,16 +267,18 @@ export default function Contracts() {
     const byId = new Map(agents.map((a) => [a.id, a]))
     const byEmail = new Map(invites.map((i) => [i.email, i]))
     return (c: Contract) => {
-      if (c.agent_id === profile?.id) return { name: profile.name, rate_long: profile.rate_long, rate_general: profile.rate_general, pending: false }
+      if (c.agent_id === profile?.id) {
+        return { name: profile.name, org_id: profile.org_id, rate_long: profile.rate_long, rate_general: profile.rate_general, pending: false }
+      }
       if (c.agent_id && byId.has(c.agent_id)) {
         const p = byId.get(c.agent_id)!
-        return { name: p.name, rate_long: p.rate_long, rate_general: p.rate_general, pending: false }
+        return { name: p.name, org_id: p.org_id, rate_long: p.rate_long, rate_general: p.rate_general, pending: false }
       }
       if (c.agent_email && byEmail.has(c.agent_email)) {
         const i = byEmail.get(c.agent_email)!
-        return { name: i.name, rate_long: i.rate_long, rate_general: i.rate_general, pending: true }
+        return { name: i.name, org_id: i.org_id, rate_long: i.rate_long, rate_general: i.rate_general, pending: true }
       }
-      return { name: c.agent_email ?? c.agent_id ?? '-', rate_long: 1, rate_general: 1, pending: true }
+      return { name: c.agent_email ?? c.agent_id ?? '-', org_id: '', rate_long: 1, rate_general: 1, pending: true }
     }
   }, [agents, invites, profile])
 
@@ -306,15 +314,19 @@ export default function Contracts() {
     [contracts, categoryFilter, typeFilter, monthFilter, keyword, agentInfo]
   )
 
+  const orgsById = useMemo(() => new Map(orgs.map((o) => [o.id, o])), [orgs])
+
   const groups = useMemo(() => {
     interface CompanyGroup { company: string; rows: Contract[]; premium: number; commission: number; performanceCommission: number }
-    interface AgentGroup { key: string; name: string; pending: boolean; premium: number; commission: number; companies: Map<string, CompanyGroup> }
+    interface AgentGroup { key: string; name: string; org_id: string; pending: boolean; premium: number; commission: number; companies: Map<string, CompanyGroup> }
     const map = new Map<string, AgentGroup>()
     for (const c of filtered) {
       const key = c.agent_id ?? c.agent_email ?? 'unknown'
       const info = agentInfo(c)
       const rate = rateFor(c, info)
-      const g = map.get(key) ?? { key, name: info.name, pending: info.pending, premium: 0, commission: 0, companies: new Map<string, CompanyGroup>() }
+      const g =
+        map.get(key) ??
+        { key, name: info.name, org_id: info.org_id, pending: info.pending, premium: 0, commission: 0, companies: new Map<string, CompanyGroup>() }
       g.premium += c.premium
       g.commission += c.commission * rate
       const cg = g.companies.get(c.company) ?? { company: c.company, rows: [], premium: 0, commission: 0, performanceCommission: 0 }
@@ -339,8 +351,15 @@ export default function Contracts() {
           }))
           .sort((a, b) => b.premium - a.premium),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-  }, [filtered, agentInfo])
+      .sort((a, b) => {
+        // 담당자 소속 조직 우선순위: 본사 > 직영(센터) > 지점
+        const pa = ORG_TYPE_PRIORITY[orgsById.get(a.org_id)?.type as OrgType] ?? 99
+        const pb = ORG_TYPE_PRIORITY[orgsById.get(b.org_id)?.type as OrgType] ?? 99
+        if (pa !== pb) return pa - pb
+        if (a.org_id !== b.org_id) return a.org_id.localeCompare(b.org_id)
+        return a.name.localeCompare(b.name, 'ko')
+      })
+  }, [filtered, agentInfo, orgsById])
 
   useEffect(() => {
     if (!keyword) return
