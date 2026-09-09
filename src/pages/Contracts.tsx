@@ -136,6 +136,8 @@ export default function Contracts() {
     if (!error) {
       setForm((f) => ({ ...f, company: '', policy_no: '', customer_name: '', premium: 0, commission: 0 }))
       load()
+    } else if (error.code === '23505') {
+      alert('이미 등록된 증권번호입니다.')
     } else {
       alert('등록 실패: ' + error.message)
     }
@@ -475,7 +477,7 @@ export default function Contracts() {
       new_premium: prelimEditForm.premium,
     })
     if (error) {
-      alert('수정 실패: ' + error.message)
+      alert(error.code === '23505' ? '이미 등록된 증권번호입니다.' : '수정 실패: ' + error.message)
       return
     }
     setEditingPrelimId(null)
