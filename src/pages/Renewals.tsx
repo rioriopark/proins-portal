@@ -106,6 +106,8 @@ export default function Renewals() {
         .filter((c) => {
           if (c.renewal_status) return false
           if (!(c.expiry_date || c.receipt_date)) return false
+          // 보험기간이 1년 미만인 단기성 계약(행사·공사기간 담보 등)은 매년 갱신 대상이 아니므로 제외한다.
+          if (c.expiry_date && c.receipt_date && c.expiry_date < addYears(c.receipt_date, 1)) return false
           if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
           if (keyword) {
             const haystack = [c.policy_no, c.customer_name, c.insured_name].join(' ').toLowerCase()
