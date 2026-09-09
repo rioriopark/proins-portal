@@ -69,6 +69,21 @@ export default function Renewals() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, canManage])
 
+  // 어느 계정에서 갱신여부를 바꾸든, 지금 이 화면을 열어둔 다른 계정에도 실시간으로 반영해
+  // 이미 처리된 건이 계속 남아 보이지 않도록 한다.
+  useEffect(() => {
+    const channel = supabase
+      .channel('renewals-contracts-changes')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contracts' }, (payload) => {
+        const updated = payload.new as Contract
+        setContracts((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)))
+      })
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
   const today = new Date().toISOString().slice(0, 10)
 
   const agentInfo = useMemo(() => {
