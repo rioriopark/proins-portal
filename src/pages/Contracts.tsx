@@ -318,7 +318,7 @@ export default function Contracts() {
             rows: [...cg.rows].sort((a, b) => {
               const byCategory = CATEGORIES.indexOf(a.category) - CATEGORIES.indexOf(b.category)
               if (byCategory !== 0) return byCategory
-              return (a.receipt_date ?? '').localeCompare(b.receipt_date ?? '')
+              return (b.receipt_date ?? '').localeCompare(a.receipt_date ?? '')
             }),
           }))
           .sort((a, b) => b.premium - a.premium),
