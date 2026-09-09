@@ -280,8 +280,8 @@ export default function Contracts() {
         if (c.is_preliminary) return false
         // 수수료 0원 건(계속 상태 등, 수수료가 아직 발생하지 않은 트래킹용 행)은 목록에서 숨긴다.
         if (c.commission === 0) return false
-        // 신규건(장기/일반/자동차 공통)은 당월(지급월 기준) 계약만 보여준다.
-        if (c.type === '신규' && c.month !== today().slice(0, 7)) return false
+        // 장기 신규건은 당월(지급월 기준) 계약만 보여준다. 일반/자동차는 단발성 계약이라 월 제한 없이 전부 보여준다.
+        if (c.category === '장기' && c.type === '신규' && c.month !== today().slice(0, 7)) return false
         if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
         if (typeFilter !== '전체' && c.type !== typeFilter) return false
         if (monthFilter !== '전체' && c.month !== monthFilter) return false
