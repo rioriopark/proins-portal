@@ -35,7 +35,7 @@ const PERIOD_OPTIONS = [
 ]
 
 const CATEGORY_OPTIONS: ('전체' | ContractCategory)[] = ['전체', '일반', '자동차']
-const RENEWAL_STATUS_OPTIONS = ['갱신완료', '갱신거절', '보류', '건별계약']
+const RENEWAL_STATUS_OPTIONS = ['갱신완료', '갱신불가', '보류', '건별계약']
 
 export default function Renewals() {
   const { profile, can } = useAuth()
