@@ -46,6 +46,7 @@ export default function Renewals() {
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState('30')
   const [categoryFilter, setCategoryFilter] = useState<'전체' | ContractCategory>('전체')
+  const [search, setSearch] = useState('')
   const [openAgents, setOpenAgents] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -97,12 +98,23 @@ export default function Renewals() {
     }
   }, [agents, invites, profile])
 
+  const keyword = search.trim().toLowerCase()
+
   const withExpiry = useMemo(
     () =>
       contracts
-        .filter((c) => !c.renewal_status && (c.expiry_date || c.receipt_date) && (categoryFilter === '전체' || c.category === categoryFilter))
+        .filter((c) => {
+          if (c.renewal_status) return false
+          if (!(c.expiry_date || c.receipt_date)) return false
+          if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
+          if (keyword) {
+            const haystack = [c.policy_no, c.customer_name, c.insured_name].join(' ').toLowerCase()
+            if (!haystack.includes(keyword)) return false
+          }
+          return true
+        })
         .map((c) => ({ c, expiry: c.expiry_date ?? addYears(c.receipt_date!, 1), estimated: !c.expiry_date })),
-    [contracts, categoryFilter],
+    [contracts, categoryFilter, keyword],
   )
 
   // 갱신완료를 고르면, 만기 다음날을 영수일로 하는 예비계약을 등록해 "계약관리 > 예비계약 확인"에서
@@ -184,6 +196,13 @@ export default function Renewals() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="계약찾기: 증권번호, 계약자명, 피보험자명"
+          className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white w-64"
+        />
         <select value={period} onChange={(e) => setPeriod(e.target.value)}
           className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
           {PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
