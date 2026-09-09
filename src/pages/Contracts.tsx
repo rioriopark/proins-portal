@@ -705,6 +705,7 @@ export default function Contracts() {
                   <tr>
                     <th className="text-left px-4 py-2">담당자</th>
                     <th className="text-left px-4 py-2">보험사</th>
+                    <th className="text-left px-4 py-2">신규/갱신</th>
                     <th className="text-left px-4 py-2">증권번호</th>
                     <th className="text-left px-4 py-2">종목</th>
                     <th className="text-left px-4 py-2">계약자명</th>
@@ -723,6 +724,15 @@ export default function Contracts() {
                     <tr key={prelim.id} className="border-t border-slate-50">
                       <td className="px-4 py-2">{agentInfo(prelim).name}</td>
                       <td className="px-4 py-2">{prelim.company}</td>
+                      <td className="px-4 py-2">
+                        <span
+                          className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${
+                            prelim.type === '신규' ? 'text-sky-600 bg-sky-50' : 'text-purple-600 bg-purple-50'
+                          }`}
+                        >
+                          {prelim.type === '신규' ? '신규' : '갱신'}
+                        </span>
+                      </td>
                       <td className="px-4 py-2">
                         {editing ? (
                           <input
