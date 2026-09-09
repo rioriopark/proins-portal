@@ -158,26 +158,14 @@ export default function Renewals() {
     return [...latestByPolicy.values(), ...noPolicyNo]
   }, [contracts, categoryFilter, keyword])
 
-  // 갱신완료 선택 시 증권번호·만기예정일(추정 아님)·보험료가 없으면 저장을 막고
-  // 해당 셀을 깜빡이게 해서 먼저 채우도록 안내한다.
-  const [flaggedRowId, setFlaggedRowId] = useState<string | null>(null)
+  // 갱신완료는 새로 발급된 증권번호·보험료를 받아야 하므로, 선택 즉시 처리하지 않고
+  // 기존 값은 지운 입력창을 열어 새 값을 직접 입력받는다.
+  const [renewingId, setRenewingId] = useState<string | null>(null)
+  const [renewForm, setRenewForm] = useState({ policy_no: '', premium: '' })
+  const [renewSaving, setRenewSaving] = useState(false)
 
-  // 갱신완료를 고르면, 만기 다음날을 영수일로 하는 예비계약을 등록해 "계약관리 > 예비계약 확인"에서
-  // 보험사 확정 계약이 들어왔을 때 매칭·확정할 수 있게 한다.
-  async function setRenewalStatus(c: Contract, expiry: string, estimated: boolean, status: string) {
-    if (status === '갱신완료') {
-      const missing: string[] = []
-      if (!c.policy_no?.trim()) missing.push('증권번호')
-      if (estimated) missing.push('만기예정일(추정 아닌 실제 값 필요)')
-      if (!c.premium || c.premium <= 0) missing.push('보험료')
-      if (missing.length > 0) {
-        alert(`갱신완료 처리 전에 먼저 채워주세요: ${missing.join(', ')}`)
-        setFlaggedRowId(c.id)
-        window.setTimeout(() => setFlaggedRowId((id) => (id === c.id ? null : id)), 4000)
-        return
-      }
-    }
-
+  // 갱신불가/보류/건별계약처럼 새 증권번호·보험료 입력이 필요 없는 상태는 바로 저장한다.
+  async function setRenewalStatus(c: Contract, status: string) {
     const renewal_status = status || null
     const { error } = await supabase.rpc('set_contract_renewal_status', { contract_id: c.id, status: renewal_status })
     if (error) {
@@ -185,29 +173,67 @@ export default function Renewals() {
       return
     }
     setContracts((prev) => prev.map((row) => (row.id === c.id ? { ...row, renewal_status } : row)))
+  }
 
-    if (status === '갱신완료') {
-      const receipt_date = addDays(expiry, 1)
-      const { error: prelimError } = await supabase.from('contracts').upsert(
-        {
-          agent_id: c.agent_id,
-          agent_email: c.agent_email,
-          month: receipt_date.slice(0, 7),
-          category: c.category,
-          type: '계속',
-          company: c.company,
-          policy_no: c.policy_no,
-          customer_name: c.customer_name,
-          receipt_date,
-          count: 1,
-          premium: c.premium,
-          commission: 0,
-          is_preliminary: true,
-        },
-        { onConflict: 'company,policy_no,month,type,is_preliminary' }
-      )
-      if (prelimError) alert('예비계약 등록 실패: ' + prelimError.message)
+  function startRenewal(c: Contract, estimated: boolean) {
+    if (estimated) {
+      alert('갱신완료로 처리하려면 먼저 실제 만기예정일을 등록해주세요.')
+      return
     }
+    setRenewingId(c.id)
+    setRenewForm({ policy_no: '', premium: '' })
+  }
+  function cancelRenewal() {
+    setRenewingId(null)
+  }
+
+  // 갱신완료 확정: 새로 입력받은 증권번호·보험료로, 만기 다음날을 영수일로 하는 예비계약을 등록해
+  // "계약관리 > 예비계약 확인"에서 보험사 확정 계약이 들어왔을 때 매칭·확정할 수 있게 한다.
+  async function submitRenewal(c: Contract, expiry: string) {
+    const policy_no = renewForm.policy_no.trim()
+    const premium = Number(renewForm.premium)
+    if (!policy_no) {
+      alert('새 증권번호를 입력해주세요.')
+      return
+    }
+    if (!premium || premium <= 0) {
+      alert('새 보험료를 입력해주세요.')
+      return
+    }
+    setRenewSaving(true)
+    const { error } = await supabase.rpc('set_contract_renewal_status', { contract_id: c.id, status: '갱신완료' })
+    if (error) {
+      setRenewSaving(false)
+      alert('갱신여부 저장 실패: ' + error.message)
+      return
+    }
+    setContracts((prev) => prev.map((row) => (row.id === c.id ? { ...row, renewal_status: '갱신완료' } : row)))
+
+    const receipt_date = addDays(expiry, 1)
+    const { error: prelimError } = await supabase.from('contracts').upsert(
+      {
+        agent_id: c.agent_id,
+        agent_email: c.agent_email,
+        month: receipt_date.slice(0, 7),
+        category: c.category,
+        type: '계속',
+        company: c.company,
+        policy_no,
+        customer_name: c.customer_name,
+        receipt_date,
+        count: 1,
+        premium,
+        commission: 0,
+        is_preliminary: true,
+      },
+      { onConflict: 'company,policy_no,month,type,is_preliminary' }
+    )
+    setRenewSaving(false)
+    if (prelimError) {
+      alert('예비계약 등록 실패: ' + prelimError.message)
+      return
+    }
+    setRenewingId(null)
   }
 
   const agentOptions = reassignOptions
@@ -349,12 +375,23 @@ export default function Renewals() {
                   <tbody>
                     {g.rows.map(({ c, expiry, estimated }) => {
                       const overdue = expiry < today
-                      const flagged = flaggedRowId === c.id
-                      const blink = (missing: boolean) => (flagged && missing ? 'animate-pulse bg-rose-100 rounded' : '')
+                      const editing = renewingId === c.id
                       return (
                         <tr key={c.id} className="border-t border-slate-50">
-                          <td className={`px-4 py-1.5 ${blink(!c.policy_no?.trim())}`}>{c.policy_no ?? '-'}</td>
-                          <td className={`px-4 py-1.5 ${blink(estimated)}`}>
+                          <td className="px-4 py-1.5">
+                            {editing ? (
+                              <input
+                                autoFocus
+                                value={renewForm.policy_no}
+                                onChange={(e) => setRenewForm((f) => ({ ...f, policy_no: e.target.value }))}
+                                placeholder="새 증권번호"
+                                className="w-32 border border-slate-300 rounded px-1.5 py-1 text-xs"
+                              />
+                            ) : (
+                              c.policy_no ?? '-'
+                            )}
+                          </td>
+                          <td className="px-4 py-1.5">
                             <span className={overdue ? 'text-rose-600 font-medium' : 'text-slate-700'}>{expiry}</span>
                             <span className={`ml-1.5 text-xs ${overdue ? 'text-rose-500' : 'text-slate-400'}`}>({dday(expiry, today)})</span>
                             {estimated && <span className="ml-1.5 text-[10px] text-slate-400" title="만기일 미등록 · 영수일+1년으로 추정">추정</span>}
@@ -363,16 +400,54 @@ export default function Renewals() {
                           <td className="px-4 py-1.5">{c.product_name}</td>
                           <td className="px-4 py-1.5">{c.customer_name}</td>
                           <td className="px-4 py-1.5">{c.category}</td>
-                          <td className={`px-4 py-1.5 text-right ${blink(!c.premium || c.premium <= 0)}`}>{c.premium.toLocaleString('ko-KR')}</td>
+                          <td className="px-4 py-1.5 text-right">
+                            {editing ? (
+                              <input
+                                type="number"
+                                min={0}
+                                value={renewForm.premium}
+                                onChange={(e) => setRenewForm((f) => ({ ...f, premium: e.target.value }))}
+                                placeholder="새 보험료"
+                                className="w-24 border border-slate-300 rounded px-1.5 py-1 text-xs text-right"
+                              />
+                            ) : (
+                              c.premium.toLocaleString('ko-KR')
+                            )}
+                          </td>
                           <td className="px-4 py-1.5">
-                            <select
-                              value={c.renewal_status ?? ''}
-                              onChange={(e) => setRenewalStatus(c, expiry, estimated, e.target.value)}
-                              className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
-                            >
-                              <option value="">선택…</option>
-                              {RENEWAL_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-                            </select>
+                            {editing ? (
+                              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  disabled={renewSaving}
+                                  onClick={() => submitRenewal(c, expiry)}
+                                  className="text-xs text-white bg-slate-800 rounded px-2 py-1 hover:bg-slate-700 disabled:opacity-40"
+                                >
+                                  {renewSaving ? '처리 중…' : '확인'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={renewSaving}
+                                  onClick={cancelRenewal}
+                                  className="text-xs text-slate-500 hover:underline"
+                                >
+                                  취소
+                                </button>
+                              </div>
+                            ) : (
+                              <select
+                                value={c.renewal_status ?? ''}
+                                onChange={(e) => {
+                                  const status = e.target.value
+                                  if (status === '갱신완료') startRenewal(c, estimated)
+                                  else setRenewalStatus(c, status)
+                                }}
+                                className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
+                              >
+                                <option value="">선택…</option>
+                                {RENEWAL_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            )}
                           </td>
                           {canReassign && (
                             <td className="px-4 py-1.5">
