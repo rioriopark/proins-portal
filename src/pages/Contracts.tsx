@@ -844,12 +844,15 @@ export default function Contracts() {
                                               <span>{c.receipt_date ?? '-'}</span>
                                               <details className="relative">
                                                 <summary
-                                                  className={`list-none cursor-pointer leading-none ${c.memo ? 'text-indigo-600' : 'text-slate-300'}`}
+                                                  className="relative list-none cursor-pointer leading-none text-slate-300"
                                                   title={c.memo || '메모 추가'}
                                                 >
                                                   📝
+                                                  {c.memo && (
+                                                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                                  )}
                                                 </summary>
-                                                <div className="absolute left-full top-0 ml-1 z-10 bg-white border border-slate-200 rounded shadow-md p-1.5">
+                                                <div className="absolute left-full top-0 ml-1 z-10 bg-white border border-slate-200 rounded shadow-md p-1.5 space-y-1">
                                                   <textarea
                                                     autoFocus
                                                     defaultValue={c.memo ?? ''}
@@ -858,8 +861,18 @@ export default function Contracts() {
                                                     }}
                                                     placeholder="메모"
                                                     rows={3}
-                                                    className="border border-slate-200 rounded px-1.5 py-1 text-xs w-40 text-left resize overflow-auto"
+                                                    className="border border-slate-200 rounded px-1.5 py-1 text-xs w-40 text-left resize overflow-auto block"
                                                   />
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      updateMemo(c.id, '')
+                                                      e.currentTarget.closest('details')?.removeAttribute('open')
+                                                    }}
+                                                    className="text-[10px] text-rose-500 hover:underline"
+                                                  >
+                                                    메모 삭제
+                                                  </button>
                                                 </div>
                                               </details>
                                             </div>
