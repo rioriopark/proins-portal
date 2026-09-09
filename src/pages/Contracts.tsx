@@ -818,7 +818,6 @@ export default function Contracts() {
                                       <th className="text-left px-3 py-1.5">보험시기</th>
                                       <th className="text-left px-3 py-1.5">보험종기</th>
                                       <th className="text-right px-3 py-1.5">보험료</th>
-                                      <th className="text-left px-3 py-1.5">메모</th>
                                       <th className="text-right px-3 py-1.5">건별수수료(지급률 {Math.round(rateFor(cg.rows[0], agentInfo(cg.rows[0])) * 100)}% 적용)</th>
                                       <th className="text-right px-3 py-1.5">성과수수료</th>
                                       {canReassign && <th className="text-left px-3 py-1.5">담당자</th>}
@@ -836,17 +835,30 @@ export default function Contracts() {
                                           <td className="px-3 py-1.5">{c.category}</td>
                                           <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
                                           <td className="px-3 py-1.5">{c.expiry_date ?? '-'}</td>
-                                          <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
-                                          <td className="px-3 py-1.5">
-                                            <input
-                                              type="text"
-                                              defaultValue={c.memo ?? ''}
-                                              onBlur={(e) => {
-                                                if (e.target.value !== (c.memo ?? '')) updateMemo(c.id, e.target.value)
-                                              }}
-                                              placeholder="메모"
-                                              className="border border-slate-200 rounded px-1.5 py-1 text-xs w-32"
-                                            />
+                                          <td className="px-3 py-1.5 text-right">
+                                            <div className="flex items-center justify-end gap-1">
+                                              <span>{c.premium.toLocaleString('ko-KR')}</span>
+                                              <details className="relative">
+                                                <summary
+                                                  className={`list-none cursor-pointer leading-none ${c.memo ? 'text-indigo-600' : 'text-slate-300'}`}
+                                                  title={c.memo || '메모 추가'}
+                                                >
+                                                  📝
+                                                </summary>
+                                                <div className="absolute right-0 z-10 mt-1 bg-white border border-slate-200 rounded shadow-md p-1.5">
+                                                  <input
+                                                    type="text"
+                                                    autoFocus
+                                                    defaultValue={c.memo ?? ''}
+                                                    onBlur={(e) => {
+                                                      if (e.target.value !== (c.memo ?? '')) updateMemo(c.id, e.target.value)
+                                                    }}
+                                                    placeholder="메모"
+                                                    className="border border-slate-200 rounded px-1.5 py-1 text-xs w-40 text-left"
+                                                  />
+                                                </div>
+                                              </details>
+                                            </div>
                                           </td>
                                           <td className="px-3 py-1.5 text-right">{Math.round(c.commission * rate).toLocaleString('ko-KR')}</td>
                                           <td className="px-3 py-1.5 text-right">{Math.round(c.performance_commission).toLocaleString('ko-KR')}</td>
@@ -870,7 +882,6 @@ export default function Contracts() {
                                     <tr className="border-t border-slate-200 font-semibold">
                                       <td className="px-3 py-1.5" colSpan={7}>합계</td>
                                       <td className="px-3 py-1.5 text-right">{cg.premium.toLocaleString('ko-KR')}</td>
-                                      <td />
                                       <td className="px-3 py-1.5 text-right">{Math.round(cg.commission).toLocaleString('ko-KR')}</td>
                                       <td className="px-3 py-1.5 text-right">{Math.round(cg.performanceCommission).toLocaleString('ko-KR')}</td>
                                       {canReassign && <td />}
