@@ -278,6 +278,8 @@ export default function Contracts() {
       contracts.filter((c) => {
         // 예비계약(확정 전)은 계약 리스트에 안 보이고 "예비계약 확인"에서만 관리한다.
         if (c.is_preliminary) return false
+        // 수수료 0원 건(계속 상태 등, 수수료가 아직 발생하지 않은 트래킹용 행)은 목록에서 숨긴다.
+        if (c.commission === 0) return false
         if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
         if (typeFilter !== '전체' && c.type !== typeFilter) return false
         if (monthFilter !== '전체' && c.month !== monthFilter) return false
