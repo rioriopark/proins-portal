@@ -435,6 +435,62 @@ end;
 $$;
 grant execute on function set_contract_memo(uuid, text) to authenticated;
 
+-- ── 갱신관리: 담당자 변경만 지정된 직급/개인에 한해 허용하는 함수 ──
+-- contracts 전체 update 권한을 넓히지 않고, 본사관리자/본부장/지점장/지사장 직함과
+-- 담당자 이윤희(예외적으로 지정)만 agent_id/agent_email을 바꿀 수 있게 한다.
+create or replace function reassign_renewal_contract_agent(contract_id uuid, new_agent_id uuid, new_agent_email text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  caller record;
+begin
+  select role, title, name into caller from profiles where id = auth.uid();
+  if caller is null or not (
+    caller.role = 'hq_admin'
+    or caller.title like '%본부장%'
+    or caller.title like '%지점장%'
+    or caller.title like '%지사장%'
+    or caller.name = '이윤희'
+  ) then
+    raise exception '담당자 변경 권한이 없습니다.';
+  end if;
+
+  update contracts
+  set agent_id = new_agent_id, agent_email = new_agent_email
+  where id = contract_id;
+end;
+$$;
+grant execute on function reassign_renewal_contract_agent(uuid, uuid, text) to authenticated;
+
+-- 위 권한을 가진 사람이 role=agent라면 profiles를 폭넓게 조회할 RLS 권한이 없을 수 있어
+-- (직함만으로는 RLS를 통과 못 함), 재배정 대상 목록도 같은 권한 체크로 security definer 반환.
+create or replace function list_renewal_reassign_options()
+returns table(kind text, id uuid, email text, label text)
+language plpgsql security definer set search_path = public as $$
+declare
+  caller record;
+begin
+  select role, title, name into caller from profiles where id = auth.uid();
+  if caller is null or not (
+    caller.role = 'hq_admin'
+    or caller.title like '%본부장%'
+    or caller.title like '%지점장%'
+    or caller.title like '%지사장%'
+    or caller.name = '이윤희'
+  ) then
+    return;
+  end if;
+
+  return query
+    select 'p'::text, p.id, p.email, p.name
+    from profiles p
+    union all
+    select 'e'::text, null::uuid, i.email, i.name || ' (미가입)'
+    from pending_invites i
+    order by 4;
+end;
+$$;
+grant execute on function list_renewal_reassign_options() to authenticated;
+
 -- ── 신규 가입 시 초대장을 profiles 로 전환하는 트리거 ─────
 create or replace function handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$

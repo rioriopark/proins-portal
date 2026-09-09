@@ -38,13 +38,21 @@ const PERIOD_OPTIONS = [
 const CATEGORY_OPTIONS: ('전체' | ContractCategory)[] = ['전체', '일반', '자동차']
 const RENEWAL_STATUS_OPTIONS = ['갱신완료', '갱신불가', '보류', '건별계약']
 
+interface ReassignOption { kind: 'p' | 'e'; id: string | null; email: string; label: string }
+
 export default function Renewals() {
   const { profile, can } = useAuth()
   const canManage = can('contracts')
+  // 담당자 변경은 본사관리자·본부장·지점장·지사장과 담당자 이윤희만 할 수 있다.
+  const canReassign =
+    profile?.role === 'hq_admin' ||
+    ['본부장', '지점장', '지사장'].some((k) => (profile?.title ?? '').includes(k)) ||
+    profile?.name === '이윤희'
   const [contracts, setContracts] = useState<Contract[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
   const [orgs, setOrgs] = useState<Organization[]>([])
+  const [reassignOptions, setReassignOptions] = useState<ReassignOption[]>([])
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState('30')
   const [categoryFilter, setCategoryFilter] = useState<'전체' | ContractCategory>('전체')
@@ -68,11 +76,15 @@ export default function Renewals() {
         setInvites(i ?? [])
         setOrgs(o ?? [])
       }
+      if (canReassign) {
+        const { data: ro } = await supabase.rpc('list_renewal_reassign_options')
+        setReassignOptions(ro ?? [])
+      }
       setLoading(false)
     }
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id, canManage])
+  }, [profile?.id, canManage, canReassign])
 
   // 어느 계정에서 갱신여부를 바꾸든, 지금 이 화면을 열어둔 다른 계정에도 실시간으로 반영해
   // 이미 처리된 건이 계속 남아 보이지 않도록 한다.
@@ -180,6 +192,34 @@ export default function Renewals() {
     }
   }
 
+  const agentOptions = reassignOptions
+    .map((o) => ({ value: o.kind === 'p' ? `p:${o.id}` : `e:${o.email}`, label: o.label }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'ko'))
+
+  function currentAgentValue(c: Contract) {
+    if (c.agent_id) return `p:${c.agent_id}`
+    if (c.agent_email) return `e:${c.agent_email}`
+    return ''
+  }
+
+  async function reassignAgent(c: Contract, value: string) {
+    const [kind, key] = value.split(/:(.+)/)
+    const newAgentId = kind === 'p' ? key : null
+    const newAgentEmail = kind === 'p' ? reassignOptions.find((o) => o.id === key)?.email ?? null : key
+    const { error } = await supabase.rpc('reassign_renewal_contract_agent', {
+      contract_id: c.id,
+      new_agent_id: newAgentId,
+      new_agent_email: newAgentEmail,
+    })
+    if (error) {
+      alert('담당자 변경 실패: ' + error.message)
+      return
+    }
+    setContracts((prev) =>
+      prev.map((row) => (row.id === c.id ? { ...row, agent_id: newAgentId, agent_email: newAgentEmail } : row))
+    )
+  }
+
   const filtered = useMemo(() => {
     if (period === 'all') return withExpiry
     if (period === 'overdue') return withExpiry.filter((r) => r.expiry < today)
@@ -285,6 +325,7 @@ export default function Renewals() {
                       <th className="text-left px-4 py-2">종목</th>
                       <th className="text-right px-4 py-2">보험료</th>
                       <th className="text-left px-4 py-2">갱신여부</th>
+                      {canReassign && <th className="text-left px-4 py-2">담당자</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -313,6 +354,19 @@ export default function Renewals() {
                               {RENEWAL_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
                             </select>
                           </td>
+                          {canReassign && (
+                            <td className="px-4 py-1.5">
+                              <select
+                                value={currentAgentValue(c)}
+                                onChange={(e) => reassignAgent(c, e.target.value)}
+                                className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
+                              >
+                                {agentOptions.map((o) => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}
