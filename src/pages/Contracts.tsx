@@ -296,7 +296,7 @@ export default function Contracts() {
   )
 
   const groups = useMemo(() => {
-    interface CompanyGroup { company: string; rows: Contract[]; premium: number; commission: number }
+    interface CompanyGroup { company: string; rows: Contract[]; premium: number; commission: number; performanceCommission: number }
     interface AgentGroup { key: string; name: string; pending: boolean; premium: number; commission: number; companies: Map<string, CompanyGroup> }
     const map = new Map<string, AgentGroup>()
     for (const c of filtered) {
@@ -306,10 +306,11 @@ export default function Contracts() {
       const g = map.get(key) ?? { key, name: info.name, pending: info.pending, premium: 0, commission: 0, companies: new Map<string, CompanyGroup>() }
       g.premium += c.premium
       g.commission += c.commission * rate
-      const cg = g.companies.get(c.company) ?? { company: c.company, rows: [], premium: 0, commission: 0 }
+      const cg = g.companies.get(c.company) ?? { company: c.company, rows: [], premium: 0, commission: 0, performanceCommission: 0 }
       cg.rows.push(c)
       cg.premium += c.premium
       cg.commission += c.commission * rate
+      cg.performanceCommission += c.performance_commission
       g.companies.set(c.company, cg)
       map.set(key, g)
     }
@@ -844,9 +845,10 @@ export default function Contracts() {
                                       )
                                     })}
                                     <tr className="border-t border-slate-200 font-semibold">
-                                      <td className="px-3 py-1.5" colSpan={4}>합계</td>
+                                      <td className="px-3 py-1.5" colSpan={7}>합계</td>
                                       <td className="px-3 py-1.5 text-right">{cg.premium.toLocaleString('ko-KR')}</td>
                                       <td className="px-3 py-1.5 text-right">{Math.round(cg.commission).toLocaleString('ko-KR')}</td>
+                                      <td className="px-3 py-1.5 text-right">{Math.round(cg.performanceCommission).toLocaleString('ko-KR')}</td>
                                       {canReassign && <td />}
                                     </tr>
                                   </tbody>
