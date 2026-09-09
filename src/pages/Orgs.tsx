@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { toAuthEmail } from '../lib/id'
 import { ROLE_LABEL, type Organization, type Profile, type Role } from '../lib/types'
-import { AGENT_GRADES as GRADE_SUGGESTIONS } from '../lib/agentSort'
+import { agentCode, compareAgentCode, AGENT_GRADES as GRADE_SUGGESTIONS } from '../lib/agentSort'
 
 const ROLES: Role[] = ['hq_admin', 'branch_admin', 'store_manager', 'agent']
 
@@ -77,12 +77,18 @@ export default function Orgs() {
     return map
   }, [orgs])
 
+  const orgsById = useMemo(() => new Map(orgs.map((o) => [o.id, o])), [orgs])
+
   const peopleOf = useMemo(() => {
     const map = new Map<string, Person[]>()
     for (const p of people) {
       const list = map.get(p.org_id) ?? []
       list.push(p)
       map.set(p.org_id, list)
+    }
+    // 조직별 담당자 목록은 사번 순으로 보여준다.
+    for (const list of map.values()) {
+      list.sort((a, b) => compareAgentCode(agentCode(a.email), agentCode(b.email)))
     }
     return map
   }, [people])
@@ -191,13 +197,17 @@ export default function Orgs() {
                   className="border border-slate-200 rounded px-1.5 py-1 w-14 text-right"
                 />
                 <span className="text-slate-400">%</span>
-                <select
-                  value={p.org_id}
-                  onChange={(e) => updatePerson(p, { org_id: e.target.value })}
-                  className="border border-slate-200 rounded px-1.5 py-1"
-                >
-                  {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                </select>
+                {isHq ? (
+                  <select
+                    value={p.org_id}
+                    onChange={(e) => updatePerson(p, { org_id: e.target.value })}
+                    className="border border-slate-200 rounded px-1.5 py-1"
+                  >
+                    {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                ) : (
+                  <span className="text-slate-500">{orgsById.get(p.org_id)?.name ?? p.org_id}</span>
+                )}
                 <button onClick={() => removePerson(p)} className="text-red-400 hover:text-red-600">✕</button>
               </div>
             ))}
