@@ -7,7 +7,42 @@ import type { CompanyCode, Profile } from '../lib/types'
 const HEADER_HINT = '담당자명\t보험사\t계약번호\t계약자명\t종목\t영수일\t보험료'
 const EXAMPLE = '김은지\t삼성화재\t52616634160000\t홍길동\t일반\t2026-09-15\t2428500'
 
-const INSURERS = ['삼성화재', 'DB손보', '현대해상', 'KB손보', '메리츠화재', '롯데손해보험', '라이나손보', '한화손해보험', 'AIG손해보험']
+const INSURERS = ['삼성화재', 'DB손보', '현대해상', 'KB손보', '메리츠화재', '롯데손해보험', '라이나손보', '한화손해보험', '흥국화재', 'AIG손해보험']
+
+// 보험사가 파일명에 정식 명칭/약칭을 섞어 쓰기 때문에(예: "DB손해보험" vs "DB손보"),
+// INSURERS 목록의 값 하나만으로 매칭하면 놓치는 경우가 많아 각 보험사별 별칭도 함께 확인한다.
+const INSURER_FILENAME_ALIASES: Record<string, string[]> = {
+  '삼성화재': ['삼성화재'],
+  'DB손보': ['DB손보', 'DB손해보험'],
+  '현대해상': ['현대해상'],
+  'KB손보': ['KB손보', 'KB손해보험'],
+  '메리츠화재': ['메리츠화재'],
+  '롯데손해보험': ['롯데손해보험', '롯데손보'],
+  '라이나손보': ['라이나손보', '라이나생명', '라이나'],
+  '한화손해보험': ['한화손해보험', '한화손보'],
+  '흥국화재': ['흥국화재'],
+  'AIG손해보험': ['AIG손해보험', 'AIG'],
+}
+
+function guessInsurerFromFileName(fileName: string): string {
+  for (const insurer of INSURERS) {
+    const aliases = INSURER_FILENAME_ALIASES[insurer] ?? [insurer]
+    if (aliases.some((a) => fileName.includes(a))) return insurer
+  }
+  return ''
+}
+
+function guessCategoryFromFileName(fileName: string): string {
+  if (fileName.includes('자동차')) return '자동차'
+  if (fileName.includes('일반')) return '일반'
+  if (fileName.includes('장기')) return '장기'
+  return ''
+}
+
+function guessMonthFromFileName(fileName: string): string {
+  const m = fileName.match(/(20\d{2})\D{0,2}(\d{1,2})(?!\d)/)
+  return m ? `${m[1]}-${m[2].padStart(2, '0')}` : ''
+}
 
 interface ParsedRow {
   raw: string[]
@@ -312,6 +347,8 @@ interface FileGroup {
   rowMonths: string[]
   mapping: Record<FieldKey, number>
   fileMonth: string
+  // 종목(장기/일반/자동차) 열이 없는 파일에서, 파일명에서 미리 추정해둔 값으로 대신 채운다.
+  fileCategory: string
 }
 
 export default function BulkImport() {
@@ -443,12 +480,13 @@ export default function BulkImport() {
         groups.push({
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           fileName: f.name,
-          insurer: INSURERS.find((c) => f.name.includes(c)) ?? '',
+          insurer: guessInsurerFromFileName(f.name),
           headers: hdrs,
           dataRows: body,
-          rowMonths: Array(body.length).fill(guessFileMonth(grid, headerIdx)),
+          rowMonths: Array(body.length).fill(guessMonthFromFileName(f.name) || guessFileMonth(grid, headerIdx)),
           mapping: guessMapping(hdrs, body),
-          fileMonth: '',
+          fileMonth: guessMonthFromFileName(f.name),
+          fileCategory: guessCategoryFromFileName(f.name),
         })
       }
       setFileGroups(groups)
@@ -506,7 +544,9 @@ export default function BulkImport() {
         const rawType = get(row, 'type')
         const rawMonth = get(row, 'month')
         const month = rawMonth ? normalizeMonth(rawMonth) : (g.rowMonths[i] || g.fileMonth)
-        const category = rawCategory ? normalizeCategory(rawCategory) : inferCategoryFallback(g.insurer, g.headers, row)
+        const category = rawCategory
+          ? normalizeCategory(rawCategory)
+          : inferCategoryFallback(g.insurer, g.headers, row) || g.fileCategory
         const type = rawType || inferTypeFallback(g.insurer, g.headers, row)
         const premium = toNumber(get(row, 'premium'))
         const commission = toNumber(get(row, 'commission'))
@@ -849,9 +889,21 @@ export default function BulkImport() {
                       </label>
                     )}
                     {g.mapping.category < 0 && g.insurer !== '삼성화재' && (
-                      <p className="text-xs text-amber-600">
-                        이 파일에서 종목(장기/일반/자동차) 열을 찾지 못했습니다. 열 매핑에서 직접 지정해주세요.
-                      </p>
+                      <label className="block text-xs pt-1">
+                        <span className="block text-slate-500 mb-1">
+                          종목 (열이 없어 파일명에서 자동 인식하며, 필요시 직접 변경하세요)
+                        </span>
+                        <select
+                          value={g.fileCategory}
+                          onChange={(e) => updateGroup(g.id, { fileCategory: e.target.value })}
+                          className="border border-slate-300 rounded-md px-2 py-1.5"
+                        >
+                          <option value="">(미지정)</option>
+                          <option value="장기">장기</option>
+                          <option value="일반">일반</option>
+                          <option value="자동차">자동차</option>
+                        </select>
+                      </label>
                     )}
                   </div>
                 </div>
