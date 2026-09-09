@@ -47,6 +47,7 @@ create table contracts (
   commission numeric not null default 0, -- 지급률 적용 전 원 수수료(건별수수료)
   performance_commission numeric not null default 0, -- 성과수수료 (보험사 파일에 별도 열로 오는 값 그대로 저장)
   renewal_status text,               -- 갱신여부: '갱신완료' | '갱신거절' | '보류' (미지정이면 갱신관리 목록에 계속 표시됨)
+  memo text,                         -- 계약관리에서 보험료 옆에 자유롭게 남기는 메모
   is_preliminary boolean not null default false, -- 위촉설계사가 보험사 확정 전에 직접 등록한 예비계약 여부
   created_at timestamptz default now(),
   constraint contracts_has_owner check (agent_id is not null or agent_email is not null),
@@ -411,6 +412,28 @@ begin
 end;
 $$;
 grant execute on function set_contract_renewal_status(uuid, text) to authenticated;
+
+-- ── 계약관리: 메모만 본인 계약 건에 한해 남길 수 있는 함수 ──
+create or replace function set_contract_memo(contract_id uuid, new_memo text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update contracts
+  set memo = new_memo
+  where id = contract_id
+    and (
+      agent_id = auth.uid()
+      or my_role() = 'hq_admin'
+      or has_menu_permission('contracts')
+      or has_menu_permission('bulk_import')
+      or (
+        agent_id is not null
+        and my_role() in ('branch_admin','store_manager')
+        and exists (select 1 from profiles p where p.id = contracts.agent_id and is_org_descendant(my_org(), p.org_id))
+      )
+    );
+end;
+$$;
+grant execute on function set_contract_memo(uuid, text) to authenticated;
 
 -- ── 신규 가입 시 초대장을 profiles 로 전환하는 트리거 ─────
 create or replace function handle_new_user()

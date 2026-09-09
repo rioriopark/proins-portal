@@ -59,6 +59,7 @@ export interface Contract {
   commission: number
   performance_commission: number
   renewal_status: string | null
+  memo: string | null
   is_preliminary: boolean
   created_at: string
 }
