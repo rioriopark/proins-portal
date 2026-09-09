@@ -839,11 +839,9 @@ export default function Contracts() {
                                           <td className="px-3 py-1.5">{c.customer_name}</td>
                                           <td className="px-3 py-1.5">{c.insured_name ?? '-'}</td>
                                           <td className="px-3 py-1.5">{c.category}</td>
-                                          <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
-                                          <td className="px-3 py-1.5">{c.expiry_date ?? '-'}</td>
-                                          <td className="px-3 py-1.5 text-right">
-                                            <div className="flex items-center justify-end gap-1">
-                                              <span>{c.premium.toLocaleString('ko-KR')}</span>
+                                          <td className="px-3 py-1.5">
+                                            <div className="flex items-center gap-1">
+                                              <span>{c.receipt_date ?? '-'}</span>
                                               <details className="relative">
                                                 <summary
                                                   className={`list-none cursor-pointer leading-none ${c.memo ? 'text-indigo-600' : 'text-slate-300'}`}
@@ -851,7 +849,7 @@ export default function Contracts() {
                                                 >
                                                   📝
                                                 </summary>
-                                                <div className="absolute left-full top-1/2 -translate-y-1/2 ml-1 z-10 bg-white border border-slate-200 rounded shadow-md p-1.5">
+                                                <div className="absolute left-full top-0 ml-1 z-10 bg-white border border-slate-200 rounded shadow-md p-1.5">
                                                   <textarea
                                                     autoFocus
                                                     defaultValue={c.memo ?? ''}
@@ -860,12 +858,14 @@ export default function Contracts() {
                                                     }}
                                                     placeholder="메모"
                                                     rows={3}
-                                                    className="border border-slate-200 rounded px-1.5 py-1 text-xs w-40 text-left resize"
+                                                    className="border border-slate-200 rounded px-1.5 py-1 text-xs w-40 text-left resize overflow-auto"
                                                   />
                                                 </div>
                                               </details>
                                             </div>
                                           </td>
+                                          <td className="px-3 py-1.5">{c.expiry_date ?? '-'}</td>
+                                          <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
                                           {!isHqStaff && (
                                             <>
                                               <td className="px-3 py-1.5 text-right">{Math.round(c.commission * rate).toLocaleString('ko-KR')}</td>
