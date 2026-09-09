@@ -105,14 +105,39 @@ export default function Renewals() {
     [contracts, categoryFilter],
   )
 
-  async function setRenewalStatus(contractId: string, status: string) {
+  // 갱신완료를 고르면, 만기 다음날을 영수일로 하는 예비계약을 등록해 "계약관리 > 예비계약 확인"에서
+  // 보험사 확정 계약이 들어왔을 때 매칭·확정할 수 있게 한다.
+  async function setRenewalStatus(c: Contract, expiry: string, status: string) {
     const renewal_status = status || null
-    const { error } = await supabase.rpc('set_contract_renewal_status', { contract_id: contractId, status: renewal_status })
+    const { error } = await supabase.rpc('set_contract_renewal_status', { contract_id: c.id, status: renewal_status })
     if (error) {
       alert('갱신여부 저장 실패: ' + error.message)
       return
     }
-    setContracts((prev) => prev.map((c) => (c.id === contractId ? { ...c, renewal_status } : c)))
+    setContracts((prev) => prev.map((row) => (row.id === c.id ? { ...row, renewal_status } : row)))
+
+    if (status === '갱신완료') {
+      const receipt_date = addDays(expiry, 1)
+      const { error: prelimError } = await supabase.from('contracts').upsert(
+        {
+          agent_id: c.agent_id,
+          agent_email: c.agent_email,
+          month: receipt_date.slice(0, 7),
+          category: c.category,
+          type: '계속',
+          company: c.company,
+          policy_no: c.policy_no,
+          customer_name: c.customer_name,
+          receipt_date,
+          count: 1,
+          premium: c.premium,
+          commission: 0,
+          is_preliminary: true,
+        },
+        { onConflict: 'company,policy_no,month,type,is_preliminary' }
+      )
+      if (prelimError) alert('예비계약 등록 실패: ' + prelimError.message)
+    }
   }
 
   const filtered = useMemo(() => {
@@ -226,7 +251,7 @@ export default function Renewals() {
                           <td className="px-4 py-1.5">
                             <select
                               value={c.renewal_status ?? ''}
-                              onChange={(e) => setRenewalStatus(c.id, e.target.value)}
+                              onChange={(e) => setRenewalStatus(c, expiry, e.target.value)}
                               className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
                             >
                               <option value="">선택…</option>
