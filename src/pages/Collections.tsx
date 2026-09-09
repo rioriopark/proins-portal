@@ -9,9 +9,11 @@ function sum<T>(rows: T[], pick: (row: T) => number): number {
   return rows.reduce((s, r) => s + pick(r), 0)
 }
 
-// 보험사 파일마다 "정상"을 표현하는 방식이 다를 수 있어, "정상"이 포함되지 않은 값을 미수금·지연으로 간주한다.
+// 관리 대상 수금상태만 보여준다(당월 계약 한정).
+const TARGET_STATUSES = ['유예', '기타', '실효', '해지', '해약']
+
 function isProblem(status: string): boolean {
-  return !!status && !status.includes('정상')
+  return TARGET_STATUSES.includes(status)
 }
 
 export default function Collections() {
@@ -21,8 +23,9 @@ export default function Collections() {
   const [agents, setAgents] = useState<Profile[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('problem')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [openAgents, setOpenAgents] = useState<Set<string>>(new Set())
+  const thisMonth = new Date().toISOString().slice(0, 7)
 
   useEffect(() => {
     async function load() {
@@ -56,16 +59,15 @@ export default function Collections() {
     }
   }, [agents, invites, profile])
 
-  const distinctStatuses = useMemo(
-    () => [...new Set(contracts.map((c) => c.collection_status).filter((s): s is string => !!s))].sort((a, b) => a.localeCompare(b, 'ko')),
-    [contracts],
+  const inScope = useMemo(
+    () => contracts.filter((c) => c.month === thisMonth && isProblem(c.collection_status ?? '')),
+    [contracts, thisMonth],
   )
 
   const filtered = useMemo(() => {
-    if (statusFilter === 'all') return contracts
-    if (statusFilter === 'problem') return contracts.filter((c) => isProblem(c.collection_status ?? ''))
-    return contracts.filter((c) => c.collection_status === statusFilter)
-  }, [contracts, statusFilter])
+    if (statusFilter === 'all') return inScope
+    return inScope.filter((c) => c.collection_status === statusFilter)
+  }, [inScope, statusFilter])
 
   const groups = useMemo(() => {
     interface Group { key: string; name: string; pending: boolean; rows: Contract[]; premium: number }
@@ -99,7 +101,7 @@ export default function Collections() {
       <div>
         <h1 className="text-xl font-bold text-slate-800">수금관리</h1>
         <p className="text-sm text-slate-500 mt-1">
-          보험사 엑셀 업로드 시 함께 들어온 수금상태(정상집금여부 등)를 기준으로 미수금·지연 계약을 담당자별로 보여줍니다.
+          이번 달 계약 중 수금상태가 유예·기타·실효·해지·해약인 건을 담당자별로 보여줍니다.
           업로드 파일에 수금상태 열이 없으면 여기 나타나지 않습니다.
         </p>
       </div>
@@ -107,9 +109,8 @@ export default function Collections() {
       <div className="flex flex-wrap items-center gap-3">
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
           className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
-          <option value="problem">미수금·지연만</option>
           <option value="all">전체</option>
-          {distinctStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
+          {TARGET_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <span className="text-sm text-slate-500">
           {totalCount}건 · 보험료 합계 {totalPremium.toLocaleString('ko-KR')}원
