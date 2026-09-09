@@ -266,7 +266,9 @@ export default function Dashboard() {
     }
   }, [agents, invites, profile])
 
-  // 누적(전체 기간) 실적 — 위촉설계사의 "나의 누적" 카드는 당해년 계약만 합산한다.
+  // 누적(전체 기간) 실적 — 위촉설계사·본사관리자·지사/지점 관리자(RLS로 이미 본인 하부조직만
+  // 조회됨)의 "누적" 카드는 당해년 계약만 합산하고, 본사담당자만 전체 기간을 그대로 유지한다.
+  const scopeToThisYear = isFieldAgent || ['hq_admin', 'branch_admin', 'store_manager'].includes(profile?.role ?? '')
   const totalPremiumAll = useMemo(() => sum(contracts, (c) => c.premium), [contracts])
   const totalCountAll = useMemo(() => sum(contracts, (c) => c.count), [contracts])
   const totalCommissionAll = useMemo(() => sum(contracts, (c) => c.commission), [contracts])
@@ -327,10 +329,9 @@ export default function Dashboard() {
   // 갱신센터는 항상, 수수료 현황은 본사담당자만 제외, TOP5는 위촉설계사만 제외 — 보이는 카드 수에 맞춰 그리드 열 수를 정한다.
   const middleCardCount = 1 + (isHqStaff ? 0 : 1) + (isFieldAgent ? 0 : 1)
 
-  // 위촉설계사의 "나의 누적" 카드는 당해년 계약만, 그 외(본사)는 전체 기간을 합산해 보여준다.
-  const cumulativePremium = isFieldAgent ? totalPremiumThisYear : totalPremiumAll
-  const cumulativeCount = isFieldAgent ? totalCountThisYear : totalCountAll
-  const cumulativeCommission = isFieldAgent ? totalCommissionThisYear : totalCommissionAll
+  const cumulativePremium = scopeToThisYear ? totalPremiumThisYear : totalPremiumAll
+  const cumulativeCount = scopeToThisYear ? totalCountThisYear : totalCountAll
+  const cumulativeCommission = scopeToThisYear ? totalCommissionThisYear : totalCommissionAll
   const baseStatCards = [
     { label: `${scopeLabel}누적 보험료`, value: `${cumulativePremium.toLocaleString('ko-KR')}원`, rate: ytd.premium, color: 'blue' as const, icon: <IconWon /> },
     { label: `${scopeLabel}누적 계약 건수`, value: `${cumulativeCount.toLocaleString('ko-KR')}건`, rate: ytd.count, color: 'emerald' as const, icon: <IconDocCheck /> },
