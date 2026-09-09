@@ -719,7 +719,7 @@ export default function Contracts() {
                 </thead>
                 <tbody>
                   {preliminaryMatches.map(({ prelim, matches }) => {
-                    const editing = matches.length === 0 && editingPrelimId === prelim.id
+                    const editing = editingPrelimId === prelim.id
                     return (
                     <tr key={prelim.id} className="border-t border-slate-50">
                       <td className="px-4 py-2">{agentInfo(prelim).name}</td>
@@ -783,18 +783,6 @@ export default function Contracts() {
                             {matches.length > 1 && <span className="text-xs text-slate-400"> 외 {matches.length - 1}건</span>}
                           </td>
                           <td className="px-4 py-2">{matches[0].month}</td>
-                          <td className="px-4 py-2 text-right">
-                            {canManage ? (
-                              <button
-                                onClick={() => deleteContract(prelim.id)}
-                                className="text-xs text-white bg-slate-800 rounded-md px-3 py-1.5 hover:bg-slate-700"
-                              >
-                                확정 처리(예비 삭제)
-                              </button>
-                            ) : (
-                              <span className="text-xs text-slate-400">본사 확인 대기</span>
-                            )}
-                          </td>
                         </>
                       ) : (
                         <>
@@ -803,41 +791,41 @@ export default function Contracts() {
                           </td>
                           <td className="px-4 py-2 text-right text-slate-300">-</td>
                           <td className="px-4 py-2 text-slate-300">-</td>
-                          <td className="px-4 py-2 text-right space-x-2">
-                            {editing ? (
-                              <>
-                                <button
-                                  onClick={() => savePrelimEdit(prelim.id)}
-                                  className="text-xs text-white bg-slate-800 rounded-md px-2.5 py-1 hover:bg-slate-700"
-                                >
-                                  저장
-                                </button>
-                                <button
-                                  onClick={() => setEditingPrelimId(null)}
-                                  className="text-xs text-slate-500 hover:underline"
-                                >
-                                  취소
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => startEditPrelim(prelim)}
-                                  className="text-xs text-indigo-600 hover:underline"
-                                >
-                                  수정
-                                </button>
-                                <button
-                                  onClick={() => deleteContract(prelim.id)}
-                                  className="text-xs text-rose-600 hover:underline"
-                                >
-                                  삭제
-                                </button>
-                              </>
-                            )}
-                          </td>
                         </>
                       )}
+                      <td className="px-4 py-2 text-right space-x-2">
+                        {editing ? (
+                          <>
+                            <button
+                              onClick={() => savePrelimEdit(prelim.id)}
+                              className="text-xs text-white bg-slate-800 rounded-md px-2.5 py-1 hover:bg-slate-700"
+                            >
+                              저장
+                            </button>
+                            <button
+                              onClick={() => setEditingPrelimId(null)}
+                              className="text-xs text-slate-500 hover:underline"
+                            >
+                              취소
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => startEditPrelim(prelim)}
+                              className="text-xs text-indigo-600 hover:underline"
+                            >
+                              수정
+                            </button>
+                            <button
+                              onClick={() => deleteContract(prelim.id)}
+                              className="text-xs text-rose-600 hover:underline"
+                            >
+                              삭제
+                            </button>
+                          </>
+                        )}
+                      </td>
                     </tr>
                   )})}
                 </tbody>
