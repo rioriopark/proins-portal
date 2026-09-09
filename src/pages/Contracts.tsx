@@ -740,10 +740,16 @@ export default function Contracts() {
                 <table className="w-full text-sm">
                   <thead className="text-slate-500 text-xs border-b border-slate-100">
                     <tr>
-                      <th className="text-left px-4 py-2">보험사/상품</th>
-                      <th className="text-right px-4 py-2">건수</th>
-                      <th className="text-right px-4 py-2">보험료</th>
-                      <th className="text-right px-4 py-2">수수료(지급률 적용)</th>
+                      <th colSpan={4} className="p-0 font-normal">
+                        <div className="flex items-center justify-between px-4 py-2">
+                          <span>보험사/상품</span>
+                          <span className="flex gap-6">
+                            <span className="w-12 text-right">건수</span>
+                            <span className="w-24 text-right">보험료</span>
+                            <span className="w-28 text-right">수수료(지급률 적용)</span>
+                          </span>
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
