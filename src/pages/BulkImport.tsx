@@ -358,7 +358,10 @@ export default function BulkImport() {
     const chunkSize = 200
     for (let i = 0; i < payload.length; i += chunkSize) {
       const chunk = payload.slice(i, i + chunkSize)
-      const { error, data } = await supabase.from('contracts').insert(chunk).select('id')
+      const { error, data } = await supabase
+        .from('contracts')
+        .upsert(chunk, { onConflict: 'company,policy_no,month,type,is_preliminary' })
+        .select('id')
       if (error) {
         failed += chunk.length
         if (!errorMessage) errorMessage = error.message
@@ -583,7 +586,10 @@ export default function BulkImport() {
     const chunkSize = 200
     for (let i = 0; i < payload.length; i += chunkSize) {
       const chunk = payload.slice(i, i + chunkSize)
-      const { error, data } = await supabase.from('contracts').insert(chunk).select('id')
+      const { error, data } = await supabase
+        .from('contracts')
+        .upsert(chunk, { onConflict: 'company,policy_no,month,type,is_preliminary' })
+        .select('id')
       if (error) {
         failed += chunk.length
         if (!errorMessage) errorMessage = error.message

@@ -48,7 +48,10 @@ create table contracts (
   performance_commission numeric not null default 0, -- 성과수수료 (보험사 파일에 별도 열로 오는 값 그대로 저장)
   is_preliminary boolean not null default false, -- 위촉설계사가 보험사 확정 전에 직접 등록한 예비계약 여부
   created_at timestamptz default now(),
-  constraint contracts_has_owner check (agent_id is not null or agent_email is not null)
+  constraint contracts_has_owner check (agent_id is not null or agent_email is not null),
+  -- 같은 보험사 파일을 실수로 다시 업로드해도 같은 계약이 중복 등록되지 않도록 함.
+  -- policy_no가 없는(건별 상세 없이 합산 등록한) 행은 null끼리 서로 다른 값으로 취급되어 제한 없음.
+  constraint contracts_unique_policy_line unique (company, policy_no, month, type, is_preliminary)
 );
 
 -- ── 가입 초대장 (이메일 화이트리스트) ─────────────────────
