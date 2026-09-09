@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import type { Contract, ContractCategory, Profile } from '../lib/types'
+import type { Contract, ContractCategory, Organization, Profile } from '../lib/types'
+import { compareByOrgGradeCode } from '../lib/agentSort'
 
-interface Invite { email: string; name: string }
+interface Invite { email: string; name: string; org_id: string; title: string }
 
 // 실제 만기일(expiry_date)이 있으면 그 값을 쓰고, 없는 계약(만기일 없이 등록된 건)만 영수일 + 1년으로 추정한다.
 function addYears(dateStr: string, years: number): string {
@@ -43,6 +44,7 @@ export default function Renewals() {
   const [contracts, setContracts] = useState<Contract[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
+  const [orgs, setOrgs] = useState<Organization[]>([])
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState('30')
   const [categoryFilter, setCategoryFilter] = useState<'전체' | ContractCategory>('전체')
@@ -57,12 +59,14 @@ export default function Renewals() {
       )
       setContracts(data)
       if (canManage) {
-        const [{ data: p }, { data: i }] = await Promise.all([
+        const [{ data: p }, { data: i }, { data: o }] = await Promise.all([
           supabase.from('profiles').select('*').order('name'),
-          supabase.from('pending_invites').select('email, name'),
+          supabase.from('pending_invites').select('email, name, org_id, title'),
+          supabase.from('organizations').select('*'),
         ])
         setAgents(p ?? [])
         setInvites(i ?? [])
+        setOrgs(o ?? [])
       }
       setLoading(false)
     }
@@ -91,10 +95,18 @@ export default function Renewals() {
     const byId = new Map(agents.map((a) => [a.id, a]))
     const byEmail = new Map(invites.map((i) => [i.email, i]))
     return (c: Contract) => {
-      if (c.agent_id === profile?.id) return { name: profile.name, pending: false }
-      if (c.agent_id && byId.has(c.agent_id)) return { name: byId.get(c.agent_id)!.name, pending: false }
-      if (c.agent_email && byEmail.has(c.agent_email)) return { name: byEmail.get(c.agent_email)!.name, pending: true }
-      return { name: c.agent_email ?? c.agent_id ?? '-', pending: true }
+      if (c.agent_id === profile?.id) {
+        return { name: profile.name, org_id: profile.org_id, title: profile.title, email: profile.email, pending: false }
+      }
+      if (c.agent_id && byId.has(c.agent_id)) {
+        const p = byId.get(c.agent_id)!
+        return { name: p.name, org_id: p.org_id, title: p.title, email: p.email, pending: false }
+      }
+      if (c.agent_email && byEmail.has(c.agent_email)) {
+        const i = byEmail.get(c.agent_email)!
+        return { name: i.name, org_id: i.org_id, title: i.title, email: i.email, pending: true }
+      }
+      return { name: c.agent_email ?? c.agent_id ?? '-', org_id: '', title: '', email: c.agent_email ?? '', pending: true }
     }
   }, [agents, invites, profile])
 
@@ -175,21 +187,29 @@ export default function Renewals() {
     return withExpiry.filter((r) => r.expiry >= today && r.expiry <= end)
   }, [withExpiry, period, today])
 
+  const orgsById = useMemo(() => new Map(orgs.map((o) => [o.id, o])), [orgs])
+
   const groups = useMemo(() => {
-    interface Group { key: string; name: string; pending: boolean; rows: { c: Contract; expiry: string; estimated: boolean }[]; premium: number }
+    interface Group {
+      key: string; name: string; org_id: string; title: string; email: string
+      pending: boolean; rows: { c: Contract; expiry: string; estimated: boolean }[]; premium: number
+    }
     const map = new Map<string, Group>()
     for (const r of filtered) {
       const key = r.c.agent_id ?? r.c.agent_email ?? 'unknown'
       const info = agentInfo(r.c)
-      const g = map.get(key) ?? { key, name: info.name, pending: info.pending, rows: [], premium: 0 }
+      const g =
+        map.get(key) ??
+        { key, name: info.name, org_id: info.org_id, title: info.title, email: info.email, pending: info.pending, rows: [], premium: 0 }
       g.rows.push(r)
       g.premium += r.c.premium
       map.set(key, g)
     }
     return [...map.values()]
       .map((g) => ({ ...g, rows: g.rows.sort((a, b) => a.expiry.localeCompare(b.expiry)) }))
-      .sort((a, b) => (a.rows[0]?.expiry ?? '').localeCompare(b.rows[0]?.expiry ?? ''))
-  }, [filtered, agentInfo])
+      // 노출 우선순위: 조직(본사>직영>지점) > 직급 > 사번
+      .sort((a, b) => compareByOrgGradeCode(a, b, orgsById))
+  }, [filtered, agentInfo, orgsById])
 
   const totalCount = filtered.length
   const totalPremium = sum(filtered, (r) => r.c.premium)

@@ -3,12 +3,9 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { toAuthEmail } from '../lib/id'
 import { ROLE_LABEL, type Organization, type Profile, type Role } from '../lib/types'
+import { AGENT_GRADES as GRADE_SUGGESTIONS } from '../lib/agentSort'
 
 const ROLES: Role[] = ['hq_admin', 'branch_admin', 'store_manager', 'agent']
-const GRADE_SUGGESTIONS = [
-  '지사장', '본부장', '지점장', '지점장(직영, 인큐)', '지점장(직영, 선임)',
-  '본부장(직영사업단)', '직영대표', 'FC_마스터', 'FC_엘리트', 'FC_프로', 'FC',
-]
 
 interface Invite {
   email: string
