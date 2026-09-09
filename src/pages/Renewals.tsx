@@ -197,6 +197,7 @@ export default function Renewals() {
                 <table className="w-full text-sm">
                   <thead className="text-slate-500 text-xs border-b border-slate-100">
                     <tr>
+                      <th className="text-left px-4 py-2">증권번호</th>
                       <th className="text-left px-4 py-2">만기예정일</th>
                       <th className="text-left px-4 py-2">보험사</th>
                       <th className="text-left px-4 py-2">상품명</th>
@@ -211,6 +212,7 @@ export default function Renewals() {
                       const overdue = expiry < today
                       return (
                         <tr key={c.id} className="border-t border-slate-50">
+                          <td className="px-4 py-1.5">{c.policy_no ?? '-'}</td>
                           <td className="px-4 py-1.5">
                             <span className={overdue ? 'text-rose-600 font-medium' : 'text-slate-700'}>{expiry}</span>
                             <span className={`ml-1.5 text-xs ${overdue ? 'text-rose-500' : 'text-slate-400'}`}>({dday(expiry, today)})</span>
