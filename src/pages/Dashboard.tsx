@@ -208,6 +208,11 @@ export default function Dashboard() {
   const [eduEvents, setEduEvents] = useState<EducationEvent[]>([])
   const [showAllNotices, setShowAllNotices] = useState(false)
   const [showAllEdu, setShowAllEdu] = useState(false)
+  // 예비계약(확정 전)은 누적보험료 등 다른 집계에서는 제외하지만, 이번 달 신규보험료와
+  // TOP5 실적에는 "계약관리 > 예비계약 확인"에 올라온 당월 신규 등록분(대기중·확정매칭 모두)을 그대로 포함시킨다.
+  const [prelimNewRows, setPrelimNewRows] = useState<
+    { category: string; premium: number; agent_id: string | null; agent_email: string | null }[]
+  >([])
 
   useEffect(() => {
     // 예비계약(확정 전, is_preliminary)은 아직 실제 계약이 아니므로 대시보드 집계에서 제외한다.
@@ -227,6 +232,16 @@ export default function Dashboard() {
   const thisMonthNum = today.slice(5, 7)
   const thisMonth = today.slice(0, 7)
   const lastYearMonth = `${lastYear}-${thisMonthNum}`
+
+  useEffect(() => {
+    supabase
+      .from('contracts')
+      .select('category, premium, agent_id, agent_email')
+      .eq('is_preliminary', true)
+      .eq('type', '신규')
+      .eq('month', thisMonth)
+      .then(({ data }) => setPrelimNewRows(data ?? []))
+  }, [thisMonth])
 
   const activeBanners = useMemo(() => {
     return showAllNotices ? banners : banners.slice(0, 4)
@@ -261,8 +276,10 @@ export default function Dashboard() {
   }, [contracts, thisYear, lastYear, thisMonthNum])
 
   const newPremiumThisMonth = useMemo(
-    () => sum(contracts.filter((c) => c.month === thisMonth && c.type === '신규'), (c) => c.premium),
-    [contracts, thisMonth]
+    () =>
+      sum(contracts.filter((c) => c.month === thisMonth && c.type === '신규'), (c) => c.premium) +
+      sum(prelimNewRows, (r) => r.premium),
+    [contracts, thisMonth, prelimNewRows]
   )
   const newPremiumLastYear = useMemo(
     () => sum(contracts.filter((c) => c.month === lastYearMonth && c.type === '신규'), (c) => c.premium),
@@ -291,10 +308,12 @@ export default function Dashboard() {
   const newPremiumThisMonthByCategory = useMemo(() => {
     const rows = contracts.filter((c) => c.month === thisMonth && c.type === '신규')
     return {
-      장기: sum(rows.filter((c) => c.category === '장기'), (c) => c.premium),
-      일반: sum(rows.filter((c) => c.category === '일반'), (c) => c.premium),
+      장기: sum(rows.filter((c) => c.category === '장기'), (c) => c.premium) +
+        sum(prelimNewRows.filter((r) => r.category === '장기'), (r) => r.premium),
+      일반: sum(rows.filter((c) => c.category === '일반'), (c) => c.premium) +
+        sum(prelimNewRows.filter((r) => r.category === '일반'), (r) => r.premium),
     }
-  }, [contracts, thisMonth])
+  }, [contracts, thisMonth, prelimNewRows])
   const newPremiumRate = changeRate(newPremiumThisMonth, newPremiumLastYear)
 
   // 위촉설계사는 RLS로 이미 본인 계약만 조회되므로, 라벨도 "나의 ~"로 구분해준다.
@@ -350,8 +369,23 @@ export default function Dashboard() {
       cur.count += c.count
       byAgent.set(key, cur)
     }
+    // 당월 신규보험료와 동일하게, "예비계약 확인"의 당월 신규 등록분(대기중·확정매칭 모두)도 담당자별로 합산한다.
+    for (const r of prelimNewRows) {
+      const key = r.agent_id ?? r.agent_email ?? 'unknown'
+      const cur = byAgent.get(key)
+      if (cur) {
+        cur.premium += r.premium
+      } else {
+        byAgent.set(key, {
+          key,
+          premium: r.premium,
+          count: 0,
+          sample: { agent_id: r.agent_id, agent_email: r.agent_email } as Contract,
+        })
+      }
+    }
     return [...byAgent.values()].sort((a, b) => b.premium - a.premium).slice(0, 5)
-  }, [contracts, thisMonth])
+  }, [contracts, thisMonth, prelimNewRows])
 
   const displayedEdu = showAllEdu ? eduEvents : eduEvents.filter((e) => e.event_date >= today).slice(0, 4)
 
