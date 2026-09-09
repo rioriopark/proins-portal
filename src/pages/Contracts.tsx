@@ -118,10 +118,6 @@ export default function Contracts() {
       alert('신규계약은 이번 달 영수일로만 등록할 수 있습니다.')
       return
     }
-    if (!form.policy_no.trim()) {
-      alert('증권번호를 입력해야 등록할 수 있습니다.')
-      return
-    }
     const { error } = await supabase.from('contracts').insert({
       agent_id: form.agent_id || profile?.id,
       month: form.receipt_date.slice(0, 7),
@@ -173,7 +169,6 @@ export default function Contracts() {
       if (!matched) error = '담당자 매칭 안 됨'
       else if (!receiptDate || receiptDate < monthStart() || receiptDate > monthEnd()) error = '영수일은 이번 달만 가능'
       else if (!['장기', '일반', '자동차'].includes(category ?? '')) error = '종목 값 오류'
-      else if (!policyNo) error = '증권번호 없음'
       return { raw: cols, agentName: agentName ?? '', matched, company: company ?? '', policyNo: policyNo ?? '', customerName: customerName ?? '', category: category ?? '', receiptDate, month, premium, error }
     })
   }, [bulkText, agents])
@@ -188,7 +183,7 @@ export default function Contracts() {
       category: r.category,
       type: '신규',
       company: r.company,
-      policy_no: r.policyNo,
+      policy_no: r.policyNo || null,
       customer_name: r.customerName,
       count: 1,
       premium: r.premium,
@@ -236,10 +231,6 @@ export default function Contracts() {
       alert('신규계약은 이번 달 영수일로만 등록할 수 있습니다.')
       return
     }
-    if (!selfForm.policy_no.trim()) {
-      alert('증권번호를 입력해야 등록할 수 있습니다.')
-      return
-    }
     const { error } = await supabase.from('contracts').insert({
       agent_id: profile?.id,
       month: selfForm.receipt_date.slice(0, 7),
@@ -247,7 +238,7 @@ export default function Contracts() {
       category: selfForm.category,
       type: '신규',
       company: selfForm.company,
-      policy_no: selfForm.policy_no,
+      policy_no: selfForm.policy_no.trim() || null,
       customer_name: selfForm.customer_name,
       count: 1,
       premium: selfForm.premium,
@@ -551,9 +542,9 @@ export default function Contracts() {
               className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">증권번호 *</label>
-            <input value={form.policy_no} onChange={(e) => setForm((f) => ({ ...f, policy_no: e.target.value }))} required
-              className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+            <label className="block text-xs text-slate-500 mb-1">증권번호</label>
+            <input value={form.policy_no} onChange={(e) => setForm((f) => ({ ...f, policy_no: e.target.value }))}
+              placeholder="모르면 비워두세요" className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
           </div>
           <div>
             <label className="block text-xs text-slate-500 mb-1">고객명</label>
@@ -649,7 +640,7 @@ export default function Contracts() {
           {selfReportOpen && (
             <form onSubmit={handleSelfReportSubmit} className="p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
               <p className="col-span-2 md:col-span-4 text-xs text-slate-500 -mt-1 mb-1">
-                이번 달 신규 계약(장기·일반)을 증권번호와 함께 미리 등록해두면, 다음 달 보험사 확정 계약이 올라올 때 증권번호로 매칭되어 정리됩니다. 수수료는 확정 후 반영돼요.
+                이번 달 신규 계약(장기·일반)을 미리 등록해두면, 다음 달 보험사 확정 계약이 올라올 때 매칭되어 정리됩니다. 증권번호를 알면 함께 입력해주세요(정확히 매칭됨) — 모르면 비워둬도 되고, 나중에 고객명·보험사로 매칭됩니다. 수수료는 확정 후 반영돼요.
               </p>
               <div>
                 <label className="block text-xs text-slate-500 mb-1">영수일 (이번 달만 등록 가능)</label>
@@ -671,9 +662,9 @@ export default function Contracts() {
                   className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">증권번호 *</label>
-                <input value={selfForm.policy_no} onChange={(e) => setSelfForm((f) => ({ ...f, policy_no: e.target.value }))} required
-                  className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+                <label className="block text-xs text-slate-500 mb-1">증권번호</label>
+                <input value={selfForm.policy_no} onChange={(e) => setSelfForm((f) => ({ ...f, policy_no: e.target.value }))}
+                  placeholder="모르면 비워두세요" className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
               </div>
               <div>
                 <label className="block text-xs text-slate-500 mb-1">고객명</label>
