@@ -36,8 +36,12 @@ export default function Contracts() {
     profile?.role === 'hq_admin' || (profile?.role === 'agent' && profile.org_id === 'hq') || permissions.has('contracts')
   // 위촉설계사(소속이 본사가 아닌 담당자)는 본인 예비계약만 직접 등록할 수 있다.
   const isFieldAgent = profile?.role === 'agent' && profile.org_id !== 'hq'
-  // 본사담당자(소속이 본사인 일반 담당자, 본사관리자는 제외)는 임금 기반이라 건별/성과수수료를 보지 않는다.
+  // 본사담당자(소속이 본사인 일반 담당자, 본사관리자는 제외)는 임금 기반이라 건별수수료를 보지 않는다.
   const isHqStaff = profile?.role === 'agent' && profile.org_id === 'hq'
+  // 성과수수료는 관리자 직급(본사관리자, 지사장/본부장/지점장 등 직함)에게만 보여준다.
+  const MANAGER_TITLE_KEYWORDS = ['지사장', '본부장', '지점장']
+  const canSeePerformanceCommission =
+    profile?.role === 'hq_admin' || MANAGER_TITLE_KEYWORDS.some((k) => (profile?.title ?? '').includes(k))
   const [contracts, setContracts] = useState<Contract[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
@@ -821,11 +825,9 @@ export default function Contracts() {
                                       <th className="text-left px-3 py-1.5">보험종기</th>
                                       <th className="text-right px-3 py-1.5">보험료</th>
                                       {!isHqStaff && (
-                                        <>
-                                          <th className="text-right px-3 py-1.5">건별수수료(지급률 {Math.round(rateFor(cg.rows[0], agentInfo(cg.rows[0])) * 100)}% 적용)</th>
-                                          <th className="text-right px-3 py-1.5">성과수수료</th>
-                                        </>
+                                        <th className="text-right px-3 py-1.5">건별수수료(지급률 {Math.round(rateFor(cg.rows[0], agentInfo(cg.rows[0])) * 100)}% 적용)</th>
                                       )}
+                                      {canSeePerformanceCommission && <th className="text-right px-3 py-1.5">성과수수료</th>}
                                       {canReassign && <th className="text-left px-3 py-1.5">담당자</th>}
                                     </tr>
                                   </thead>
@@ -880,10 +882,10 @@ export default function Contracts() {
                                           <td className="px-3 py-1.5">{c.expiry_date ?? '-'}</td>
                                           <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
                                           {!isHqStaff && (
-                                            <>
-                                              <td className="px-3 py-1.5 text-right">{Math.round(c.commission * rate).toLocaleString('ko-KR')}</td>
-                                              <td className="px-3 py-1.5 text-right">{Math.round(c.performance_commission).toLocaleString('ko-KR')}</td>
-                                            </>
+                                            <td className="px-3 py-1.5 text-right">{Math.round(c.commission * rate).toLocaleString('ko-KR')}</td>
+                                          )}
+                                          {canSeePerformanceCommission && (
+                                            <td className="px-3 py-1.5 text-right">{Math.round(c.performance_commission).toLocaleString('ko-KR')}</td>
                                           )}
                                           {canReassign && (
                                             <td className="px-3 py-1.5">
@@ -906,10 +908,10 @@ export default function Contracts() {
                                       <td className="px-3 py-1.5" colSpan={7}>합계</td>
                                       <td className="px-3 py-1.5 text-right">{cg.premium.toLocaleString('ko-KR')}</td>
                                       {!isHqStaff && (
-                                        <>
-                                          <td className="px-3 py-1.5 text-right">{Math.round(cg.commission).toLocaleString('ko-KR')}</td>
-                                          <td className="px-3 py-1.5 text-right">{Math.round(cg.performanceCommission).toLocaleString('ko-KR')}</td>
-                                        </>
+                                        <td className="px-3 py-1.5 text-right">{Math.round(cg.commission).toLocaleString('ko-KR')}</td>
+                                      )}
+                                      {canSeePerformanceCommission && (
+                                        <td className="px-3 py-1.5 text-right">{Math.round(cg.performanceCommission).toLocaleString('ko-KR')}</td>
                                       )}
                                       {canReassign && <td />}
                                     </tr>
