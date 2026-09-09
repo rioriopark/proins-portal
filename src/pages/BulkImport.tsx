@@ -254,6 +254,29 @@ function toNumber(v: string): number {
   return Number.isFinite(n) ? n : 0
 }
 
+// 같은 파일/붙여넣기 안에 같은 보험사·증권번호·지급월·구분 행이 중복으로 들어있으면,
+// 한 번의 upsert 호출 안에서 같은 행을 두 번 갱신하려다 "ON CONFLICT DO UPDATE command
+// cannot affect row a second time" 오류가 난다. upsert에 넣기 전에 미리 합쳐서
+// (수수료가 더 큰 쪽을 남기고) 한 건으로 만든다. 증권번호가 없는 행은 그대로 둔다.
+function dedupeByPolicyLine<T extends { company: string; policy_no: string | null; month: string; type: string; commission: number; premium: number }>(
+  payload: T[]
+): T[] {
+  const map = new Map<string, T>()
+  const noPolicyNo: T[] = []
+  for (const row of payload) {
+    if (!row.policy_no) {
+      noPolicyNo.push(row)
+      continue
+    }
+    const key = `${row.company}|${row.policy_no}|${row.month}|${row.type}`
+    const existing = map.get(key)
+    if (!existing || row.commission > existing.commission || (row.commission === existing.commission && row.premium > existing.premium)) {
+      map.set(key, row)
+    }
+  }
+  return [...map.values(), ...noPolicyNo]
+}
+
 // 보험사 다운로드 파일은 한 행이 계약 1건이므로, 합산하지 않고 건별(개별 계약)로 저장해 고객명·상품명·만기일을 보존한다.
 interface FileRow {
   key: string
@@ -352,12 +375,13 @@ export default function BulkImport() {
         premium: r.premium,
         commission: r.commission,
       }))
+    const dedupedPayload = dedupeByPolicyLine(payload)
     let inserted = 0
     let failed = 0
     let errorMessage: string | undefined
     const chunkSize = 200
-    for (let i = 0; i < payload.length; i += chunkSize) {
-      const chunk = payload.slice(i, i + chunkSize)
+    for (let i = 0; i < dedupedPayload.length; i += chunkSize) {
+      const chunk = dedupedPayload.slice(i, i + chunkSize)
       const { error, data } = await supabase
         .from('contracts')
         .upsert(chunk, { onConflict: 'company,policy_no,month,type,is_preliminary' })
@@ -580,12 +604,15 @@ export default function BulkImport() {
         commission: r.commission,
         performance_commission: r.performanceCommission,
       }))
+
+    const dedupedPayload = dedupeByPolicyLine(payload)
+
     let inserted = 0
     let failed = 0
     let errorMessage: string | undefined
     const chunkSize = 200
-    for (let i = 0; i < payload.length; i += chunkSize) {
-      const chunk = payload.slice(i, i + chunkSize)
+    for (let i = 0; i < dedupedPayload.length; i += chunkSize) {
+      const chunk = dedupedPayload.slice(i, i + chunkSize)
       const { error, data } = await supabase
         .from('contracts')
         .upsert(chunk, { onConflict: 'company,policy_no,month,type,is_preliminary' })
