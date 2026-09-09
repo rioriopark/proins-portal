@@ -713,7 +713,11 @@ export default function Contracts() {
                 <thead className="text-slate-500 text-xs border-b border-slate-100">
                   <tr>
                     <th className="text-left px-4 py-2">담당자</th>
-                    <th className="text-left px-4 py-2">고객명 / 증권번호</th>
+                    <th className="text-left px-4 py-2">보험사</th>
+                    <th className="text-left px-4 py-2">증권번호</th>
+                    <th className="text-left px-4 py-2">종목</th>
+                    <th className="text-left px-4 py-2">계약자명</th>
+                    <th className="text-left px-4 py-2">보험계약일</th>
                     <th className="text-right px-4 py-2">예비 보험료</th>
                     <th className="text-left px-4 py-2">상태</th>
                     <th className="text-right px-4 py-2">확정 보험료</th>
@@ -727,28 +731,35 @@ export default function Contracts() {
                     return (
                     <tr key={prelim.id} className="border-t border-slate-50">
                       <td className="px-4 py-2">{agentInfo(prelim).name}</td>
+                      <td className="px-4 py-2">{prelim.company}</td>
                       <td className="px-4 py-2">
                         {editing ? (
-                          <div className="flex flex-col gap-1">
-                            <input
-                              type="text"
-                              value={prelimEditForm.customer_name}
-                              onChange={(e) => setPrelimEditForm((f) => ({ ...f, customer_name: e.target.value }))}
-                              placeholder="고객명"
-                              className="border border-slate-300 rounded px-1.5 py-1 text-xs w-40"
-                            />
-                            <input
-                              type="text"
-                              value={prelimEditForm.policy_no}
-                              onChange={(e) => setPrelimEditForm((f) => ({ ...f, policy_no: e.target.value }))}
-                              placeholder="증권번호"
-                              className="border border-slate-300 rounded px-1.5 py-1 text-xs w-40"
-                            />
-                          </div>
+                          <input
+                            type="text"
+                            value={prelimEditForm.policy_no}
+                            onChange={(e) => setPrelimEditForm((f) => ({ ...f, policy_no: e.target.value }))}
+                            placeholder="증권번호"
+                            className="border border-slate-300 rounded px-1.5 py-1 text-xs w-32"
+                          />
                         ) : (
-                          <>{prelim.customer_name} / {prelim.policy_no}</>
+                          prelim.policy_no ?? '-'
                         )}
                       </td>
+                      <td className="px-4 py-2">{prelim.category}</td>
+                      <td className="px-4 py-2">
+                        {editing ? (
+                          <input
+                            type="text"
+                            value={prelimEditForm.customer_name}
+                            onChange={(e) => setPrelimEditForm((f) => ({ ...f, customer_name: e.target.value }))}
+                            placeholder="계약자명"
+                            className="border border-slate-300 rounded px-1.5 py-1 text-xs w-32"
+                          />
+                        ) : (
+                          prelim.customer_name
+                        )}
+                      </td>
+                      <td className="px-4 py-2">{prelim.receipt_date ?? '-'}</td>
                       <td className="px-4 py-2 text-right">
                         {editing ? (
                           <input
