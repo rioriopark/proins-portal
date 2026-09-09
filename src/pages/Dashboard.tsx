@@ -266,10 +266,14 @@ export default function Dashboard() {
     }
   }, [agents, invites, profile])
 
-  // 누적(전체 기간) 실적
+  // 누적(전체 기간) 실적 — 위촉설계사의 "나의 누적" 카드는 당해년 계약만 합산한다.
   const totalPremiumAll = useMemo(() => sum(contracts, (c) => c.premium), [contracts])
   const totalCountAll = useMemo(() => sum(contracts, (c) => c.count), [contracts])
   const totalCommissionAll = useMemo(() => sum(contracts, (c) => c.commission), [contracts])
+  const thisYearContracts = useMemo(() => contracts.filter((c) => c.month?.startsWith(thisYear)), [contracts, thisYear])
+  const totalPremiumThisYear = useMemo(() => sum(thisYearContracts, (c) => c.premium), [thisYearContracts])
+  const totalCountThisYear = useMemo(() => sum(thisYearContracts, (c) => c.count), [thisYearContracts])
+  const totalCommissionThisYear = useMemo(() => sum(thisYearContracts, (c) => c.commission), [thisYearContracts])
 
   // 전년 대비 증감률 계산용: 올해 vs 작년 동기간(1월~이번달) 누계
   const ytd = useMemo(() => {
@@ -323,11 +327,15 @@ export default function Dashboard() {
   // 갱신센터는 항상, 수수료 현황은 본사담당자만 제외, TOP5는 위촉설계사만 제외 — 보이는 카드 수에 맞춰 그리드 열 수를 정한다.
   const middleCardCount = 1 + (isHqStaff ? 0 : 1) + (isFieldAgent ? 0 : 1)
 
+  // 위촉설계사의 "나의 누적" 카드는 당해년 계약만, 그 외(본사)는 전체 기간을 합산해 보여준다.
+  const cumulativePremium = isFieldAgent ? totalPremiumThisYear : totalPremiumAll
+  const cumulativeCount = isFieldAgent ? totalCountThisYear : totalCountAll
+  const cumulativeCommission = isFieldAgent ? totalCommissionThisYear : totalCommissionAll
   const baseStatCards = [
-    { label: `${scopeLabel}누적 보험료`, value: `${totalPremiumAll.toLocaleString('ko-KR')}원`, rate: ytd.premium, color: 'blue' as const, icon: <IconWon /> },
-    { label: `${scopeLabel}누적 계약 건수`, value: `${totalCountAll.toLocaleString('ko-KR')}건`, rate: ytd.count, color: 'emerald' as const, icon: <IconDocCheck /> },
+    { label: `${scopeLabel}누적 보험료`, value: `${cumulativePremium.toLocaleString('ko-KR')}원`, rate: ytd.premium, color: 'blue' as const, icon: <IconWon /> },
+    { label: `${scopeLabel}누적 계약 건수`, value: `${cumulativeCount.toLocaleString('ko-KR')}건`, rate: ytd.count, color: 'emerald' as const, icon: <IconDocCheck /> },
     // 본사담당자는 커미션이 아닌 임금 기반이라 누적 수수료 카드도 제외한다.
-    ...(isHqStaff ? [] : [{ label: `${scopeLabel}누적 수수료`, value: `${totalCommissionAll.toLocaleString('ko-KR')}원`, rate: ytd.commission, color: 'violet' as const, icon: <IconWallet /> }]),
+    ...(isHqStaff ? [] : [{ label: `${scopeLabel}누적 수수료`, value: `${cumulativeCommission.toLocaleString('ko-KR')}원`, rate: ytd.commission, color: 'violet' as const, icon: <IconWallet /> }]),
   ]
   const topCardCount = isHqStaff ? 4 : 5
   const renewPremiumCard = { label: `갱신보험료(${Number(thisMonthNum)}월)`, value: `${renewPremiumThisMonth.toLocaleString('ko-KR')}원`, rate: changeRate(renewPremiumThisMonth, renewPremiumLastYear), color: 'teal' as const, icon: <IconRefresh /> }
