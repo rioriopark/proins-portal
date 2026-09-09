@@ -420,10 +420,12 @@ create policy "orgs_write_hq_admin" on organizations
   for all using (my_role() = 'hq_admin') with check (my_role() = 'hq_admin');
 
 -- profiles: 본인 + 본인 조직 하위 트리는 조회 가능, 쓰기는 본인 것만(계좌 등 본인 정보 수정)
+-- 본사 소속(org_id=hq)은 역할과 무관하게 전체 담당자 목록을 조회할 수 있다
+-- (계약 일괄등록 시 미매칭 건의 담당자를 전체 사번 중에서 지정할 수 있어야 함).
 create policy "profiles_select_scope" on profiles
   for select using (
     id = auth.uid()
-    or my_role() = 'hq_admin'
+    or my_org() = 'hq'
     or (my_role() in ('branch_admin','store_manager') and is_org_descendant(my_org(), org_id))
   );
 create policy "profiles_update_scope" on profiles
@@ -435,10 +437,11 @@ create policy "profiles_update_scope" on profiles
 
 -- contracts: 본인 계약 + 관리 범위 내 하위 조직 계약 조회, 입력은 담당자 본인 또는 관리자
 -- agent_id 가 null(담당자 미가입, 이메일로만 임시 등록된 계약)인 행은 본사관리자만 조회/관리 가능
+-- 본사 소속(org_id=hq)은 역할과 무관하게(본사관리자든 본사담당자든) 전체 계약을 조회할 수 있다.
 create policy "contracts_select_scope" on contracts
   for select using (
     agent_id = auth.uid()
-    or my_role() = 'hq_admin'
+    or my_org() = 'hq'
     or (
       agent_id is not null
       and my_role() in ('branch_admin','store_manager')
