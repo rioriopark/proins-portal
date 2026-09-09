@@ -187,7 +187,10 @@ export default function Contracts() {
     const { error, data } = await supabase.from('contracts').insert(payload).select('id')
     if (error) {
       failed = payload.length
-      errorMessage = error.message
+      errorMessage =
+        error.code === '23505'
+          ? '이미 등록된 계약이 포함되어 있습니다 (같은 보험사·증권번호·지급월·구분). 증권번호를 확인해주세요.'
+          : error.message
       console.error('신규계약 일괄등록 실패:', error)
     } else {
       inserted = data?.length ?? 0
@@ -240,6 +243,8 @@ export default function Contracts() {
     if (!error) {
       setSelfForm((f) => ({ ...f, company: '', policy_no: '', customer_name: '', premium: 0 }))
       load()
+    } else if (error.code === '23505') {
+      alert('이미 등록된 계약입니다 (같은 보험사·증권번호·지급월·구분의 계약이 존재합니다). 증권번호를 확인해주세요.')
     } else {
       alert('등록 실패: ' + error.message)
     }
