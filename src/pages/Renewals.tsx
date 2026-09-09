@@ -35,6 +35,7 @@ const PERIOD_OPTIONS = [
 ]
 
 const CATEGORY_OPTIONS: ('전체' | ContractCategory)[] = ['전체', '일반', '자동차']
+const RENEWAL_STATUS_OPTIONS = ['갱신완료', '갱신거절', '보류']
 
 export default function Renewals() {
   const { profile, can } = useAuth()
@@ -84,10 +85,20 @@ export default function Renewals() {
   const withExpiry = useMemo(
     () =>
       contracts
-        .filter((c) => (c.expiry_date || c.receipt_date) && (categoryFilter === '전체' || c.category === categoryFilter))
+        .filter((c) => !c.renewal_status && (c.expiry_date || c.receipt_date) && (categoryFilter === '전체' || c.category === categoryFilter))
         .map((c) => ({ c, expiry: c.expiry_date ?? addYears(c.receipt_date!, 1), estimated: !c.expiry_date })),
     [contracts, categoryFilter],
   )
+
+  async function setRenewalStatus(contractId: string, status: string) {
+    const renewal_status = status || null
+    const { error } = await supabase.from('contracts').update({ renewal_status }).eq('id', contractId)
+    if (error) {
+      alert('갱신여부 저장 실패: ' + error.message)
+      return
+    }
+    setContracts((prev) => prev.map((c) => (c.id === contractId ? { ...c, renewal_status } : c)))
+  }
 
   const filtered = useMemo(() => {
     if (period === 'all') return withExpiry
@@ -177,6 +188,7 @@ export default function Renewals() {
                       <th className="text-left px-4 py-2">고객명</th>
                       <th className="text-left px-4 py-2">종목</th>
                       <th className="text-right px-4 py-2">보험료</th>
+                      {canManage && <th className="text-left px-4 py-2">갱신여부</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -194,6 +206,18 @@ export default function Renewals() {
                           <td className="px-4 py-1.5">{c.customer_name}</td>
                           <td className="px-4 py-1.5">{c.category}</td>
                           <td className="px-4 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
+                          {canManage && (
+                            <td className="px-4 py-1.5">
+                              <select
+                                value={c.renewal_status ?? ''}
+                                onChange={(e) => setRenewalStatus(c.id, e.target.value)}
+                                className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
+                              >
+                                <option value="">선택…</option>
+                                {RENEWAL_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}

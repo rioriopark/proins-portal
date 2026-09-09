@@ -46,6 +46,7 @@ create table contracts (
   premium numeric not null default 0,
   commission numeric not null default 0, -- 지급률 적용 전 원 수수료(건별수수료)
   performance_commission numeric not null default 0, -- 성과수수료 (보험사 파일에 별도 열로 오는 값 그대로 저장)
+  renewal_status text,               -- 갱신여부: '갱신완료' | '갱신거절' | '보류' (미지정이면 갱신관리 목록에 계속 표시됨)
   is_preliminary boolean not null default false, -- 위촉설계사가 보험사 확정 전에 직접 등록한 예비계약 여부
   created_at timestamptz default now(),
   constraint contracts_has_owner check (agent_id is not null or agent_email is not null),
