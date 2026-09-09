@@ -443,7 +443,7 @@ returns void language plpgsql security definer set search_path = public as $$
 declare
   caller record;
 begin
-  select role, title, name into caller from profiles where id = auth.uid();
+  select role, title, name into caller from profiles where profiles.id = auth.uid();
   if caller is null or not (
     caller.role = 'hq_admin'
     or caller.title like '%본부장%'
@@ -469,7 +469,7 @@ language plpgsql security definer set search_path = public as $$
 declare
   caller record;
 begin
-  select role, title, name into caller from profiles where id = auth.uid();
+  select role, title, name into caller from profiles where profiles.id = auth.uid();
   if caller is null or not (
     caller.role = 'hq_admin'
     or caller.title like '%본부장%'
