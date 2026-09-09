@@ -208,11 +208,12 @@ export default function Dashboard() {
   const [eduEvents, setEduEvents] = useState<EducationEvent[]>([])
   const [showAllNotices, setShowAllNotices] = useState(false)
   const [showAllEdu, setShowAllEdu] = useState(false)
-  // 예비계약(확정 전)은 누적보험료 등 다른 집계에서는 제외하지만, 이번 달 신규보험료와
-  // TOP5 실적에는 "계약관리 > 예비계약 확인"에 올라온 당월 신규 등록분(대기중·확정매칭 모두)을 그대로 포함시킨다.
+  // 예비계약(확정 전)은 누적보험료 등 다른 집계에서는 제외하지만, 이번 달 신규보험료·갱신보험료와
+  // TOP5 실적에는 "계약관리 > 예비계약 확인"에 올라온 당월 등록분(대기중·확정매칭 모두)을 그대로 포함시킨다.
   const [prelimNewRows, setPrelimNewRows] = useState<
     { category: string; premium: number; agent_id: string | null; agent_email: string | null }[]
   >([])
+  const [prelimRenewRows, setPrelimRenewRows] = useState<{ premium: number }[]>([])
 
   useEffect(() => {
     // 예비계약(확정 전, is_preliminary)은 아직 실제 계약이 아니므로 대시보드 집계에서 제외한다.
@@ -241,6 +242,13 @@ export default function Dashboard() {
       .eq('type', '신규')
       .eq('month', thisMonth)
       .then(({ data }) => setPrelimNewRows(data ?? []))
+    supabase
+      .from('contracts')
+      .select('premium')
+      .eq('is_preliminary', true)
+      .eq('type', '계속')
+      .eq('month', thisMonth)
+      .then(({ data }) => setPrelimRenewRows(data ?? []))
   }, [thisMonth])
 
   const activeBanners = useMemo(() => {
@@ -285,23 +293,17 @@ export default function Dashboard() {
     () => sum(contracts.filter((c) => c.month === lastYearMonth && c.type === '신규'), (c) => c.premium),
     [contracts, lastYearMonth]
   )
-  // 갱신관리에서 "갱신완료" 처리한 건 중, 만기예정일(=보험종기, 없으면 영수일+1년 추정)이
-  // 해당 월에 속하는 계약의 보험료 합계를 갱신보험료로 잡는다.
-  const expiryOf = (c: Contract) => c.expiry_date ?? (c.receipt_date ? addYears(c.receipt_date, 1) : null)
+  // 확정(보험사 업로드 완료)된 계속계약은 그 확정 보험료로, 아직 확정 전인 갱신은 갱신완료 시
+  // 입력받은 예비 보험료로 잡는다 — "계약관리 > 예비계약 확인"에 뜨는 값과 항상 일치시킨다.
   const renewPremiumThisMonth = useMemo(
     () =>
-      sum(
-        contracts.filter((c) => c.renewal_status === '갱신완료' && expiryOf(c)?.slice(0, 7) === thisMonth),
-        (c) => c.premium
-      ),
-    [contracts, thisMonth]
+      sum(contracts.filter((c) => c.month === thisMonth && c.type === '계속'), (c) => c.premium) +
+      sum(prelimRenewRows, (r) => r.premium),
+    [contracts, thisMonth, prelimRenewRows]
   )
   const renewPremiumLastYear = useMemo(
     () =>
-      sum(
-        contracts.filter((c) => c.renewal_status === '갱신완료' && expiryOf(c)?.slice(0, 7) === lastYearMonth),
-        (c) => c.premium
-      ),
+      sum(contracts.filter((c) => c.month === lastYearMonth && c.type === '계속'), (c) => c.premium),
     [contracts, lastYearMonth]
   )
   // 위촉설계사 화면의 신규보험료 카드는 장기/일반 종목별로 나눠서 보여준다.
