@@ -388,6 +388,30 @@ create or replace function my_org() returns text
   language sql stable security definer set search_path = public
   as $$ select org_id from profiles where id = auth.uid() $$;
 
+-- ── 갱신관리: 갱신여부만 본인 계약 건에 한해 바꿀 수 있는 함수 ──
+-- contracts 전체 update 권한을 모든 담당자에게 열지 않고, renewal_status
+-- 한 컬럼만 자기 계약(agent_id = auth.uid())에 대해 바꿀 수 있게 한다.
+create or replace function set_contract_renewal_status(contract_id uuid, status text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update contracts
+  set renewal_status = status
+  where id = contract_id
+    and (
+      agent_id = auth.uid()
+      or my_role() = 'hq_admin'
+      or has_menu_permission('contracts')
+      or has_menu_permission('bulk_import')
+      or (
+        agent_id is not null
+        and my_role() in ('branch_admin','store_manager')
+        and exists (select 1 from profiles p where p.id = contracts.agent_id and is_org_descendant(my_org(), p.org_id))
+      )
+    );
+end;
+$$;
+grant execute on function set_contract_renewal_status(uuid, text) to authenticated;
+
 -- ── 신규 가입 시 초대장을 profiles 로 전환하는 트리거 ─────
 create or replace function handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$

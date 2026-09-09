@@ -92,7 +92,7 @@ export default function Renewals() {
 
   async function setRenewalStatus(contractId: string, status: string) {
     const renewal_status = status || null
-    const { error } = await supabase.from('contracts').update({ renewal_status }).eq('id', contractId)
+    const { error } = await supabase.rpc('set_contract_renewal_status', { contract_id: contractId, status: renewal_status })
     if (error) {
       alert('갱신여부 저장 실패: ' + error.message)
       return
@@ -188,7 +188,7 @@ export default function Renewals() {
                       <th className="text-left px-4 py-2">고객명</th>
                       <th className="text-left px-4 py-2">종목</th>
                       <th className="text-right px-4 py-2">보험료</th>
-                      {canManage && <th className="text-left px-4 py-2">갱신여부</th>}
+                      <th className="text-left px-4 py-2">갱신여부</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -206,18 +206,16 @@ export default function Renewals() {
                           <td className="px-4 py-1.5">{c.customer_name}</td>
                           <td className="px-4 py-1.5">{c.category}</td>
                           <td className="px-4 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
-                          {canManage && (
-                            <td className="px-4 py-1.5">
-                              <select
-                                value={c.renewal_status ?? ''}
-                                onChange={(e) => setRenewalStatus(c.id, e.target.value)}
-                                className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
-                              >
-                                <option value="">선택…</option>
-                                {RENEWAL_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-                              </select>
-                            </td>
-                          )}
+                          <td className="px-4 py-1.5">
+                            <select
+                              value={c.renewal_status ?? ''}
+                              onChange={(e) => setRenewalStatus(c.id, e.target.value)}
+                              className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
+                            >
+                              <option value="">선택…</option>
+                              {RENEWAL_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </td>
                         </tr>
                       )
                     })}
