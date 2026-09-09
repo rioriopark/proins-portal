@@ -400,6 +400,11 @@ export default function Contracts() {
   // 이미 들어와 있으면 같이 찾아서 본사관리자/본사담당자가 확인 후 예비계약을 정리할 수 있게 한다.
   // 증권번호가 이제 예비계약에도 필수라 우선 증권번호로 정확히 매칭하고,
   // (옛날 데이터 등) 증권번호가 없는 예비계약만 담당자·보험사·고객명으로 대신 매칭한다.
+  // 본사담당자는 RLS상 본사관리자와 동일하게 회사 전체 예비계약을 조회할 수 있지만,
+  // 예비계약 확인 목록만큼은 본사 소속(org_id='hq') 담당자의 계약으로 한정해 보여준다.
+  // (본사관리자는 그대로 회사 전체를 유지한다)
+  const hqOrgAgentIds = useMemo(() => new Set(agents.filter((a) => a.org_id === 'hq').map((a) => a.id)), [agents])
+  const hqOrgAgentEmails = useMemo(() => new Set(invites.filter((i) => i.org_id === 'hq').map((i) => i.email)), [invites])
   const preliminaryMatches = useMemo(() => {
     // 본사관리자/본사담당자는 전체를, 위촉설계사는 본인 것만(RLS로 이미 그렇게만 조회됨) 볼 수 있다.
     if (!canManage && !isFieldAgent) return []
@@ -418,6 +423,10 @@ export default function Contracts() {
     }
     return contracts
       .filter((c) => c.is_preliminary)
+      .filter((c) => {
+        if (!isHqStaff) return true
+        return c.agent_id ? hqOrgAgentIds.has(c.agent_id) : c.agent_email ? hqOrgAgentEmails.has(c.agent_email) : false
+      })
       .map((prelim) => {
         const byPolicyNo = prelim.policy_no?.trim() ? officialByPolicyNo.get(prelim.policy_no.trim()) : undefined
         if (byPolicyNo?.length) return { prelim, matches: byPolicyNo }
@@ -428,7 +437,7 @@ export default function Contracts() {
         const nameKey = `${prelim.agent_id ?? prelim.agent_email ?? ''}|${prelim.company.trim()}|${prelim.customer_name.trim()}`
         return { prelim, matches: officialByNameKey.get(nameKey) ?? [] }
       })
-  }, [contracts, canManage, isFieldAgent])
+  }, [contracts, canManage, isFieldAgent, isHqStaff, hqOrgAgentIds, hqOrgAgentEmails])
 
   const canReassign = profile?.role === 'hq_admin'
   const agentOptions = [
