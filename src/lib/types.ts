@@ -50,12 +50,14 @@ export interface Contract {
   policy_no: string | null
   product_name: string
   customer_name: string
+  insured_name: string | null
   receipt_date: string | null
   expiry_date: string | null
   collection_status: string | null
   count: number
   premium: number
   commission: number
+  performance_commission: number
   is_preliminary: boolean
   created_at: string
 }

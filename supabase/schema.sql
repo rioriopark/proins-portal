@@ -37,13 +37,15 @@ create table contracts (
   company text default '',
   policy_no text,                    -- 계약번호/증권번호 (건별 상세 데이터가 없으면 null)
   product_name text default '',
-  customer_name text default '',
-  receipt_date date,                 -- 영수일 (건별 상세 데이터가 없으면 null)
+  customer_name text default '',     -- 계약자명
+  insured_name text,                 -- 피보험자명 (계약자와 다를 수 있음, 건별 상세 데이터가 없으면 null)
+  receipt_date date,                 -- 보험시기(영수일) (건별 상세 데이터가 없으면 null)
   expiry_date date,                  -- 보험종기/만기일 (건별 상세 데이터가 없으면 null)
   collection_status text,            -- 수금상태 (보험사 파일의 정상집금여부 등 원문 그대로 저장)
   count int not null default 0,
   premium numeric not null default 0,
-  commission numeric not null default 0, -- 지급률 적용 전 원 수수료
+  commission numeric not null default 0, -- 지급률 적용 전 원 수수료(건별수수료)
+  performance_commission numeric not null default 0, -- 성과수수료 (보험사 파일에 별도 열로 오는 값 그대로 저장)
   is_preliminary boolean not null default false, -- 위촉설계사가 보험사 확정 전에 직접 등록한 예비계약 여부
   created_at timestamptz default now(),
   constraint contracts_has_owner check (agent_id is not null or agent_email is not null)

@@ -310,7 +310,19 @@ export default function Contracts() {
       map.set(key, g)
     }
     return [...map.values()]
-      .map((g) => ({ ...g, companies: [...g.companies.values()].sort((a, b) => b.premium - a.premium) }))
+      .map((g) => ({
+        ...g,
+        companies: [...g.companies.values()]
+          .map((cg) => ({
+            ...cg,
+            rows: [...cg.rows].sort((a, b) => {
+              const byCategory = CATEGORIES.indexOf(a.category) - CATEGORIES.indexOf(b.category)
+              if (byCategory !== 0) return byCategory
+              return (a.receipt_date ?? '').localeCompare(b.receipt_date ?? '')
+            }),
+          }))
+          .sort((a, b) => b.premium - a.premium),
+      }))
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   }, [filtered, agentInfo])
 
@@ -783,11 +795,15 @@ export default function Contracts() {
                                   <thead className="bg-slate-50 text-slate-500">
                                     <tr>
                                       <th className="text-left px-3 py-1.5">계약번호</th>
-                                      <th className="text-left px-3 py-1.5">계약자명</th>
                                       <th className="text-left px-3 py-1.5">상품명</th>
-                                      <th className="text-left px-3 py-1.5">영수일</th>
+                                      <th className="text-left px-3 py-1.5">계약자명</th>
+                                      <th className="text-left px-3 py-1.5">피보험자명</th>
+                                      <th className="text-left px-3 py-1.5">보험종목</th>
+                                      <th className="text-left px-3 py-1.5">보험시기</th>
+                                      <th className="text-left px-3 py-1.5">보험종기</th>
                                       <th className="text-right px-3 py-1.5">보험료</th>
                                       <th className="text-right px-3 py-1.5">건별수수료(지급률 {Math.round(rateFor(cg.rows[0], agentInfo(cg.rows[0])) * 100)}% 적용)</th>
+                                      <th className="text-right px-3 py-1.5">성과수수료</th>
                                       {canReassign && <th className="text-left px-3 py-1.5">담당자</th>}
                                     </tr>
                                   </thead>
@@ -797,11 +813,15 @@ export default function Contracts() {
                                       return (
                                         <tr key={c.id} className="border-t border-slate-100">
                                           <td className="px-3 py-1.5">{c.policy_no ?? '-'}</td>
-                                          <td className="px-3 py-1.5">{c.customer_name}</td>
                                           <td className="px-3 py-1.5">{c.product_name}</td>
+                                          <td className="px-3 py-1.5">{c.customer_name}</td>
+                                          <td className="px-3 py-1.5">{c.insured_name ?? '-'}</td>
+                                          <td className="px-3 py-1.5">{c.category}</td>
                                           <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
+                                          <td className="px-3 py-1.5">{c.expiry_date ?? '-'}</td>
                                           <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
                                           <td className="px-3 py-1.5 text-right">{Math.round(c.commission * rate).toLocaleString('ko-KR')}</td>
+                                          <td className="px-3 py-1.5 text-right">{Math.round(c.performance_commission).toLocaleString('ko-KR')}</td>
                                           {canReassign && (
                                             <td className="px-3 py-1.5">
                                               <select

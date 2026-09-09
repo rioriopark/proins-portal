@@ -60,7 +60,8 @@ function parseSheet(text: string): ParsedRow[] {
 
 type FieldKey =
   | 'agentCode' | 'agentName' | 'month' | 'category' | 'type' | 'count' | 'premium' | 'commission'
-  | 'policyNo' | 'productName' | 'customerName' | 'receiptDate' | 'expiryDate' | 'collectionStatus'
+  | 'policyNo' | 'productName' | 'customerName' | 'insuredName' | 'receiptDate' | 'expiryDate'
+  | 'collectionStatus' | 'performanceCommission'
 
 const FIELD_META: { key: FieldKey; label: string; required: boolean; keywords: string[] }[] = [
   { key: 'agentCode', label: '설계사코드/사번', required: false, keywords: [] },
@@ -70,12 +71,14 @@ const FIELD_META: { key: FieldKey; label: string; required: boolean; keywords: s
   { key: 'type', label: '구분', required: false, keywords: ['계약구분', '가입구분', '청약구분', '신계약구분', '유형'] },
   { key: 'count', label: '건수', required: false, keywords: ['건수', '계약건수'] },
   { key: 'premium', label: '보험료', required: true, keywords: ['보험료', '납입보험료', '월보험료', '초회보험료'] },
-  { key: 'commission', label: '수수료', required: true, keywords: ['수수료', '지급수수료', '수수료액', '커미션'] },
+  { key: 'performanceCommission', label: '성과수수료', required: false, keywords: ['성과수수료', '성과'] },
+  { key: 'commission', label: '건별수수료', required: true, keywords: ['건별수수료', '수수료', '지급수수료', '수수료액', '커미션'] },
   { key: 'policyNo', label: '계약번호(증권번호)', required: false, keywords: ['계약번호', '증권번호', '증권No', '보험증권번호'] },
   { key: 'productName', label: '상품명', required: false, keywords: ['상품명', '상품'] },
-  { key: 'customerName', label: '고객명', required: false, keywords: ['계약자명', '고객명', '계약자', '피보험자명'] },
-  { key: 'receiptDate', label: '영수일', required: false, keywords: ['영수일', '접수일', '청약일', '응당일'] },
-  { key: 'expiryDate', label: '만기일(보험종기)', required: false, keywords: ['보험종기', '보험만기일자', '만기일자', '만기일', '증권만기일', '만료일', '종기'] },
+  { key: 'customerName', label: '계약자명', required: false, keywords: ['계약자명', '고객명', '계약자'] },
+  { key: 'insuredName', label: '피보험자명', required: false, keywords: ['피보험자명', '피보험자'] },
+  { key: 'receiptDate', label: '보험시기(영수일)', required: false, keywords: ['보험시기', '영수일', '접수일', '청약일', '응당일'] },
+  { key: 'expiryDate', label: '보험종기', required: false, keywords: ['보험종기', '보험만기일자', '만기일자', '만기일', '증권만기일', '만료일', '종기'] },
   { key: 'collectionStatus', label: '수금상태', required: false, keywords: ['정상집금여부', '집금상태', '수금상태', '수납상태', '미납여부', '수금여부', '입금상태'] },
 ]
 
@@ -148,7 +151,8 @@ function pickBestColumn(headers: string[], body: string[][], predicate: (h: stri
 function emptyMapping(): Record<FieldKey, number> {
   return {
     agentCode: -1, agentName: -1, month: -1, category: -1, type: -1, count: -1, premium: -1, commission: -1,
-    policyNo: -1, productName: -1, customerName: -1, receiptDate: -1, expiryDate: -1, collectionStatus: -1,
+    policyNo: -1, productName: -1, customerName: -1, insuredName: -1, receiptDate: -1, expiryDate: -1,
+    collectionStatus: -1, performanceCommission: -1,
   }
 }
 
@@ -263,12 +267,14 @@ interface FileRow {
   policyNo: string
   productName: string
   customerName: string
+  insuredName: string
   receiptDate: string
   expiryDate: string
   collectionStatus: string
   count: number
   premium: number
   commission: number
+  performanceCommission: number
   error?: string
 }
 
@@ -477,6 +483,7 @@ export default function BulkImport() {
         const type = rawType || inferTypeFallback(g.insurer, g.headers, row)
         const premium = toNumber(get(row, 'premium'))
         const commission = toNumber(get(row, 'commission'))
+        const performanceCommission = toNumber(get(row, 'performanceCommission'))
 
         const codeKey = agentCode ? `${g.insurer}|${agentCode}` : ''
         const autoProfile = codeKey ? codeMap.get(codeKey) : undefined
@@ -499,11 +506,12 @@ export default function BulkImport() {
           policyNo: get(row, 'policyNo'),
           productName: get(row, 'productName'),
           customerName: get(row, 'customerName'),
+          insuredName: get(row, 'insuredName'),
           receiptDate: normalizeDate(get(row, 'receiptDate')),
           expiryDate: normalizeDate(get(row, 'expiryDate')),
           collectionStatus: get(row, 'collectionStatus'),
           count: g.mapping.count >= 0 ? toNumber(get(row, 'count')) || 1 : 1,
-          premium, commission, error,
+          premium, commission, performanceCommission, error,
         })
       })
     }
@@ -560,12 +568,14 @@ export default function BulkImport() {
         policy_no: r.policyNo || null,
         product_name: r.productName,
         customer_name: r.customerName,
+        insured_name: r.insuredName || null,
         receipt_date: r.receiptDate || null,
         expiry_date: r.expiryDate || null,
         collection_status: r.collectionStatus || null,
         count: r.count,
         premium: r.premium,
         commission: r.commission,
+        performance_commission: r.performanceCommission,
       }))
     let inserted = 0
     let failed = 0
