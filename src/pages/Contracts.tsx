@@ -846,15 +846,15 @@ export default function Contracts() {
                                                   📝
                                                 </summary>
                                                 <div className="absolute right-0 z-10 mt-1 bg-white border border-slate-200 rounded shadow-md p-1.5">
-                                                  <input
-                                                    type="text"
+                                                  <textarea
                                                     autoFocus
                                                     defaultValue={c.memo ?? ''}
                                                     onBlur={(e) => {
                                                       if (e.target.value !== (c.memo ?? '')) updateMemo(c.id, e.target.value)
                                                     }}
                                                     placeholder="메모"
-                                                    className="border border-slate-200 rounded px-1.5 py-1 text-xs w-40 text-left"
+                                                    rows={3}
+                                                    className="border border-slate-200 rounded px-1.5 py-1 text-xs w-40 text-left resize"
                                                   />
                                                 </div>
                                               </details>
