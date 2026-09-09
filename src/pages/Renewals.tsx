@@ -158,9 +158,26 @@ export default function Renewals() {
     return [...latestByPolicy.values(), ...noPolicyNo]
   }, [contracts, categoryFilter, keyword])
 
+  // 갱신완료 선택 시 증권번호·만기예정일(추정 아님)·보험료가 없으면 저장을 막고
+  // 해당 셀을 깜빡이게 해서 먼저 채우도록 안내한다.
+  const [flaggedRowId, setFlaggedRowId] = useState<string | null>(null)
+
   // 갱신완료를 고르면, 만기 다음날을 영수일로 하는 예비계약을 등록해 "계약관리 > 예비계약 확인"에서
   // 보험사 확정 계약이 들어왔을 때 매칭·확정할 수 있게 한다.
-  async function setRenewalStatus(c: Contract, expiry: string, status: string) {
+  async function setRenewalStatus(c: Contract, expiry: string, estimated: boolean, status: string) {
+    if (status === '갱신완료') {
+      const missing: string[] = []
+      if (!c.policy_no?.trim()) missing.push('증권번호')
+      if (estimated) missing.push('만기예정일(추정 아닌 실제 값 필요)')
+      if (!c.premium || c.premium <= 0) missing.push('보험료')
+      if (missing.length > 0) {
+        alert(`갱신완료 처리 전에 먼저 채워주세요: ${missing.join(', ')}`)
+        setFlaggedRowId(c.id)
+        window.setTimeout(() => setFlaggedRowId((id) => (id === c.id ? null : id)), 4000)
+        return
+      }
+    }
+
     const renewal_status = status || null
     const { error } = await supabase.rpc('set_contract_renewal_status', { contract_id: c.id, status: renewal_status })
     if (error) {
@@ -332,10 +349,12 @@ export default function Renewals() {
                   <tbody>
                     {g.rows.map(({ c, expiry, estimated }) => {
                       const overdue = expiry < today
+                      const flagged = flaggedRowId === c.id
+                      const blink = (missing: boolean) => (flagged && missing ? 'animate-pulse bg-rose-100 rounded' : '')
                       return (
                         <tr key={c.id} className="border-t border-slate-50">
-                          <td className="px-4 py-1.5">{c.policy_no ?? '-'}</td>
-                          <td className="px-4 py-1.5">
+                          <td className={`px-4 py-1.5 ${blink(!c.policy_no?.trim())}`}>{c.policy_no ?? '-'}</td>
+                          <td className={`px-4 py-1.5 ${blink(estimated)}`}>
                             <span className={overdue ? 'text-rose-600 font-medium' : 'text-slate-700'}>{expiry}</span>
                             <span className={`ml-1.5 text-xs ${overdue ? 'text-rose-500' : 'text-slate-400'}`}>({dday(expiry, today)})</span>
                             {estimated && <span className="ml-1.5 text-[10px] text-slate-400" title="만기일 미등록 · 영수일+1년으로 추정">추정</span>}
@@ -344,11 +363,11 @@ export default function Renewals() {
                           <td className="px-4 py-1.5">{c.product_name}</td>
                           <td className="px-4 py-1.5">{c.customer_name}</td>
                           <td className="px-4 py-1.5">{c.category}</td>
-                          <td className="px-4 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
+                          <td className={`px-4 py-1.5 text-right ${blink(!c.premium || c.premium <= 0)}`}>{c.premium.toLocaleString('ko-KR')}</td>
                           <td className="px-4 py-1.5">
                             <select
                               value={c.renewal_status ?? ''}
-                              onChange={(e) => setRenewalStatus(c, expiry, e.target.value)}
+                              onChange={(e) => setRenewalStatus(c, expiry, estimated, e.target.value)}
                               className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
                             >
                               <option value="">선택…</option>
