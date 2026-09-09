@@ -334,14 +334,33 @@ export default function Dashboard() {
   const topCardCount = isHqStaff ? 4 : 5
   const renewPremiumCard = { label: `갱신보험료(${Number(thisMonthNum)}월)`, value: `${renewPremiumThisMonth.toLocaleString('ko-KR')}원`, rate: changeRate(renewPremiumThisMonth, renewPremiumLastYear), color: 'teal' as const, icon: <IconRefresh /> }
 
-  // 갱신센터: 일반/자동차 계약의 영수일+1년을 만기 예정일로 보고 기간별로 집계
-  const renewalRows = useMemo(
-    () =>
-      contracts
-        .filter((c) => (c.category === '일반' || c.category === '자동차') && c.receipt_date)
-        .map((c) => ({ c, expiry: addYears(c.receipt_date!, 1) })),
-    [contracts]
-  )
+  // 갱신센터: 갱신관리(Renewals) 화면과 동일한 기준으로 만기예정일을 계산해 기간별로 집계한다.
+  // (실제 만기일 우선 사용, 갱신여부가 이미 정해진 건 제외, 1년 미만 단기계약 제외, 증권번호당 최신 1건만)
+  const renewalRows = useMemo(() => {
+    const rows = contracts
+      .filter((c) => {
+        if (c.category !== '일반' && c.category !== '자동차') return false
+        if (c.renewal_status) return false
+        if (!(c.expiry_date || c.receipt_date)) return false
+        if (c.expiry_date && c.receipt_date && c.expiry_date < addYears(c.receipt_date, 1)) return false
+        return true
+      })
+      .map((c) => ({ c, expiry: c.expiry_date ?? addYears(c.receipt_date!, 1) }))
+
+    const latestByPolicy = new Map<string, (typeof rows)[number]>()
+    const noPolicyNo: typeof rows = []
+    for (const r of rows) {
+      if (!r.c.policy_no) {
+        noPolicyNo.push(r)
+        continue
+      }
+      const existing = latestByPolicy.get(r.c.policy_no)
+      if (!existing || (r.c.receipt_date ?? '') > (existing.c.receipt_date ?? '')) {
+        latestByPolicy.set(r.c.policy_no, r)
+      }
+    }
+    return [...latestByPolicy.values(), ...noPolicyNo]
+  }, [contracts])
   const renewalBuckets = useMemo(
     () =>
       RENEWAL_BUCKETS.map(({ days, label, color }) => {
