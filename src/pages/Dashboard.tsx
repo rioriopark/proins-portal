@@ -204,7 +204,7 @@ export default function Dashboard() {
   const [contracts, setContracts] = useState<Contract[]>([])
   const [banners, setBanners] = useState<Banner[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
-  const [invites, setInvites] = useState<{ email: string; name: string }[]>([])
+  const [invites, setInvites] = useState<{ email: string; name: string; org_id: string }[]>([])
   const [eduEvents, setEduEvents] = useState<EducationEvent[]>([])
   const [showAllNotices, setShowAllNotices] = useState(false)
   const [showAllEdu, setShowAllEdu] = useState(false)
@@ -222,7 +222,7 @@ export default function Dashboard() {
     ).then(setContracts)
     supabase.from('banners').select('*').order('created_at', { ascending: false }).then(({ data }) => setBanners(data ?? []))
     supabase.from('profiles').select('*').then(({ data }) => setAgents(data ?? []))
-    supabase.from('pending_invites').select('email, name').then(({ data }) => setInvites(data ?? []))
+    supabase.from('pending_invites').select('email, name, org_id').then(({ data }) => setInvites(data ?? []))
     supabase.from('education_events').select('*').order('event_date').then(({ data }) => setEduEvents(data ?? []))
   }, [])
 
@@ -266,9 +266,19 @@ export default function Dashboard() {
     }
   }, [agents, invites, profile])
 
+  // 본사담당자는 RLS상 본사관리자와 동일하게 회사 전체 계약을 조회할 수 있지만, 대시보드의
+  // "누적" 카드만큼은 본사 소속(org_id='hq') 담당자의 계약으로 한정해 보여준다.
+  // (본사관리자는 그대로 회사 전체를 유지한다)
+  const hqOrgAgentIds = useMemo(() => new Set(agents.filter((a) => a.org_id === 'hq').map((a) => a.id)), [agents])
+  const hqOrgAgentEmails = useMemo(() => new Set(invites.filter((i) => i.org_id === 'hq').map((i) => i.email)), [invites])
+  const cardContracts = useMemo(() => {
+    if (!isHqStaff) return contracts
+    return contracts.filter((c) => (c.agent_id ? hqOrgAgentIds.has(c.agent_id) : c.agent_email ? hqOrgAgentEmails.has(c.agent_email) : false))
+  }, [contracts, isHqStaff, hqOrgAgentIds, hqOrgAgentEmails])
+
   // 위촉설계사·본사담당자·본사관리자·지사/지점 관리자(RLS로 이미 본인 하부조직만 조회됨) 모두
   // "누적" 카드는 당해년 계약만 합산한다.
-  const thisYearContracts = useMemo(() => contracts.filter((c) => c.month?.startsWith(thisYear)), [contracts, thisYear])
+  const thisYearContracts = useMemo(() => cardContracts.filter((c) => c.month?.startsWith(thisYear)), [cardContracts, thisYear])
   const totalPremiumThisYear = useMemo(() => sum(thisYearContracts, (c) => c.premium), [thisYearContracts])
   const totalCountThisYear = useMemo(() => sum(thisYearContracts, (c) => c.count), [thisYearContracts])
   const totalCommissionThisYear = useMemo(() => sum(thisYearContracts, (c) => c.commission), [thisYearContracts])
@@ -276,14 +286,14 @@ export default function Dashboard() {
   // 전년 대비 증감률 계산용: 올해 vs 작년 동기간(1월~이번달) 누계
   const ytd = useMemo(() => {
     const inRange = (yr: string) => (c: Contract) => c.month?.startsWith(yr) && c.month.slice(5, 7) <= thisMonthNum
-    const thisYearRows = contracts.filter(inRange(thisYear))
-    const lastYearRows = contracts.filter(inRange(lastYear))
+    const thisYearRows = cardContracts.filter(inRange(thisYear))
+    const lastYearRows = cardContracts.filter(inRange(lastYear))
     return {
       premium: changeRate(sum(thisYearRows, (c) => c.premium), sum(lastYearRows, (c) => c.premium)),
       count: changeRate(sum(thisYearRows, (c) => c.count), sum(lastYearRows, (c) => c.count)),
       commission: changeRate(sum(thisYearRows, (c) => c.commission), sum(lastYearRows, (c) => c.commission)),
     }
-  }, [contracts, thisYear, lastYear, thisMonthNum])
+  }, [cardContracts, thisYear, lastYear, thisMonthNum])
 
   const newPremiumThisMonth = useMemo(
     () =>
