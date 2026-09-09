@@ -77,7 +77,8 @@ export default function Renewals() {
         setOrgs(o ?? [])
       }
       if (canReassign) {
-        const { data: ro } = await supabase.rpc('list_renewal_reassign_options')
+        const { data: ro, error: roError } = await supabase.rpc('list_renewal_reassign_options')
+        if (roError) console.error('담당자 목록 조회 실패:', roError)
         setReassignOptions(ro ?? [])
       }
       setLoading(false)
