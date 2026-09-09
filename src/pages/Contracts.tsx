@@ -421,6 +421,10 @@ export default function Contracts() {
       .map((prelim) => {
         const byPolicyNo = prelim.policy_no?.trim() ? officialByPolicyNo.get(prelim.policy_no.trim()) : undefined
         if (byPolicyNo?.length) return { prelim, matches: byPolicyNo }
+        // 갱신은 항상 새 증권번호를 입력받으므로 증권번호로만 매칭한다. 이름(담당자+보험사+계약자명) 대체
+        // 매칭은 신규(증권번호가 비어있을 수 있음)에만 쓴다 — 갱신 고객은 매년 이름이 같아 작년 확정계약과
+        // 항상 잘못 매칭돼버리기 때문.
+        if (prelim.type !== '신규') return { prelim, matches: [] }
         const nameKey = `${prelim.agent_id ?? prelim.agent_email ?? ''}|${prelim.company.trim()}|${prelim.customer_name.trim()}`
         return { prelim, matches: officialByNameKey.get(nameKey) ?? [] }
       })
