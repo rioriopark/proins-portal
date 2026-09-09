@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
@@ -213,7 +213,9 @@ export default function Dashboard() {
   const [prelimNewRows, setPrelimNewRows] = useState<
     { category: string; premium: number; agent_id: string | null; agent_email: string | null }[]
   >([])
-  const [prelimRenewRows, setPrelimRenewRows] = useState<{ premium: number }[]>([])
+  const [prelimRenewRows, setPrelimRenewRows] = useState<
+    { premium: number; agent_id: string | null; agent_email: string | null }[]
+  >([])
 
   useEffect(() => {
     // 예비계약(확정 전, is_preliminary)은 아직 실제 계약이 아니므로 대시보드 집계에서 제외한다.
@@ -244,7 +246,7 @@ export default function Dashboard() {
       .then(({ data }) => setPrelimNewRows(data ?? []))
     supabase
       .from('contracts')
-      .select('premium')
+      .select('premium, agent_id, agent_email')
       .eq('is_preliminary', true)
       .eq('type', '계속')
       .eq('month', thisMonth)
@@ -266,19 +268,32 @@ export default function Dashboard() {
     }
   }, [agents, invites, profile])
 
-  // 본사담당자는 RLS상 본사관리자와 동일하게 회사 전체 계약을 조회할 수 있지만, 대시보드의
-  // "누적" 카드만큼은 본사 소속(org_id='hq') 담당자의 계약으로 한정해 보여준다.
+  // 본사담당자는 RLS상 본사관리자와 동일하게 회사 전체 계약을 조회할 수 있지만, 메인화면
+  // (대시보드) 전체는 본사 소속(org_id='hq') 담당자의 계약으로 한정해 보여준다.
   // (본사관리자는 그대로 회사 전체를 유지한다)
   const hqOrgAgentIds = useMemo(() => new Set(agents.filter((a) => a.org_id === 'hq').map((a) => a.id)), [agents])
   const hqOrgAgentEmails = useMemo(() => new Set(invites.filter((i) => i.org_id === 'hq').map((i) => i.email)), [invites])
-  const cardContracts = useMemo(() => {
+  const belongsToHqOrg = useCallback(
+    (c: { agent_id: string | null; agent_email: string | null }) =>
+      c.agent_id ? hqOrgAgentIds.has(c.agent_id) : c.agent_email ? hqOrgAgentEmails.has(c.agent_email) : false,
+    [hqOrgAgentIds, hqOrgAgentEmails]
+  )
+  const scopedContracts = useMemo(() => {
     if (!isHqStaff) return contracts
-    return contracts.filter((c) => (c.agent_id ? hqOrgAgentIds.has(c.agent_id) : c.agent_email ? hqOrgAgentEmails.has(c.agent_email) : false))
-  }, [contracts, isHqStaff, hqOrgAgentIds, hqOrgAgentEmails])
+    return contracts.filter(belongsToHqOrg)
+  }, [contracts, isHqStaff, belongsToHqOrg])
+  const scopedPrelimNewRows = useMemo(
+    () => (isHqStaff ? prelimNewRows.filter(belongsToHqOrg) : prelimNewRows),
+    [prelimNewRows, isHqStaff, belongsToHqOrg]
+  )
+  const scopedPrelimRenewRows = useMemo(
+    () => (isHqStaff ? prelimRenewRows.filter(belongsToHqOrg) : prelimRenewRows),
+    [prelimRenewRows, isHqStaff, belongsToHqOrg]
+  )
 
   // 위촉설계사·본사담당자·본사관리자·지사/지점 관리자(RLS로 이미 본인 하부조직만 조회됨) 모두
   // "누적" 카드는 당해년 계약만 합산한다.
-  const thisYearContracts = useMemo(() => cardContracts.filter((c) => c.month?.startsWith(thisYear)), [cardContracts, thisYear])
+  const thisYearContracts = useMemo(() => scopedContracts.filter((c) => c.month?.startsWith(thisYear)), [scopedContracts, thisYear])
   const totalPremiumThisYear = useMemo(() => sum(thisYearContracts, (c) => c.premium), [thisYearContracts])
   const totalCountThisYear = useMemo(() => sum(thisYearContracts, (c) => c.count), [thisYearContracts])
   const totalCommissionThisYear = useMemo(() => sum(thisYearContracts, (c) => c.commission), [thisYearContracts])
@@ -286,48 +301,48 @@ export default function Dashboard() {
   // 전년 대비 증감률 계산용: 올해 vs 작년 동기간(1월~이번달) 누계
   const ytd = useMemo(() => {
     const inRange = (yr: string) => (c: Contract) => c.month?.startsWith(yr) && c.month.slice(5, 7) <= thisMonthNum
-    const thisYearRows = cardContracts.filter(inRange(thisYear))
-    const lastYearRows = cardContracts.filter(inRange(lastYear))
+    const thisYearRows = scopedContracts.filter(inRange(thisYear))
+    const lastYearRows = scopedContracts.filter(inRange(lastYear))
     return {
       premium: changeRate(sum(thisYearRows, (c) => c.premium), sum(lastYearRows, (c) => c.premium)),
       count: changeRate(sum(thisYearRows, (c) => c.count), sum(lastYearRows, (c) => c.count)),
       commission: changeRate(sum(thisYearRows, (c) => c.commission), sum(lastYearRows, (c) => c.commission)),
     }
-  }, [cardContracts, thisYear, lastYear, thisMonthNum])
+  }, [scopedContracts, thisYear, lastYear, thisMonthNum])
 
   const newPremiumThisMonth = useMemo(
     () =>
-      sum(contracts.filter((c) => c.month === thisMonth && c.type === '신규'), (c) => c.premium) +
-      sum(prelimNewRows, (r) => r.premium),
-    [contracts, thisMonth, prelimNewRows]
+      sum(scopedContracts.filter((c) => c.month === thisMonth && c.type === '신규'), (c) => c.premium) +
+      sum(scopedPrelimNewRows, (r) => r.premium),
+    [scopedContracts, thisMonth, scopedPrelimNewRows]
   )
   const newPremiumLastYear = useMemo(
-    () => sum(contracts.filter((c) => c.month === lastYearMonth && c.type === '신규'), (c) => c.premium),
-    [contracts, lastYearMonth]
+    () => sum(scopedContracts.filter((c) => c.month === lastYearMonth && c.type === '신규'), (c) => c.premium),
+    [scopedContracts, lastYearMonth]
   )
   // 확정(보험사 업로드 완료)된 계속계약은 그 확정 보험료로, 아직 확정 전인 갱신은 갱신완료 시
   // 입력받은 예비 보험료로 잡는다 — "계약관리 > 예비계약 확인"에 뜨는 값과 항상 일치시킨다.
   const renewPremiumThisMonth = useMemo(
     () =>
-      sum(contracts.filter((c) => c.month === thisMonth && c.type === '계속'), (c) => c.premium) +
-      sum(prelimRenewRows, (r) => r.premium),
-    [contracts, thisMonth, prelimRenewRows]
+      sum(scopedContracts.filter((c) => c.month === thisMonth && c.type === '계속'), (c) => c.premium) +
+      sum(scopedPrelimRenewRows, (r) => r.premium),
+    [scopedContracts, thisMonth, scopedPrelimRenewRows]
   )
   const renewPremiumLastYear = useMemo(
     () =>
-      sum(contracts.filter((c) => c.month === lastYearMonth && c.type === '계속'), (c) => c.premium),
-    [contracts, lastYearMonth]
+      sum(scopedContracts.filter((c) => c.month === lastYearMonth && c.type === '계속'), (c) => c.premium),
+    [scopedContracts, lastYearMonth]
   )
   // 위촉설계사 화면의 신규보험료 카드는 장기/일반 종목별로 나눠서 보여준다.
   const newPremiumThisMonthByCategory = useMemo(() => {
-    const rows = contracts.filter((c) => c.month === thisMonth && c.type === '신규')
+    const rows = scopedContracts.filter((c) => c.month === thisMonth && c.type === '신규')
     return {
       장기: sum(rows.filter((c) => c.category === '장기'), (c) => c.premium) +
-        sum(prelimNewRows.filter((r) => r.category === '장기'), (r) => r.premium),
+        sum(scopedPrelimNewRows.filter((r) => r.category === '장기'), (r) => r.premium),
       일반: sum(rows.filter((c) => c.category === '일반'), (c) => c.premium) +
-        sum(prelimNewRows.filter((r) => r.category === '일반'), (r) => r.premium),
+        sum(scopedPrelimNewRows.filter((r) => r.category === '일반'), (r) => r.premium),
     }
-  }, [contracts, thisMonth, prelimNewRows])
+  }, [scopedContracts, thisMonth, scopedPrelimNewRows])
   const newPremiumRate = changeRate(newPremiumThisMonth, newPremiumLastYear)
 
   // 위촉설계사는 RLS로 이미 본인 계약만 조회되므로, 라벨도 "나의 ~"로 구분해준다.
@@ -347,7 +362,7 @@ export default function Dashboard() {
   // 갱신센터: 갱신관리(Renewals) 화면과 동일한 기준으로 만기예정일을 계산해 기간별로 집계한다.
   // (실제 만기일 우선 사용, 갱신여부가 이미 정해진 건 제외, 1년 미만 단기계약 제외, 증권번호당 최신 1건만)
   const renewalRows = useMemo(() => {
-    const rows = contracts
+    const rows = scopedContracts
       .filter((c) => {
         if (c.category !== '일반' && c.category !== '자동차') return false
         if (c.renewal_status) return false
@@ -370,7 +385,7 @@ export default function Dashboard() {
       }
     }
     return [...latestByPolicy.values(), ...noPolicyNo]
-  }, [contracts])
+  }, [scopedContracts])
   const renewalBuckets = useMemo(
     () =>
       RENEWAL_BUCKETS.map(({ days, label, color }) => {
