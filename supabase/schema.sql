@@ -220,6 +220,18 @@ create table insurer_accounts (
   updated_at timestamptz default now()
 );
 
+-- ── 사이트 아이디 정보 (본사 담당자 공용 사이트 계정 — 본사 소속 직원만 조회/관리) ─
+create table site_accounts (
+  id uuid primary key default gen_random_uuid(),
+  site_name text not null,
+  login_id text default '',
+  password text default '',
+  sort_order int default 0,
+  updated_by uuid references profiles(id),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 -- ── 교육 일정 (메인화면 노출용 — 본사관리자가 등록) ──────────
 create table education_events (
   id uuid primary key default gen_random_uuid(),
@@ -359,6 +371,11 @@ create policy "banners_write_admin" on banners
 -- insurer_accounts: 대표코드/비밀번호는 민감정보이므로 본사 소속(org_id='hq') 직원만 조회/관리
 alter table insurer_accounts enable row level security;
 create policy "insurer_accounts_hq_org_only" on insurer_accounts
+  for all using (my_org() = 'hq') with check (my_org() = 'hq');
+
+-- site_accounts: 사이트 계정정보는 본사 소속(org_id='hq') 직원만 조회/관리
+alter table site_accounts enable row level security;
+create policy "site_accounts_hq_org_only" on site_accounts
   for all using (my_org() = 'hq') with check (my_org() = 'hq');
 
 -- education_events: 로그인한 사람 전체 조회 가능, 작성/수정/삭제는 본사관리자만

@@ -137,6 +137,17 @@ export interface InsurerAccount {
   updated_at: string
 }
 
+export interface SiteAccount {
+  id: string
+  site_name: string
+  login_id: string
+  password: string
+  sort_order: number
+  updated_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface EducationEvent {
   id: string
   title: string
