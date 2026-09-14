@@ -2,11 +2,15 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type {
-  AgentContract, AgentProfile, CompanyCode, EducationRecord, InsurerAccount, LicenseInfo, Profile, TerminationRecord,
+  AgentContract, AgentProfile, CompanyCode, EducationRecord, InsurerAccount, LicenseInfo, Profile, SiteAccount, TerminationRecord,
 } from '../lib/types'
 
 const emptyInsurerAccount = (company: string): InsurerAccount => ({
   id: '', company, login_id: '', password: '', memo: '', updated_by: null, created_at: '', updated_at: '',
+})
+
+const emptySiteAccount = (sortOrder: number): SiteAccount => ({
+  id: '', site_name: '', login_id: '', password: '', sort_order: sortOrder, updated_by: null, created_at: '', updated_at: '',
 })
 
 const emptyProfile = (profileId: string): AgentProfile => ({
@@ -27,6 +31,7 @@ export default function MySpace() {
   const [ap, setAp] = useState<AgentProfile | null>(null)
   const [ac, setAc] = useState<AgentContract | null>(null)
   const [insurerAccounts, setInsurerAccounts] = useState<InsurerAccount[]>([])
+  const [siteAccounts, setSiteAccounts] = useState<SiteAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingContract, setSavingContract] = useState(false)
@@ -52,6 +57,7 @@ export default function MySpace() {
   useEffect(() => {
     if (profile?.org_id === 'hq') {
       supabase.from('insurer_accounts').select('*').then(({ data }) => setInsurerAccounts(data ?? []))
+      supabase.from('site_accounts').select('*').order('sort_order').then(({ data }) => setSiteAccounts(data ?? []))
     }
   }, [profile])
 
@@ -88,6 +94,59 @@ export default function MySpace() {
       if (error) alert('대표코드 저장 실패: ' + error.message)
       else if (data) setInsurerAccounts((prev) => prev.map((a) => (a.company.trim() === key ? data : a)))
     }
+  }
+
+  function updateSiteAccountField(i: number, field: 'site_name' | 'login_id' | 'password', value: string) {
+    setSiteAccounts((prev) => prev.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)))
+  }
+
+  function addSiteAccount() {
+    const nextOrder = siteAccounts.length ? Math.max(...siteAccounts.map((s) => s.sort_order)) + 1 : 0
+    setSiteAccounts((prev) => [...prev, emptySiteAccount(nextOrder)])
+  }
+
+  async function persistSiteAccount(i: number) {
+    const row = siteAccounts[i]
+    if (!row || !profile) return
+    if (!row.id && !row.site_name.trim()) return
+    const payload = {
+      site_name: row.site_name, login_id: row.login_id, password: row.password,
+      sort_order: row.sort_order, updated_by: profile.id, updated_at: new Date().toISOString(),
+    }
+    if (row.id) {
+      const { error } = await supabase.from('site_accounts').update(payload).eq('id', row.id)
+      if (error) alert('사이트 정보 저장 실패: ' + error.message)
+    } else {
+      const { data, error } = await supabase.from('site_accounts').insert(payload).select().maybeSingle()
+      if (error) alert('사이트 정보 저장 실패: ' + error.message)
+      else if (data) setSiteAccounts((prev) => prev.map((s, idx) => (idx === i ? data : s)))
+    }
+  }
+
+  async function removeSiteAccount(i: number) {
+    const row = siteAccounts[i]
+    if (!row) return
+    if (row.id) {
+      const { error } = await supabase.from('site_accounts').delete().eq('id', row.id)
+      if (error) return alert('삭제 실패: ' + error.message)
+    }
+    setSiteAccounts((prev) => prev.filter((_, idx) => idx !== i))
+  }
+
+  async function moveSiteAccount(i: number, dir: -1 | 1) {
+    const j = i + dir
+    if (j < 0 || j >= siteAccounts.length) return
+    const reordered = [...siteAccounts]
+    ;[reordered[i], reordered[j]] = [reordered[j], reordered[i]]
+    const renumbered = reordered.map((s, idx) => ({ ...s, sort_order: idx }))
+    setSiteAccounts(renumbered)
+    const rowsWithId = renumbered.filter((s) => s.id)
+    if (rowsWithId.length === 0) return
+    const results = await Promise.all(
+      rowsWithId.map((s) => supabase.from('site_accounts').update({ sort_order: s.sort_order }).eq('id', s.id)),
+    )
+    const error = results.find((r) => r.error)?.error
+    if (error) alert('순서 변경 실패: ' + error.message)
   }
 
   useEffect(() => {
@@ -284,6 +343,17 @@ export default function MySpace() {
             onRepFieldBlur={persistRepField}
           />
 
+          {canSeeRepCodes && (
+            <SiteAccountTable
+              rows={siteAccounts}
+              onFieldChange={updateSiteAccountField}
+              onFieldBlur={persistSiteAccount}
+              onAdd={addSiteAccount}
+              onRemove={removeSiteAccount}
+              onMove={moveSiteAccount}
+            />
+          )}
+
           <RepeatingTable
             title="자격증 정보"
             editable={canEditSelf}
@@ -442,6 +512,13 @@ function CompanyCodeTable({
   function add() {
     onChange([...rows, { company: '', code: '', code_auth: '' }])
   }
+  function move(i: number, dir: -1 | 1) {
+    const j = i + dir
+    if (j < 0 || j >= rows.length) return
+    const next = [...rows]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    onChange(next)
+  }
 
   return (
     <div>
@@ -454,6 +531,7 @@ function CompanyCodeTable({
       {rows.length === 0 && <p className="text-xs text-slate-400 mb-2">등록된 정보가 없습니다.</p>}
       {rows.length > 0 && (
         <div className="flex items-center gap-2 mb-1 px-0.5">
+          {editable && <span className="w-9" />}
           <span className="flex-1 text-[11px] text-slate-400">보험사</span>
           <span className="flex-1 text-[11px] text-slate-400">개인사번</span>
           <span className="flex-1 text-[11px] text-slate-400">비밀번호/인증번호</span>
@@ -472,6 +550,14 @@ function CompanyCodeTable({
           const rep = insurerAccountByCompany.get(company)
           return (
             <div key={i} className="flex items-center gap-2">
+              {editable && (
+                <div className="flex flex-col w-9 shrink-0">
+                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0}
+                    className="text-slate-400 hover:text-slate-700 disabled:opacity-30 text-[10px] leading-tight">▲</button>
+                  <button type="button" onClick={() => move(i, 1)} disabled={i === rows.length - 1}
+                    className="text-slate-400 hover:text-slate-700 disabled:opacity-30 text-[10px] leading-tight">▼</button>
+                </div>
+              )}
               <input
                 disabled={!editable}
                 value={row.company}
@@ -522,6 +608,70 @@ function CompanyCodeTable({
           + 보험사 추가
         </button>
       )}
+    </div>
+  )
+}
+
+function SiteAccountTable({
+  rows, onFieldChange, onFieldBlur, onAdd, onRemove, onMove,
+}: {
+  rows: SiteAccount[]
+  onFieldChange: (i: number, field: 'site_name' | 'login_id' | 'password', value: string) => void
+  onFieldBlur: (i: number) => void
+  onAdd: () => void
+  onRemove: (i: number) => void
+  onMove: (i: number, dir: -1 | 1) => void
+}) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-slate-500 mb-2">사이트 아이디정보</p>
+      <p className="text-[11px] text-slate-400 mb-2">
+        본사 소속 담당자 전체가 공유하는 사이트 계정정보입니다. 입력하면 즉시 반영됩니다.
+      </p>
+      {rows.length === 0 && <p className="text-xs text-slate-400 mb-2">등록된 정보가 없습니다.</p>}
+      {rows.length > 0 && (
+        <div className="flex items-center gap-2 mb-1 px-0.5">
+          <span className="w-9" />
+          <span className="flex-1 text-[11px] text-slate-400">사이트명</span>
+          <span className="flex-1 text-[11px] text-slate-400">아이디</span>
+          <span className="flex-1 text-[11px] text-slate-400">비밀번호/세팅번호</span>
+          <span className="w-5" />
+        </div>
+      )}
+      <div className="space-y-2">
+        {rows.map((row, i) => (
+          <div key={row.id || `new-${i}`} className="flex items-center gap-2">
+            <div className="flex flex-col w-9 shrink-0">
+              <button type="button" onClick={() => onMove(i, -1)} disabled={i === 0}
+                className="text-slate-400 hover:text-slate-700 disabled:opacity-30 text-[10px] leading-tight">▲</button>
+              <button type="button" onClick={() => onMove(i, 1)} disabled={i === rows.length - 1}
+                className="text-slate-400 hover:text-slate-700 disabled:opacity-30 text-[10px] leading-tight">▼</button>
+            </div>
+            <input
+              value={row.site_name}
+              onChange={(e) => onFieldChange(i, 'site_name', e.target.value)}
+              onBlur={() => onFieldBlur(i)}
+              className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+            />
+            <input
+              value={row.login_id}
+              onChange={(e) => onFieldChange(i, 'login_id', e.target.value)}
+              onBlur={() => onFieldBlur(i)}
+              className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+            />
+            <input
+              value={row.password}
+              onChange={(e) => onFieldChange(i, 'password', e.target.value)}
+              onBlur={() => onFieldBlur(i)}
+              className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+            />
+            <button type="button" onClick={() => onRemove(i)} className="text-slate-400 hover:text-red-500 text-sm px-1">✕</button>
+          </div>
+        ))}
+      </div>
+      <button type="button" onClick={onAdd} className="mt-2 text-xs text-slate-500 hover:underline">
+        + 사이트 추가
+      </button>
     </div>
   )
 }
