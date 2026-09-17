@@ -429,6 +429,17 @@ export default function Contracts() {
         if (!isHqStaff) return true
         return c.agent_id ? hqOrgAgentIds.has(c.agent_id) : c.agent_email ? hqOrgAgentEmails.has(c.agent_email) : false
       })
+      .filter((c) => {
+        if (monthFilter !== '전체' && c.month !== monthFilter) return false
+        if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
+        if (typeFilter !== '전체' && c.type !== typeFilter) return false
+        if (keyword) {
+          const agentName = agentInfo(c).name
+          const haystack = [c.customer_name, c.product_name, c.company, c.policy_no, agentName].join(' ').toLowerCase()
+          if (!haystack.includes(keyword)) return false
+        }
+        return true
+      })
       .map((prelim) => {
         const byPolicyNo = prelim.policy_no?.trim() ? officialByPolicyNo.get(prelim.policy_no.trim()) : undefined
         if (byPolicyNo?.length) return { prelim, matches: byPolicyNo }
@@ -439,7 +450,10 @@ export default function Contracts() {
         const nameKey = `${prelim.agent_id ?? prelim.agent_email ?? ''}|${prelim.company.trim()}|${prelim.customer_name.trim()}`
         return { prelim, matches: officialByNameKey.get(nameKey) ?? [] }
       })
-  }, [contracts, canManage, isFieldAgent, isHqStaff, hqOrgAgentIds, hqOrgAgentEmails])
+  }, [
+    contracts, canManage, isFieldAgent, isHqStaff, hqOrgAgentIds, hqOrgAgentEmails,
+    monthFilter, categoryFilter, typeFilter, keyword, agentInfo,
+  ])
 
   const canReassign = profile?.role === 'hq_admin'
   const agentOptions = [
