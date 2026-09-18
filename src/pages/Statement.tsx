@@ -184,10 +184,11 @@ export default function Statement() {
 
   // 지급률 자동계산: 건별수수료(contracts.commission) × 담당자 지급률(장기/일반)을 계약 유형별로 나눠 합산한다.
   // - 모집초회수수료: 장기·신규(비례공동 포함) 중 지급월이 계약월 기준 1개월 이내
-  // - 모집분급수수료: 장기·신규(비례공동 포함) 중 지급월이 계약월 기준 2~24개월
-  // - 유지: 장기·계속
+  // - 모집분급수수료: 장기·신규(비례공동 포함) 중 지급월이 계약월 기준 2개월 이후 (24개월 초과분도 계속 지급 중인
+  //   것으로 보고 여기 포함 — 계약관리 화면의 수수료 합계와 어긋나지 않도록, 알 수 없는 값은 버리지 않는다)
+  // - 유지: 장기 중 신규/비례공동이 아닌 나머지 전부(계속·부활 등 그 외 값 포함)
   // - 환수/부활: 종목 무관, 환수·부활 (해당 건의 종목에 맞는 지급률 적용)
-  // - 일반/자동차: 각 종목의 신규·계속·비례공동 (환수/부활은 위에서 이미 반영해 중복 집계하지 않음)
+  // - 일반/자동차: 환수·부활을 제외한 나머지 전부 (계약관리 화면과 동일하게 유형 값을 가리지 않고 합산)
   // 관리수수료·수금수수료는 직급/관리자 여부에 따른 별도 기준이 필요해 자동계산 대상에서 제외한다.
   const autoCalc = useMemo(() => {
     if (!target) return null
@@ -203,18 +204,18 @@ export default function Statement() {
       if (c.type === '환수' || c.type === '부활') {
         clawbackRevive += amount
       } else if (c.category === '장기') {
-        if (c.type === '신규' || c.type === '비례공동') {
-          if (!c.receipt_date) continue
-          const offset = monthsBetween(c.receipt_date.slice(0, 7), c.month)
-          if (offset <= 1) recruitFirst += amount
-          else if (offset <= 24) recruitInstallment += amount
-        } else if (c.type === '계속') {
+        const offset = c.receipt_date ? monthsBetween(c.receipt_date.slice(0, 7), c.month) : NaN
+        if ((c.type === '신규' || c.type === '비례공동') && !Number.isNaN(offset) && offset <= 1) {
+          recruitFirst += amount
+        } else if ((c.type === '신규' || c.type === '비례공동') && !Number.isNaN(offset) && offset >= 2) {
+          recruitInstallment += amount
+        } else {
           maintainAmt += amount
         }
       } else if (c.category === '일반') {
-        if (c.type === '신규' || c.type === '계속' || c.type === '비례공동') generalAmt += amount
+        generalAmt += amount
       } else if (c.category === '자동차') {
-        if (c.type === '신규' || c.type === '계속' || c.type === '비례공동') autoAmt += amount
+        autoAmt += amount
       }
     }
     return {
