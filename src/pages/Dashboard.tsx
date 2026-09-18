@@ -183,14 +183,6 @@ const PORTAL_LINKS = [
     logo: lotteLogo,
   },
   {
-    name: '라이나손해보험',
-    portal: '영업포탈',
-    url: 'file:///C:/Program Files/ACE Insurance/iAgencyApp_SSL/TFApp.exe',
-    badge: '라이나',
-    color: 'bg-indigo-600',
-    logo: linaLogo,
-  },
-  {
     name: '한화손해보험',
     portal: '스마트포탈',
     url: 'https://portal.hwgeneralins.com/',
@@ -205,6 +197,14 @@ const PORTAL_LINKS = [
     badge: '흥국',
     color: 'bg-pink-600',
     logo: heungkukLogo,
+  },
+  {
+    name: '라이나손해보험',
+    portal: '영업포탈',
+    url: 'file:///C:/Program Files/ACE Insurance/iAgencyApp_SSL/TFApp.exe',
+    badge: '라이나',
+    color: 'bg-indigo-600',
+    logo: linaLogo,
   },
   {
     name: 'AIG손해보험',
