@@ -2,7 +2,7 @@ import { useMemo, useState, type ChangeEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { toAuthEmail } from '../lib/id'
-import type { Profile } from '../lib/types'
+import type { Contract, Profile } from '../lib/types'
 
 interface AgentInsurerCodeWithName {
   profile_id: string
@@ -532,6 +532,53 @@ export default function BulkImport() {
     errorMessage?: string
     autoConfirmed?: number
   } | null>(null)
+
+  // ---- 잘못 등록한 계약 일괄삭제 ----
+  // "월"은 지급월(month)이 아니라 계약관리 화면과 동일하게 실제 계약월(보험시기/receipt_date) 기준으로
+  // 고른다 — 수수료가 익월 지급되는 보험사는 지급월이 계약월과 다를 수 있어서다.
+  const contractMonth = (c: Contract) => c.receipt_date?.slice(0, 7) || c.month
+  const [delCompany, setDelCompany] = useState('')
+  const [delMonth, setDelMonth] = useState('')
+  const [delPreview, setDelPreview] = useState<Contract[] | null>(null)
+  const [delChecking, setDelChecking] = useState(false)
+  const [delBusy, setDelBusy] = useState(false)
+  const [delResult, setDelResult] = useState<string | null>(null)
+
+  async function checkDeleteTargets() {
+    setDelChecking(true)
+    setDelResult(null)
+    const { data, error } = await supabase
+      .from('contracts')
+      .select('*')
+      .eq('company', delCompany.trim())
+      .eq('is_preliminary', false)
+    setDelChecking(false)
+    if (error) {
+      alert('조회 실패: ' + error.message)
+      return
+    }
+    setDelPreview((data ?? []).filter((c) => contractMonth(c) === delMonth))
+  }
+
+  async function executeDelete() {
+    if (!delPreview || delPreview.length === 0) return
+    if (!confirm(`${delCompany.trim()} / ${delMonth} 확정 계약 ${delPreview.length}건을 정말 삭제할까요? 되돌릴 수 없습니다.`)) return
+    setDelBusy(true)
+    const { error } = await supabase
+      .from('contracts')
+      .delete()
+      .in(
+        'id',
+        delPreview.map((c) => c.id),
+      )
+    setDelBusy(false)
+    if (error) {
+      alert('삭제 실패: ' + error.message)
+      return
+    }
+    setDelResult(`${delPreview.length}건 삭제되었습니다.`)
+    setDelPreview([])
+  }
 
   // 예비계약 자동확정: 방금 올린 확정 계약과 같은 보험사+증권번호로 이미 등록돼 있던 예비계약을
   // 사람 개입 없이 정리한다. 증권번호가 없거나 애매하게 매칭되는 건은 그대로 남아 [계약관리 >
@@ -1271,6 +1318,106 @@ export default function BulkImport() {
           {result.errorMessage && <p className="text-red-600 text-xs mt-1">실패 사유: {result.errorMessage}</p>}
         </div>
       )}
+
+      <div className="bg-white rounded-xl shadow p-5 space-y-3">
+        <div>
+          <h2 className="font-semibold text-sm">잘못 등록한 계약 일괄삭제</h2>
+          <p className="text-xs text-slate-500 mt-1">
+            보험사·계약월(계약관리 화면과 동일하게 실제 계약월 기준)을 선택해 해당 조건에 맞는 확정
+            계약(예비계약 제외)을 한 번에 삭제합니다. 삭제 전 대상 건수와 목록을 먼저 확인하세요.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 items-end">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">보험사</label>
+            <input
+              list="del-insurers"
+              value={delCompany}
+              onChange={(e) => {
+                setDelCompany(e.target.value)
+                setDelPreview(null)
+                setDelResult(null)
+              }}
+              placeholder="예: KB손보"
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm w-40"
+            />
+            <datalist id="del-insurers">
+              {INSURERS.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">계약월</label>
+            <input
+              type="month"
+              value={delMonth}
+              onChange={(e) => {
+                setDelMonth(e.target.value)
+                setDelPreview(null)
+                setDelResult(null)
+              }}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+            />
+          </div>
+          <button
+            type="button"
+            disabled={!delCompany.trim() || !delMonth || delChecking}
+            onClick={checkDeleteTargets}
+            className="border border-slate-300 text-slate-600 rounded-md px-4 py-2 text-sm font-medium bg-white disabled:opacity-40"
+          >
+            {delChecking ? '조회 중…' : '대상 조회'}
+          </button>
+        </div>
+
+        {delPreview !== null &&
+          (delPreview.length === 0 ? (
+            <p className="text-sm text-slate-400">조건에 맞는 확정 계약이 없습니다.</p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm text-red-600 font-medium">
+                {delCompany.trim()} / {delMonth} 확정 계약 {delPreview.length}건이 삭제 대상입니다. 삭제하면 되돌릴 수
+                없습니다.
+              </p>
+              <div className="overflow-x-auto max-h-56 overflow-y-auto border border-slate-100 rounded-md">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="text-left px-3 py-1.5">계약번호</th>
+                      <th className="text-left px-3 py-1.5">계약자명</th>
+                      <th className="text-left px-3 py-1.5">종목/구분</th>
+                      <th className="text-right px-3 py-1.5">보험료</th>
+                      <th className="text-right px-3 py-1.5">수수료</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {delPreview.map((c) => (
+                      <tr key={c.id} className="border-t border-slate-100">
+                        <td className="px-3 py-1.5">{c.policy_no ?? '-'}</td>
+                        <td className="px-3 py-1.5">{c.customer_name}</td>
+                        <td className="px-3 py-1.5">
+                          {c.category}/{c.type}
+                        </td>
+                        <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
+                        <td className="px-3 py-1.5 text-right">{c.commission.toLocaleString('ko-KR')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button
+                type="button"
+                disabled={delBusy}
+                onClick={executeDelete}
+                className="bg-red-600 text-white rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50"
+              >
+                {delBusy ? '삭제 중…' : `${delPreview.length}건 일괄삭제`}
+              </button>
+            </div>
+          ))}
+
+        {delResult && <p className="text-sm text-emerald-600">{delResult}</p>}
+      </div>
     </div>
   )
 }
