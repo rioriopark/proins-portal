@@ -126,6 +126,12 @@ export default function Statement() {
   const [saving, setSaving] = useState(false)
 
   const canEdit = can('statement')
+  // 위촉직 설계사(본사 소속이 아닌 agent)는 직급/관리 조직에 속하지 않아 직급수수료(관리수수료·수금수수료)와
+  // 법인 단위 시상(법인시책·일반성과) 대상이 아니므로 명세서에서 아예 보이지 않게 한다.
+  const isFieldAgent = target?.role === 'agent' && target?.org_id !== 'hq'
+  const visibleIncentiveFields = isFieldAgent
+    ? INCENTIVE_FIELDS.filter(([k]) => k !== 'corporate_incentive' && k !== 'general_performance')
+    : INCENTIVE_FIELDS
 
   useEffect(() => {
     if (!profile) return
@@ -469,15 +475,17 @@ export default function Statement() {
                     <NumberField key={k} k={k} label={label} />
                   ))}
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-slate-400 mb-1">직급수수료</p>
-                  {MGMT_FIELDS.map(([k, label]) => (
-                    <NumberField key={k} k={k} label={label} />
-                  ))}
-                </div>
+                {!isFieldAgent && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-400 mb-1">직급수수료</p>
+                    {MGMT_FIELDS.map(([k, label]) => (
+                      <NumberField key={k} k={k} label={label} />
+                    ))}
+                  </div>
+                )}
                 <div>
                   <p className="text-xs font-semibold text-slate-400 mb-1">시상내역</p>
-                  {INCENTIVE_FIELDS.map(([k, label]) => (
+                  {visibleIncentiveFields.map(([k, label]) => (
                     <NumberField key={k} k={k} label={label} />
                   ))}
                 </div>
