@@ -177,7 +177,7 @@ export default function Renewals() {
   // 갱신완료는 새로 발급된 증권번호·보험료를 받아야 하므로, 선택 즉시 처리하지 않고
   // 기존 값은 지운 입력창을 열어 새 값을 직접 입력받는다.
   const [renewingId, setRenewingId] = useState<string | null>(null)
-  const [renewForm, setRenewForm] = useState({ policy_no: '', premium: '' })
+  const [renewForm, setRenewForm] = useState({ policy_no: '', premium: '', expiry_date: '' })
   const [renewSaving, setRenewSaving] = useState(false)
 
   // 갱신불가/보류/건별계약처럼 새 증권번호·보험료 입력이 필요 없는 상태는 바로 저장한다.
@@ -191,23 +191,27 @@ export default function Renewals() {
     setContracts((prev) => prev.map((row) => (row.id === c.id ? { ...row, renewal_status } : row)))
   }
 
-  function startRenewal(c: Contract, estimated: boolean) {
-    if (estimated) {
-      alert('갱신완료로 처리하려면 먼저 실제 만기예정일을 등록해주세요.')
-      return
-    }
+  // 만기예정일이 아직 실제 값(추정 아님)으로 등록되어 있지 않으면 빈칸으로 두어 직접 입력받고,
+  // 이미 실제 값이 있으면 그대로 보여줘서 필요시에만 고치게 한다.
+  function startRenewal(c: Contract, expiry: string, estimated: boolean) {
     setRenewingId(c.id)
-    setRenewForm({ policy_no: '', premium: '' })
+    setRenewForm({ policy_no: '', premium: '', expiry_date: estimated ? '' : expiry })
   }
   function cancelRenewal() {
     setRenewingId(null)
   }
 
-  // 갱신완료 확정: 새로 입력받은 증권번호·보험료로, 만기 다음날을 영수일로 하는 예비계약을 등록해
-  // "계약관리 > 예비계약 확인"에서 보험사 확정 계약이 들어왔을 때 매칭·확정할 수 있게 한다.
-  async function submitRenewal(c: Contract, expiry: string) {
+  // 갱신완료 확정: 새로 입력받은 증권번호·보험료·(추정치가 아닌) 실제 만기예정일로, 기존 계약의
+  // 만기예정일을 갱신하고, 만기 다음날을 영수일로 하는 예비계약을 등록해 "계약관리 > 예비계약
+  // 확인"에서 보험사 확정 계약이 들어왔을 때 매칭·확정할 수 있게 한다.
+  async function submitRenewal(c: Contract) {
     const policy_no = renewForm.policy_no.trim()
     const premium = Number(renewForm.premium)
+    const expiry_date = renewForm.expiry_date.trim()
+    if (!expiry_date) {
+      alert('실제 만기예정일을 입력해주세요.')
+      return
+    }
     if (!policy_no) {
       alert('새 증권번호를 입력해주세요.')
       return
@@ -217,15 +221,23 @@ export default function Renewals() {
       return
     }
     setRenewSaving(true)
+    const { error: expiryError } = await supabase.from('contracts').update({ expiry_date }).eq('id', c.id)
+    if (expiryError) {
+      setRenewSaving(false)
+      alert('만기예정일 저장 실패: ' + expiryError.message)
+      return
+    }
     const { error } = await supabase.rpc('set_contract_renewal_status', { contract_id: c.id, status: '갱신완료' })
     if (error) {
       setRenewSaving(false)
       alert('갱신여부 저장 실패: ' + error.message)
       return
     }
-    setContracts((prev) => prev.map((row) => (row.id === c.id ? { ...row, renewal_status: '갱신완료' } : row)))
+    setContracts((prev) =>
+      prev.map((row) => (row.id === c.id ? { ...row, expiry_date, renewal_status: '갱신완료' } : row)),
+    )
 
-    const receipt_date = addDays(expiry, 1)
+    const receipt_date = addDays(expiry_date, 1)
     const { error: prelimError } = await supabase.from('contracts').upsert(
       {
         agent_id: c.agent_id,
@@ -464,14 +476,26 @@ export default function Renewals() {
                             )}
                           </td>
                           <td className="px-4 py-1.5">
-                            <span className={overdue ? 'text-rose-600 font-medium' : 'text-slate-700'}>{expiry}</span>
-                            <span className={`ml-1.5 text-xs ${overdue ? 'text-rose-500' : 'text-slate-400'}`}>
-                              ({dday(expiry, today)})
-                            </span>
-                            {estimated && (
-                              <span className="ml-1.5 text-[10px] text-slate-400" title="만기일 미등록 · 영수일+1년으로 추정">
-                                추정
-                              </span>
+                            {editing ? (
+                              <input
+                                type="date"
+                                value={renewForm.expiry_date}
+                                onChange={(e) => setRenewForm((f) => ({ ...f, expiry_date: e.target.value }))}
+                                placeholder="실제 만기예정일"
+                                className="border border-slate-300 rounded px-1.5 py-1 text-xs"
+                              />
+                            ) : (
+                              <>
+                                <span className={overdue ? 'text-rose-600 font-medium' : 'text-slate-700'}>{expiry}</span>
+                                <span className={`ml-1.5 text-xs ${overdue ? 'text-rose-500' : 'text-slate-400'}`}>
+                                  ({dday(expiry, today)})
+                                </span>
+                                {estimated && (
+                                  <span className="ml-1.5 text-[10px] text-slate-400" title="만기일 미등록 · 영수일+1년으로 추정">
+                                    추정
+                                  </span>
+                                )}
+                              </>
                             )}
                           </td>
                           <td className="px-4 py-1.5">{c.company}</td>
@@ -498,7 +522,7 @@ export default function Renewals() {
                                 <button
                                   type="button"
                                   disabled={renewSaving}
-                                  onClick={() => submitRenewal(c, expiry)}
+                                  onClick={() => submitRenewal(c)}
                                   className="text-xs text-white bg-slate-800 rounded px-2 py-1 hover:bg-slate-700 disabled:opacity-40"
                                 >
                                   {renewSaving ? '처리 중…' : '확인'}
@@ -517,7 +541,7 @@ export default function Renewals() {
                                 value={c.renewal_status ?? ''}
                                 onChange={(e) => {
                                   const status = e.target.value
-                                  if (status === '갱신완료') startRenewal(c, estimated)
+                                  if (status === '갱신완료') startRenewal(c, expiry, estimated)
                                   else setRenewalStatus(c, status)
                                 }}
                                 className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
