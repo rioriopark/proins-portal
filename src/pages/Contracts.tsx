@@ -587,8 +587,13 @@ export default function Contracts() {
   const rateFor = (c: Contract, info: { rate_long: number; rate_general: number }) =>
     c.category === '장기' ? info.rate_long : info.rate_general
 
+  // 계약관리 화면의 "월" 검색은 지급월(month, 수수료가 들어오는 달)이 아니라 실제 계약월(보험시기)
+  // 기준으로 조회한다 — 예: 8월에 접수된 계약이 수수료는 9월에 지급돼 month='2026-09'로 등록돼도,
+  // 계약관리에서는 2026년 08월로 찾아져야 한다. 보험시기가 없는 옛 데이터는 지급월로 대체한다.
+  const contractMonth = (c: Contract) => c.receipt_date?.slice(0, 7) || c.month
+
   const months = useMemo(
-    () => [...new Set(contracts.map((c) => c.month).filter(Boolean))].sort((a, b) => b.localeCompare(a)),
+    () => [...new Set(contracts.map((c) => contractMonth(c)).filter(Boolean))].sort((a, b) => b.localeCompare(a)),
     [contracts],
   )
 
@@ -605,7 +610,7 @@ export default function Contracts() {
         if (c.category === '장기' && c.type === '신규' && c.month !== today().slice(0, 7)) return false
         if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
         if (typeFilter !== '전체' && c.type !== typeFilter) return false
-        if (monthFilter !== '전체' && c.month !== monthFilter) return false
+        if (monthFilter !== '전체' && contractMonth(c) !== monthFilter) return false
         if (keyword) {
           const agentName = agentInfo(c).name
           const haystack = [c.customer_name, c.product_name, c.company, c.policy_no, agentName].join(' ').toLowerCase()
@@ -749,7 +754,7 @@ export default function Contracts() {
         return c.agent_id ? hqOrgAgentIds.has(c.agent_id) : c.agent_email ? hqOrgAgentEmails.has(c.agent_email) : false
       })
       .filter((c) => {
-        if (monthFilter !== '전체' && c.month !== monthFilter) return false
+        if (monthFilter !== '전체' && contractMonth(c) !== monthFilter) return false
         if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
         if (typeFilter !== '전체' && c.type !== typeFilter) return false
         if (keyword) {
