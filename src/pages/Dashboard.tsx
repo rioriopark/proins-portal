@@ -185,7 +185,7 @@ const PORTAL_LINKS = [
   {
     name: '라이나손해보험',
     portal: '영업포탈',
-    url: 'https://ga.linagi.com/',
+    url: 'file:///C:/Program Files/ACE Insurance/iAgencyApp_SSL/TFApp.exe',
     badge: '라이나',
     color: 'bg-indigo-600',
     logo: linaLogo,
