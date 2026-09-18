@@ -896,10 +896,6 @@ export default function Contracts() {
   }
 
   async function reassignAgent(contractId: string, value: string) {
-    if (value === 'delete') {
-      deleteContract(contractId)
-      return
-    }
     const [kind, key] = value.split(/:(.+)/)
     const patch =
       kind === 'p'
@@ -1840,6 +1836,7 @@ export default function Contracts() {
                                       )}
                                       {canSeePerformanceCommission && <th className="text-right px-3 py-1.5">성과수수료</th>}
                                       {canReassign && <th className="text-left px-3 py-1.5">담당자</th>}
+                                      {canReassign && <th className="px-3 py-1.5" />}
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -1932,10 +1929,18 @@ export default function Contracts() {
                                                     {o.label}
                                                   </option>
                                                 ))}
-                                                <option value="delete" style={{ color: '#dc2626' }}>
-                                                  삭제
-                                                </option>
                                               </select>
+                                            </td>
+                                          )}
+                                          {canReassign && (
+                                            <td className="px-3 py-1.5">
+                                              <button
+                                                type="button"
+                                                onClick={() => deleteContract(c.id)}
+                                                className="text-rose-500 hover:underline"
+                                              >
+                                                삭제
+                                              </button>
                                             </td>
                                           )}
                                         </tr>
@@ -1956,6 +1961,7 @@ export default function Contracts() {
                                           {Math.round(cg.performanceCommission).toLocaleString('ko-KR')}
                                         </td>
                                       )}
+                                      {canReassign && <td />}
                                       {canReassign && <td />}
                                     </tr>
                                   </tbody>
