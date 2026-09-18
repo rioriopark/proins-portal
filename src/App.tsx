@@ -12,9 +12,11 @@ import BulkImport from './pages/BulkImport'
 import Statement from './pages/Statement'
 import WagePayslip from './pages/WagePayslip'
 import Incentives from './pages/Incentives'
+import Board from './pages/Board'
+import Notices from './pages/Notices'
+import EducationSchedule from './pages/EducationSchedule'
 import Contacts from './pages/Contacts'
 import Orgs from './pages/Orgs'
-import Info from './pages/Info'
 import MySpace from './pages/MySpace'
 
 function Gate({ children }: { children: ReactNode }) {
@@ -28,7 +30,9 @@ function Gate({ children }: { children: ReactNode }) {
         <div className="text-center space-y-3">
           <p className="text-slate-700 font-medium">아직 관리자가 권한을 부여하지 않았습니다.</p>
           <p className="text-sm text-slate-500">담당 관리자에게 초대장 발급을 요청해주세요.</p>
-          <button onClick={signOut} className="text-sm underline text-slate-500">로그아웃</button>
+          <button onClick={signOut} className="text-sm underline text-slate-500">
+            로그아웃
+          </button>
         </div>
       </div>
     )
@@ -58,9 +62,11 @@ export default function App() {
         <Route path="statement" element={<Statement />} />
         <Route path="wage-statement" element={<WagePayslip />} />
         <Route path="incentives" element={<Incentives />} />
+        <Route path="board" element={<Board />} />
+        <Route path="notices" element={<Notices />} />
+        <Route path="education" element={<EducationSchedule />} />
         <Route path="contacts" element={<Contacts />} />
         <Route path="orgs" element={<Orgs />} />
-        <Route path="info" element={<Info />} />
         <Route path="my-space" element={<MySpace />} />
       </Route>
     </Routes>

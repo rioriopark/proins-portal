@@ -4,7 +4,12 @@ import { useAuth } from '../lib/auth'
 import type { Contract, ContractCategory, Organization, Profile } from '../lib/types'
 import { compareByOrgGradeCode } from '../lib/agentSort'
 
-interface Invite { email: string; name: string; org_id: string; title: string }
+interface Invite {
+  email: string
+  name: string
+  org_id: string
+  title: string
+}
 
 // 실제 만기일(expiry_date)이 있으면 그 값을 쓰고, 없는 계약(만기일 없이 등록된 건)만 영수일 + 1년으로 추정한다.
 function addYears(dateStr: string, years: number): string {
@@ -17,6 +22,11 @@ function addDays(dateStr: string, days: number): string {
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
 }
+function nextMonthOf(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00Z')
+  d.setUTCMonth(d.getUTCMonth() + 1)
+  return d.toISOString().slice(0, 7)
+}
 function dday(expiry: string, today: string): string {
   const diff = Math.round((new Date(expiry + 'T00:00:00Z').getTime() - new Date(today + 'T00:00:00Z').getTime()) / 86400000)
   if (diff === 0) return 'D-day'
@@ -27,18 +37,22 @@ function sum<T>(rows: T[], pick: (row: T) => number): number {
 }
 
 const PERIOD_OPTIONS = [
-  { value: '7', label: '7일 이내' },
-  { value: '30', label: '30일 이내' },
-  { value: '60', label: '60일 이내' },
-  { value: '90', label: '90일 이내' },
+  { value: 'this_month', label: '당월만기' },
+  { value: 'next_month', label: '익월만기' },
   { value: 'overdue', label: '기한 지남' },
+  { value: 'custom', label: '지정년월일' },
   { value: 'all', label: '전체' },
 ]
 
 const CATEGORY_OPTIONS: ('전체' | ContractCategory)[] = ['전체', '일반', '자동차']
 const RENEWAL_STATUS_OPTIONS = ['갱신완료', '갱신불가', '보류', '건별계약']
 
-interface ReassignOption { kind: 'p' | 'e'; id: string | null; email: string; label: string }
+interface ReassignOption {
+  kind: 'p' | 'e'
+  id: string | null
+  email: string
+  label: string
+}
 
 export default function Renewals() {
   const { profile, can } = useAuth()
@@ -54,7 +68,9 @@ export default function Renewals() {
   const [orgs, setOrgs] = useState<Organization[]>([])
   const [reassignOptions, setReassignOptions] = useState<ReassignOption[]>([])
   const [loading, setLoading] = useState(true)
-  const [period, setPeriod] = useState('30')
+  const [period, setPeriod] = useState('this_month')
+  const [customFrom, setCustomFrom] = useState(() => new Date().toISOString().slice(0, 10))
+  const [customTo, setCustomTo] = useState(() => new Date().toISOString().slice(0, 10))
   const [categoryFilter, setCategoryFilter] = useState<'전체' | ContractCategory>('전체')
   const [search, setSearch] = useState('')
   const [openAgents, setOpenAgents] = useState<Set<string>>(new Set())
@@ -63,7 +79,7 @@ export default function Renewals() {
     async function load() {
       setLoading(true)
       const data = await fetchAllRows<Contract>((from, to) =>
-        supabase.from('contracts').select('*').in('category', ['일반', '자동차']).range(from, to)
+        supabase.from('contracts').select('*').in('category', ['일반', '자동차']).range(from, to),
       )
       setContracts(data)
       if (canManage) {
@@ -226,7 +242,7 @@ export default function Renewals() {
         commission: 0,
         is_preliminary: true,
       },
-      { onConflict: 'company,policy_no,month,type,is_preliminary' }
+      { onConflict: 'company,policy_no,month,type,is_preliminary' },
     )
     setRenewSaving(false)
     if (prelimError) {
@@ -249,7 +265,7 @@ export default function Renewals() {
   async function reassignAgent(c: Contract, value: string) {
     const [kind, key] = value.split(/:(.+)/)
     const newAgentId = kind === 'p' ? key : null
-    const newAgentEmail = kind === 'p' ? reassignOptions.find((o) => o.id === key)?.email ?? null : key
+    const newAgentEmail = kind === 'p' ? (reassignOptions.find((o) => o.id === key)?.email ?? null) : key
     const { error } = await supabase.rpc('reassign_renewal_contract_agent', {
       contract_id: c.id,
       new_agent_id: newAgentId,
@@ -260,39 +276,61 @@ export default function Renewals() {
       return
     }
     setContracts((prev) =>
-      prev.map((row) => (row.id === c.id ? { ...row, agent_id: newAgentId, agent_email: newAgentEmail } : row))
+      prev.map((row) => (row.id === c.id ? { ...row, agent_id: newAgentId, agent_email: newAgentEmail } : row)),
     )
   }
 
   const filtered = useMemo(() => {
     if (period === 'all') return withExpiry
     if (period === 'overdue') return withExpiry.filter((r) => r.expiry < today)
-    const end = addDays(today, Number(period))
-    return withExpiry.filter((r) => r.expiry >= today && r.expiry <= end)
-  }, [withExpiry, period, today])
+    if (period === 'this_month') return withExpiry.filter((r) => r.expiry.slice(0, 7) === today.slice(0, 7))
+    if (period === 'next_month') {
+      const nextMonth = nextMonthOf(today)
+      return withExpiry.filter((r) => r.expiry.slice(0, 7) === nextMonth)
+    }
+    // 지정년월일: 선택한 시작일~종료일 범위 안에 만기예정일이 있는 건만 본다.
+    const from = customFrom <= customTo ? customFrom : customTo
+    const to = customFrom <= customTo ? customTo : customFrom
+    return withExpiry.filter((r) => r.expiry >= from && r.expiry <= to)
+  }, [withExpiry, period, today, customFrom, customTo])
 
   const orgsById = useMemo(() => new Map(orgs.map((o) => [o.id, o])), [orgs])
 
   const groups = useMemo(() => {
     interface Group {
-      key: string; name: string; org_id: string; title: string; email: string
-      pending: boolean; rows: { c: Contract; expiry: string; estimated: boolean }[]; premium: number
+      key: string
+      name: string
+      org_id: string
+      title: string
+      email: string
+      pending: boolean
+      rows: { c: Contract; expiry: string; estimated: boolean }[]
+      premium: number
     }
     const map = new Map<string, Group>()
     for (const r of filtered) {
       const key = r.c.agent_id ?? r.c.agent_email ?? 'unknown'
       const info = agentInfo(r.c)
-      const g =
-        map.get(key) ??
-        { key, name: info.name, org_id: info.org_id, title: info.title, email: info.email, pending: info.pending, rows: [], premium: 0 }
+      const g = map.get(key) ?? {
+        key,
+        name: info.name,
+        org_id: info.org_id,
+        title: info.title,
+        email: info.email,
+        pending: info.pending,
+        rows: [],
+        premium: 0,
+      }
       g.rows.push(r)
       g.premium += r.c.premium
       map.set(key, g)
     }
-    return [...map.values()]
-      .map((g) => ({ ...g, rows: g.rows.sort((a, b) => a.expiry.localeCompare(b.expiry)) }))
-      // 노출 우선순위: 조직(본사>직영>지점) > 직급 > 사번
-      .sort((a, b) => compareByOrgGradeCode(a, b, orgsById))
+    return (
+      [...map.values()]
+        .map((g) => ({ ...g, rows: g.rows.sort((a, b) => a.expiry.localeCompare(b.expiry)) }))
+        // 노출 우선순위: 조직(본사>직영>지점) > 직급 > 사번
+        .sort((a, b) => compareByOrgGradeCode(a, b, orgsById))
+    )
   }, [filtered, agentInfo, orgsById])
 
   const totalCount = filtered.length
@@ -323,13 +361,44 @@ export default function Renewals() {
           placeholder="계약찾기: 증권번호, 계약자명, 피보험자명"
           className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white w-64"
         />
-        <select value={period} onChange={(e) => setPeriod(e.target.value)}
-          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
-          {PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        <select
+          value={period}
+          onChange={(e) => setPeriod(e.target.value)}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white"
+        >
+          {PERIOD_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
         </select>
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
-          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
-          {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c === '전체' ? '전체 종목' : c}</option>)}
+        {period === 'custom' && (
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white"
+            />
+            <span className="text-slate-400 text-sm">~</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white"
+            />
+          </div>
+        )}
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white"
+        >
+          {CATEGORY_OPTIONS.map((c) => (
+            <option key={c} value={c}>
+              {c === '전체' ? '전체 종목' : c}
+            </option>
+          ))}
         </select>
         <span className="text-sm text-slate-500">
           {totalCount}건 · 보험료 합계 {totalPremium.toLocaleString('ko-KR')}원
@@ -337,7 +406,9 @@ export default function Renewals() {
       </div>
 
       {loading && <p className="text-center text-slate-400 py-6">불러오는 중…</p>}
-      {!loading && groups.length === 0 && <p className="text-center text-slate-400 py-6">해당 조건의 갱신 예정 계약이 없습니다.</p>}
+      {!loading && groups.length === 0 && (
+        <p className="text-center text-slate-400 py-6">해당 조건의 갱신 예정 계약이 없습니다.</p>
+      )}
 
       <div className="space-y-3">
         {groups.map((g) => {
@@ -350,7 +421,8 @@ export default function Renewals() {
               >
                 <p className="font-semibold text-sm text-slate-700 flex items-center gap-1.5">
                   <span className="inline-block w-3 text-slate-400">{open ? '▾' : '▸'}</span>
-                  {g.name}{g.pending && <span className="text-amber-600 font-normal"> (미가입)</span>}
+                  {g.name}
+                  {g.pending && <span className="text-amber-600 font-normal"> (미가입)</span>}
                 </p>
                 <p className="text-xs text-slate-500">
                   {g.rows.length}건 · 보험료 {g.premium.toLocaleString('ko-KR')}원
@@ -393,8 +465,14 @@ export default function Renewals() {
                           </td>
                           <td className="px-4 py-1.5">
                             <span className={overdue ? 'text-rose-600 font-medium' : 'text-slate-700'}>{expiry}</span>
-                            <span className={`ml-1.5 text-xs ${overdue ? 'text-rose-500' : 'text-slate-400'}`}>({dday(expiry, today)})</span>
-                            {estimated && <span className="ml-1.5 text-[10px] text-slate-400" title="만기일 미등록 · 영수일+1년으로 추정">추정</span>}
+                            <span className={`ml-1.5 text-xs ${overdue ? 'text-rose-500' : 'text-slate-400'}`}>
+                              ({dday(expiry, today)})
+                            </span>
+                            {estimated && (
+                              <span className="ml-1.5 text-[10px] text-slate-400" title="만기일 미등록 · 영수일+1년으로 추정">
+                                추정
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-1.5">{c.company}</td>
                           <td className="px-4 py-1.5">{c.product_name}</td>
@@ -445,7 +523,11 @@ export default function Renewals() {
                                 className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
                               >
                                 <option value="">선택…</option>
-                                {RENEWAL_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                                {RENEWAL_STATUS_OPTIONS.map((s) => (
+                                  <option key={s} value={s}>
+                                    {s}
+                                  </option>
+                                ))}
                               </select>
                             )}
                           </td>
@@ -457,7 +539,9 @@ export default function Renewals() {
                                 className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
                               >
                                 {agentOptions.map((o) => (
-                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                  <option key={o.value} value={o.value}>
+                                    {o.label}
+                                  </option>
                                 ))}
                               </select>
                             </td>

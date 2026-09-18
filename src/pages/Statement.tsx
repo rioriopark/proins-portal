@@ -8,11 +8,40 @@ function thisMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+// 수수료명세서의 지급월은 전월 실적을 기준으로 지급된다. 예: 26년 9월 지급월 명세서는
+// 계약관리의 26년 8월(전월)분 신규계약 실적을 적용해 업적현황을 보여준다.
+function prevMonth(m: string) {
+  const [y, mo] = m.split('-').map(Number)
+  const d = new Date(y, mo - 2, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 const ZERO_STMT = {
-  recruit_first: 0, recruit_installment: 0, maintain: 0, clawback_revive: 0, general: 0, auto: 0,
-  mgmt_fee: 0, collection_fee: 0, personal_incentive: 0, corporate_incentive: 0, general_performance: 0, other_incentive: 0,
-  taxable_income: 0, industrial_accident_ins: 0, employment_ins: 0, employment_ins_support: 0, income_tax: 0, resident_tax: 0,
-  incentive_offset: 0, other_deduction: 0, hq_support_offset: 0, workplace_cost: 0, unit_cost: 0, risk_reserve: 0, loan: 0,
+  recruit_first: 0,
+  recruit_installment: 0,
+  maintain: 0,
+  clawback_revive: 0,
+  general: 0,
+  auto: 0,
+  mgmt_fee: 0,
+  collection_fee: 0,
+  personal_incentive: 0,
+  corporate_incentive: 0,
+  general_performance: 0,
+  other_incentive: 0,
+  taxable_income: 0,
+  industrial_accident_ins: 0,
+  employment_ins: 0,
+  employment_ins_support: 0,
+  income_tax: 0,
+  resident_tax: 0,
+  incentive_offset: 0,
+  other_deduction: 0,
+  hq_support_offset: 0,
+  workplace_cost: 0,
+  unit_cost: 0,
+  risk_reserve: 0,
+  loan: 0,
 }
 type StmtFields = typeof ZERO_STMT
 
@@ -51,12 +80,32 @@ const OTHER_DEDUCTION_FIELDS: [keyof StmtFields, string][] = [
 ]
 
 const DEDUCTION_SUM_FIELDS: (keyof StmtFields)[] = [
-  'industrial_accident_ins', 'employment_ins', 'employment_ins_support', 'income_tax', 'resident_tax',
-  'incentive_offset', 'other_deduction', 'hq_support_offset', 'workplace_cost', 'unit_cost', 'risk_reserve', 'loan',
+  'industrial_accident_ins',
+  'employment_ins',
+  'employment_ins_support',
+  'income_tax',
+  'resident_tax',
+  'incentive_offset',
+  'other_deduction',
+  'hq_support_offset',
+  'workplace_cost',
+  'unit_cost',
+  'risk_reserve',
+  'loan',
 ]
 const INCOME_SUM_FIELDS: (keyof StmtFields)[] = [
-  'recruit_first', 'recruit_installment', 'maintain', 'clawback_revive', 'general', 'auto',
-  'mgmt_fee', 'collection_fee', 'personal_incentive', 'corporate_incentive', 'general_performance', 'other_incentive',
+  'recruit_first',
+  'recruit_installment',
+  'maintain',
+  'clawback_revive',
+  'general',
+  'auto',
+  'mgmt_fee',
+  'collection_fee',
+  'personal_incentive',
+  'corporate_incentive',
+  'general_performance',
+  'other_incentive',
 ]
 
 export default function Statement() {
@@ -74,7 +123,11 @@ export default function Statement() {
   useEffect(() => {
     if (!profile) return
     if (canEdit) {
-      supabase.from('profiles').select('*').order('name').then(({ data }) => setAgents(data ?? []))
+      supabase
+        .from('profiles')
+        .select('*')
+        .order('name')
+        .then(({ data }) => setAgents(data ?? []))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile])
@@ -85,9 +138,18 @@ export default function Statement() {
 
   useEffect(() => {
     if (!agentId) return
-    supabase.from('contracts').select('*').eq('agent_id', agentId).eq('month', month)
+    supabase
+      .from('contracts')
+      .select('*')
+      .eq('agent_id', agentId)
+      .eq('month', prevMonth(month))
       .then(({ data }) => setContracts(data ?? []))
-    supabase.from('statements').select('*').eq('agent_id', agentId).eq('month', month).maybeSingle()
+    supabase
+      .from('statements')
+      .select('*')
+      .eq('agent_id', agentId)
+      .eq('month', month)
+      .maybeSingle()
       .then(({ data }) => setStmt(data ? { ...ZERO_STMT, ...data } : ZERO_STMT))
     if (agentId === profile?.id) setTarget(profile)
     else setTarget(agents.find((a) => a.id === agentId) ?? null)
@@ -105,6 +167,7 @@ export default function Statement() {
     return [...byKey.values()]
   }
 
+  const contractMonth = useMemo(() => prevMonth(month), [month])
   const longRows = useMemo(() => group(['장기']), [contracts])
   const generalAutoRows = useMemo(() => group(['일반', '자동차']), [contracts])
   const longTotal = longRows.reduce((s, r) => s + r.premium, 0)
@@ -125,7 +188,10 @@ export default function Statement() {
     setSaving(true)
     const { error } = await supabase
       .from('statements')
-      .upsert({ agent_id: target.id, agent_email: target.email, month, ...stmt, updated_at: new Date().toISOString() }, { onConflict: 'agent_email,month' })
+      .upsert(
+        { agent_id: target.id, agent_email: target.email, month, ...stmt, updated_at: new Date().toISOString() },
+        { onConflict: 'agent_email,month' },
+      )
     setSaving(false)
     if (error) alert('저장 실패: ' + error.message)
   }
@@ -159,13 +225,24 @@ export default function Statement() {
         </div>
         <div className="flex gap-2 items-end">
           {canEdit && (
-            <select value={agentId} onChange={(e) => setAgentId(e.target.value)}
-              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
-              {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            <select
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white"
+            >
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
             </select>
           )}
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+          />
         </div>
       </div>
 
@@ -173,21 +250,51 @@ export default function Statement() {
         <div className="bg-white rounded-xl shadow p-6 space-y-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="bg-rose-600 text-white text-[10px] font-bold rounded px-2 py-1 leading-tight">PRO<br />INS</span>
+              <span className="bg-rose-600 text-white text-[10px] font-bold rounded px-2 py-1 leading-tight">
+                PRO
+                <br />
+                INS
+              </span>
               <span className="font-bold text-slate-800">프로인스컴퍼니</span>
             </div>
             <span className="text-sm font-semibold text-slate-500">수수료명세서</span>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm border-y border-slate-100 py-4">
-            <div><p className="text-xs text-slate-400">지급월</p><p className="font-medium">{month}</p></div>
-            <div><p className="text-xs text-slate-400">성명</p><p className="font-medium">{target.name}</p></div>
-            <div><p className="text-xs text-slate-400">소속</p><p className="font-medium">-</p></div>
-            <div><p className="text-xs text-slate-400">직급</p><p className="font-medium">{target.title}</p></div>
-            <div><p className="text-xs text-slate-400">은행</p><p className="font-medium">{target.bank || '-'}</p></div>
-            <div><p className="text-xs text-slate-400">계좌번호</p><p className="font-medium">{target.account || '-'}</p></div>
-            <div><p className="text-xs text-slate-400">장기/일반 지급률</p><p className="font-medium">{Math.round(target.rate_long * 100)}% / {Math.round(target.rate_general * 100)}%</p></div>
-            <div><p className="text-xs text-slate-400">자동차 지급률</p><p className="font-medium">{Math.round(target.rate_general * 100)}%</p></div>
+            <div>
+              <p className="text-xs text-slate-400">지급월</p>
+              <p className="font-medium">{month}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">성명</p>
+              <p className="font-medium">{target.name}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">소속</p>
+              <p className="font-medium">-</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">직급</p>
+              <p className="font-medium">{target.title}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">은행</p>
+              <p className="font-medium">{target.bank || '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">계좌번호</p>
+              <p className="font-medium">{target.account || '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">장기/일반 지급률</p>
+              <p className="font-medium">
+                {Math.round(target.rate_long * 100)}% / {Math.round(target.rate_general * 100)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">자동차 지급률</p>
+              <p className="font-medium">{Math.round(target.rate_general * 100)}%</p>
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
@@ -207,10 +314,17 @@ export default function Statement() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <p className="bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-t-md">업적현황 (장기)</p>
+              <p className="bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-t-md flex items-center justify-between">
+                <span>업적현황 (장기)</span>
+                <span className="font-normal text-slate-300">{contractMonth} 실적 기준</span>
+              </p>
               <table className="w-full text-sm border border-t-0 border-slate-100 rounded-b-md overflow-hidden">
                 <thead className="bg-slate-50 text-xs text-slate-500">
-                  <tr><th className="text-left px-3 py-1.5">구분</th><th className="text-right px-3 py-1.5">건수</th><th className="text-right px-3 py-1.5">보험료</th></tr>
+                  <tr>
+                    <th className="text-left px-3 py-1.5">구분</th>
+                    <th className="text-right px-3 py-1.5">건수</th>
+                    <th className="text-right px-3 py-1.5">보험료</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {(['신규', '계속', '환수', '부활'] as ContractType[]).map((t) => {
@@ -233,14 +347,26 @@ export default function Statement() {
             </div>
 
             <div>
-              <p className="bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-t-md">자동차 / 일반 실적</p>
+              <p className="bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-t-md flex items-center justify-between">
+                <span>자동차 / 일반 실적</span>
+                <span className="font-normal text-slate-300">{contractMonth} 실적 기준</span>
+              </p>
               <table className="w-full text-sm border border-t-0 border-slate-100 rounded-b-md overflow-hidden">
                 <thead className="bg-slate-50 text-xs text-slate-500">
-                  <tr><th className="text-left px-3 py-1.5">종류</th><th className="text-left px-3 py-1.5">구분</th><th className="text-right px-3 py-1.5">건수</th><th className="text-right px-3 py-1.5">보험료</th></tr>
+                  <tr>
+                    <th className="text-left px-3 py-1.5">종류</th>
+                    <th className="text-left px-3 py-1.5">구분</th>
+                    <th className="text-right px-3 py-1.5">건수</th>
+                    <th className="text-right px-3 py-1.5">보험료</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {generalAutoRows.length === 0 && (
-                    <tr><td colSpan={4} className="px-3 py-3 text-center text-slate-400">실적 없음</td></tr>
+                    <tr>
+                      <td colSpan={4} className="px-3 py-3 text-center text-slate-400">
+                        실적 없음
+                      </td>
+                    </tr>
                   )}
                   {generalAutoRows.map((r, i) => (
                     <tr key={i} className="border-t border-slate-50">
@@ -251,7 +377,9 @@ export default function Statement() {
                     </tr>
                   ))}
                   <tr className="border-t border-slate-200 font-semibold">
-                    <td className="px-3 py-1.5" colSpan={2}>합계</td>
+                    <td className="px-3 py-1.5" colSpan={2}>
+                      합계
+                    </td>
                     <td className="px-3 py-1.5 text-right">{gaCount}</td>
                     <td className="px-3 py-1.5 text-right">{gaTotal.toLocaleString('ko-KR')}</td>
                   </tr>
@@ -266,15 +394,21 @@ export default function Statement() {
               <div className="border border-t-0 border-slate-100 rounded-b-md p-3 space-y-3">
                 <div>
                   <p className="text-xs font-semibold text-slate-400 mb-1">업적수수료</p>
-                  {INCOME_FIELDS.map(([k, label]) => <NumberField key={k} k={k} label={label} />)}
+                  {INCOME_FIELDS.map(([k, label]) => (
+                    <NumberField key={k} k={k} label={label} />
+                  ))}
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-slate-400 mb-1">직급수수료</p>
-                  {MGMT_FIELDS.map(([k, label]) => <NumberField key={k} k={k} label={label} />)}
+                  {MGMT_FIELDS.map(([k, label]) => (
+                    <NumberField key={k} k={k} label={label} />
+                  ))}
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-slate-400 mb-1">시상내역</p>
-                  {INCENTIVE_FIELDS.map(([k, label]) => <NumberField key={k} k={k} label={label} />)}
+                  {INCENTIVE_FIELDS.map(([k, label]) => (
+                    <NumberField key={k} k={k} label={label} />
+                  ))}
                 </div>
                 <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-semibold">
                   <span>① 합계</span>
@@ -288,11 +422,15 @@ export default function Statement() {
               <div className="border border-t-0 border-slate-100 rounded-b-md p-3 space-y-3">
                 <div>
                   <p className="text-xs font-semibold text-slate-400 mb-1">세금</p>
-                  {TAX_FIELDS.map(([k, label]) => <NumberField key={k} k={k} label={label} />)}
+                  {TAX_FIELDS.map(([k, label]) => (
+                    <NumberField key={k} k={k} label={label} />
+                  ))}
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-slate-400 mb-1">기타공제</p>
-                  {OTHER_DEDUCTION_FIELDS.map(([k, label]) => <NumberField key={k} k={k} label={label} />)}
+                  {OTHER_DEDUCTION_FIELDS.map(([k, label]) => (
+                    <NumberField key={k} k={k} label={label} />
+                  ))}
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-slate-400 mb-1">위험적립금</p>
@@ -312,7 +450,11 @@ export default function Statement() {
 
           {canEdit && (
             <div className="flex justify-end">
-              <button onClick={save} disabled={saving} className="bg-slate-800 text-white rounded-md px-5 py-2 text-sm font-medium disabled:opacity-50">
+              <button
+                onClick={save}
+                disabled={saving}
+                className="bg-slate-800 text-white rounded-md px-5 py-2 text-sm font-medium disabled:opacity-50"
+              >
                 {saving ? '저장 중…' : '저장'}
               </button>
             </div>
@@ -324,7 +466,9 @@ export default function Statement() {
           </div>
 
           <p className="text-center text-xs text-slate-400 pt-2">
-            귀하의 노고에 진심으로 감사드립니다.<br />(주)프로인스컴퍼니
+            귀하의 노고에 진심으로 감사드립니다.
+            <br />
+            (주)프로인스컴퍼니
           </p>
         </div>
       )}

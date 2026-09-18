@@ -9,11 +9,27 @@ function thisMonth() {
 }
 
 const ZERO: Omit<WageStatement, 'id' | 'profile_id' | 'month' | 'updated_at'> = {
-  pay_date: null, emp_no: '', department: '', hire_date: null,
-  base_salary: 0, position_allowance: 0, meal_allowance: 0, bonus: 0, car_allowance: 0,
-  national_pension: 0, health_insurance: 0, longterm_care_insurance: 0, employment_insurance: 0,
-  health_insurance_settlement: 0, care_insurance_settlement: 0, advance_payment: 0,
-  durunuri_pension: 0, durunuri_employment: 0, income_tax: 0, local_income_tax: 0, agri_tax: 0,
+  pay_date: null,
+  emp_no: '',
+  department: '',
+  hire_date: null,
+  base_salary: 0,
+  position_allowance: 0,
+  meal_allowance: 0,
+  bonus: 0,
+  car_allowance: 0,
+  national_pension: 0,
+  health_insurance: 0,
+  longterm_care_insurance: 0,
+  employment_insurance: 0,
+  health_insurance_settlement: 0,
+  care_insurance_settlement: 0,
+  advance_payment: 0,
+  durunuri_pension: 0,
+  durunuri_employment: 0,
+  income_tax: 0,
+  local_income_tax: 0,
+  agri_tax: 0,
   calc_notes: [],
 }
 type Fields = typeof ZERO
@@ -46,7 +62,7 @@ const PAY_SUM_FIELDS: (keyof Fields)[] = [...PAY_FIELDS, ...PAY_IRREGULAR_FIELDS
 const DEDUCTION_SUM_FIELDS: (keyof Fields)[] = DEDUCTION_FIELDS.map(([k]) => k)
 
 export default function WagePayslip() {
-  const { profile, can } = useAuth()
+  const { profile, canHq } = useAuth()
   const [month, setMonth] = useState(thisMonth())
   const [targetId, setTargetId] = useState(profile?.id ?? '')
   const [staff, setStaff] = useState<Profile[]>([])
@@ -54,11 +70,18 @@ export default function WagePayslip() {
   const [form, setForm] = useState<Fields>(ZERO)
   const [saving, setSaving] = useState(false)
 
-  const canEdit = can('wage_statement')
+  // 임금명세서는 본사(hq) 소속 임직원 전용이라 canHq()로 조직까지 확인한다(canEdit는
+  // Fields 등 다른 곳에서 기존 이름을 그대로 참조해 이름은 유지).
+  const canEdit = canHq('wage_statement')
 
   useEffect(() => {
     if (!profile || !canEdit) return
-    supabase.from('profiles').select('*').eq('org_id', 'hq').order('name').then(({ data }) => setStaff(data ?? []))
+    supabase
+      .from('profiles')
+      .select('*')
+      .eq('org_id', 'hq')
+      .order('name')
+      .then(({ data }) => setStaff(data ?? []))
   }, [profile, canEdit])
 
   useEffect(() => {
@@ -67,7 +90,12 @@ export default function WagePayslip() {
 
   useEffect(() => {
     if (!targetId) return
-    supabase.from('wage_statements').select('*').eq('profile_id', targetId).eq('month', month).maybeSingle()
+    supabase
+      .from('wage_statements')
+      .select('*')
+      .eq('profile_id', targetId)
+      .eq('month', month)
+      .maybeSingle()
       .then(({ data }) => setForm(data ? { ...ZERO, ...data } : ZERO))
     if (targetId === profile?.id) setTarget(profile)
     else setTarget(staff.find((a) => a.id === targetId) ?? null)
@@ -139,13 +167,24 @@ export default function WagePayslip() {
         </div>
         <div className="flex gap-2 items-end">
           {canEdit && (
-            <select value={targetId} onChange={(e) => setTargetId(e.target.value)}
-              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
-              {staff.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            <select
+              value={targetId}
+              onChange={(e) => setTargetId(e.target.value)}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white"
+            >
+              {staff.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
             </select>
           )}
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+          />
         </div>
       </div>
 
@@ -153,43 +192,78 @@ export default function WagePayslip() {
         <div className="bg-white rounded-xl shadow p-6 space-y-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="bg-rose-600 text-white text-[10px] font-bold rounded px-2 py-1 leading-tight">PRO<br />INS</span>
+              <span className="bg-rose-600 text-white text-[10px] font-bold rounded px-2 py-1 leading-tight">
+                PRO
+                <br />
+                INS
+              </span>
               <span className="font-bold text-slate-800">프로인스컴퍼니</span>
             </div>
             <span className="text-sm font-semibold text-slate-500">임금명세서</span>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm border-y border-slate-100 py-4">
-            <div><p className="text-xs text-slate-400">기준년월</p><p className="font-medium">{month}</p></div>
-            <div><p className="text-xs text-slate-400">성명</p><p className="font-medium">{target.name}</p></div>
-            <div><p className="text-xs text-slate-400">직위</p><p className="font-medium">{target.title || '-'}</p></div>
+            <div>
+              <p className="text-xs text-slate-400">기준년월</p>
+              <p className="font-medium">{month}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">성명</p>
+              <p className="font-medium">{target.name}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">직위</p>
+              <p className="font-medium">{target.title || '-'}</p>
+            </div>
             <div>
               <p className="text-xs text-slate-400">사번</p>
               {canEdit ? (
-                <input value={form.emp_no} onChange={(e) => setText('emp_no', e.target.value)}
-                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm" />
-              ) : <p className="font-medium">{form.emp_no || '-'}</p>}
+                <input
+                  value={form.emp_no}
+                  onChange={(e) => setText('emp_no', e.target.value)}
+                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm"
+                />
+              ) : (
+                <p className="font-medium">{form.emp_no || '-'}</p>
+              )}
             </div>
             <div>
               <p className="text-xs text-slate-400">부서</p>
               {canEdit ? (
-                <input value={form.department} onChange={(e) => setText('department', e.target.value)}
-                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm" />
-              ) : <p className="font-medium">{form.department || '-'}</p>}
+                <input
+                  value={form.department}
+                  onChange={(e) => setText('department', e.target.value)}
+                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm"
+                />
+              ) : (
+                <p className="font-medium">{form.department || '-'}</p>
+              )}
             </div>
             <div>
               <p className="text-xs text-slate-400">입사일</p>
               {canEdit ? (
-                <input type="date" value={form.hire_date ?? ''} onChange={(e) => setDate('hire_date', e.target.value)}
-                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm" />
-              ) : <p className="font-medium">{form.hire_date || '-'}</p>}
+                <input
+                  type="date"
+                  value={form.hire_date ?? ''}
+                  onChange={(e) => setDate('hire_date', e.target.value)}
+                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm"
+                />
+              ) : (
+                <p className="font-medium">{form.hire_date || '-'}</p>
+              )}
             </div>
             <div>
               <p className="text-xs text-slate-400">지급일</p>
               {canEdit ? (
-                <input type="date" value={form.pay_date ?? ''} onChange={(e) => setDate('pay_date', e.target.value)}
-                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm" />
-              ) : <p className="font-medium">{form.pay_date || '-'}</p>}
+                <input
+                  type="date"
+                  value={form.pay_date ?? ''}
+                  onChange={(e) => setDate('pay_date', e.target.value)}
+                  className="w-full border border-slate-200 rounded px-2 py-1 text-sm"
+                />
+              ) : (
+                <p className="font-medium">{form.pay_date || '-'}</p>
+              )}
             </div>
           </div>
 
@@ -214,11 +288,15 @@ export default function WagePayslip() {
               <div className="border border-t-0 border-slate-100 rounded-b-md p-3 space-y-3">
                 <div>
                   <p className="text-xs font-semibold text-slate-400 mb-1">매월지급</p>
-                  {PAY_FIELDS.map(([k, label]) => <NumberField key={k} k={k} label={label} />)}
+                  {PAY_FIELDS.map(([k, label]) => (
+                    <NumberField key={k} k={k} label={label} />
+                  ))}
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-slate-400 mb-1">부정기지급</p>
-                  {PAY_IRREGULAR_FIELDS.map(([k, label]) => <NumberField key={k} k={k} label={label} />)}
+                  {PAY_IRREGULAR_FIELDS.map(([k, label]) => (
+                    <NumberField key={k} k={k} label={label} />
+                  ))}
                 </div>
                 <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-semibold">
                   <span>지급액 계</span>
@@ -230,7 +308,9 @@ export default function WagePayslip() {
             <div>
               <p className="bg-rose-600 text-white text-xs font-semibold px-3 py-1.5 rounded-t-md">공제</p>
               <div className="border border-t-0 border-slate-100 rounded-b-md p-3 space-y-3">
-                {DEDUCTION_FIELDS.map(([k, label]) => <NumberField key={k} k={k} label={label} />)}
+                {DEDUCTION_FIELDS.map(([k, label]) => (
+                  <NumberField key={k} k={k} label={label} />
+                ))}
                 <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-semibold">
                   <span>공제액 계</span>
                   <span className="text-rose-600">{deductionTotal.toLocaleString('ko-KR')} 원</span>
@@ -243,24 +323,44 @@ export default function WagePayslip() {
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-slate-500 mb-2">계산방법</p>
               {canEdit && (
-                <button type="button" onClick={addNote} className="text-xs text-slate-500 hover:underline mb-2">+ 항목 추가</button>
+                <button type="button" onClick={addNote} className="text-xs text-slate-500 hover:underline mb-2">
+                  + 항목 추가
+                </button>
               )}
             </div>
             {form.calc_notes.length === 0 && <p className="text-xs text-slate-400">등록된 계산방법이 없습니다.</p>}
             <div className="space-y-2">
               {form.calc_notes.map((row, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <input placeholder="구분" disabled={!canEdit} value={row.category}
+                  <input
+                    placeholder="구분"
+                    disabled={!canEdit}
+                    value={row.category}
                     onChange={(e) => updateNote(i, 'category', e.target.value)}
-                    className="w-32 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50" />
-                  <input placeholder="산출식 또는 산출방법" disabled={!canEdit} value={row.method}
+                    className="w-32 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+                  />
+                  <input
+                    placeholder="산출식 또는 산출방법"
+                    disabled={!canEdit}
+                    value={row.method}
                     onChange={(e) => updateNote(i, 'method', e.target.value)}
-                    className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50" />
-                  <input placeholder="지급액(원)" disabled={!canEdit} value={row.amount}
+                    className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-sm disabled:bg-slate-50"
+                  />
+                  <input
+                    placeholder="지급액(원)"
+                    disabled={!canEdit}
+                    value={row.amount}
                     onChange={(e) => updateNote(i, 'amount', e.target.value)}
-                    className="w-32 border border-slate-300 rounded-md px-2 py-1.5 text-sm text-right disabled:bg-slate-50" />
+                    className="w-32 border border-slate-300 rounded-md px-2 py-1.5 text-sm text-right disabled:bg-slate-50"
+                  />
                   {canEdit && (
-                    <button type="button" onClick={() => removeNote(i)} className="text-slate-400 hover:text-red-500 text-sm px-1">✕</button>
+                    <button
+                      type="button"
+                      onClick={() => removeNote(i)}
+                      className="text-slate-400 hover:text-red-500 text-sm px-1"
+                    >
+                      ✕
+                    </button>
                   )}
                 </div>
               ))}
@@ -269,7 +369,11 @@ export default function WagePayslip() {
 
           {canEdit && (
             <div className="flex justify-end">
-              <button onClick={save} disabled={saving} className="bg-slate-800 text-white rounded-md px-5 py-2 text-sm font-medium disabled:opacity-50">
+              <button
+                onClick={save}
+                disabled={saving}
+                className="bg-slate-800 text-white rounded-md px-5 py-2 text-sm font-medium disabled:opacity-50"
+              >
                 {saving ? '저장 중…' : '저장'}
               </button>
             </div>
@@ -281,7 +385,9 @@ export default function WagePayslip() {
           </div>
 
           <p className="text-center text-xs text-slate-400 pt-2">
-            귀하의 노고에 감사드립니다.<br />(주)프로인스컴퍼니
+            귀하의 노고에 감사드립니다.
+            <br />
+            (주)프로인스컴퍼니
           </p>
         </div>
       )}

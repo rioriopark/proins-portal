@@ -2,26 +2,43 @@ import { useMemo, useState, type ChangeEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { toAuthEmail } from '../lib/id'
-import type { CompanyCode, Profile } from '../lib/types'
+import type { Profile } from '../lib/types'
+
+interface AgentInsurerCodeWithName {
+  profile_id: string
+  code: string
+  insurers: { name: string } | null
+}
 
 const HEADER_HINT = '담당자명\t보험사\t계약번호\t계약자명\t종목\t영수일\t보험료'
 const EXAMPLE = '김은지\t삼성화재\t52616634160000\t홍길동\t일반\t2026-09-15\t2428500'
 
-const INSURERS = ['삼성화재', 'DB손보', '현대해상', 'KB손보', '메리츠화재', '롯데손해보험', '라이나손보', '한화손해보험', '흥국화재', 'AIG손해보험']
+const INSURERS = [
+  '삼성화재',
+  'DB손보',
+  '현대해상',
+  'KB손보',
+  '메리츠화재',
+  '롯데손해보험',
+  '라이나손보',
+  '한화손해보험',
+  '흥국화재',
+  'AIG손해보험',
+]
 
 // 보험사가 파일명에 정식 명칭/약칭을 섞어 쓰기 때문에(예: "DB손해보험" vs "DB손보"),
 // INSURERS 목록의 값 하나만으로 매칭하면 놓치는 경우가 많아 각 보험사별 별칭도 함께 확인한다.
 const INSURER_FILENAME_ALIASES: Record<string, string[]> = {
-  '삼성화재': ['삼성화재'],
-  'DB손보': ['DB손보', 'DB손해보험'],
-  '현대해상': ['현대해상'],
-  'KB손보': ['KB손보', 'KB손해보험'],
-  '메리츠화재': ['메리츠화재'],
-  '롯데손해보험': ['롯데손해보험', '롯데손보'],
-  '라이나손보': ['라이나손보', '라이나생명', '라이나'],
-  '한화손해보험': ['한화손해보험', '한화손보'],
-  '흥국화재': ['흥국화재'],
-  'AIG손해보험': ['AIG손해보험', 'AIG'],
+  삼성화재: ['삼성화재'],
+  DB손보: ['DB손보', 'DB손해보험'],
+  현대해상: ['현대해상'],
+  KB손보: ['KB손보', 'KB손해보험'],
+  메리츠화재: ['메리츠화재'],
+  롯데손해보험: ['롯데손해보험', '롯데손보'],
+  라이나손보: ['라이나손보', '라이나생명', '라이나'],
+  한화손해보험: ['한화손해보험', '한화손보'],
+  흥국화재: ['흥국화재'],
+  AIG손해보험: ['AIG손해보험', 'AIG'],
 }
 
 function guessInsurerFromFileName(fileName: string): string {
@@ -68,9 +85,13 @@ interface ParsedRow {
 // 첫 열은 이름으로 우선 매칭하고(rows에서 profiles와 대조), 이름으로 못 찾으면 아이디로 간주해
 // 예전처럼 미가입 담당자도 가입 시 자동 연결되도록 agent_email에 기본값을 채워둔다.
 function parseSheet(text: string): ParsedRow[] {
-  const lines = text.trim().split(/\r?\n/).filter((l) => l.trim().length > 0)
+  const lines = text
+    .trim()
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0)
   return lines.map((line) => {
-    const cols = line.split(/\t|,/).map((c) => c.trim())
+    // 콤마도 구분자로 취급하면 천단위 콤마가 든 보험료 값이 잘려버리므로 탭만 구분자로 쓴다.
+    const cols = line.split('\t').map((c) => c.trim())
     const [agentId, company, policyNo, customerName, category, receiptDateRaw, premium] = cols
     const receiptDate = normalizeDate(receiptDateRaw ?? '')
     return {
@@ -94,36 +115,111 @@ function parseSheet(text: string): ParsedRow[] {
 // ---- 보험사 엑셀 업로드 모드 ----
 
 type FieldKey =
-  | 'agentCode' | 'agentName' | 'month' | 'category' | 'type' | 'count' | 'premium' | 'commission'
-  | 'policyNo' | 'productName' | 'customerName' | 'insuredName' | 'receiptDate' | 'expiryDate'
-  | 'collectionStatus' | 'performanceCommission'
+  | 'agentCode'
+  | 'agentName'
+  | 'month'
+  | 'category'
+  | 'type'
+  | 'count'
+  | 'premium'
+  | 'commission'
+  | 'policyNo'
+  | 'productName'
+  | 'customerName'
+  | 'insuredName'
+  | 'receiptDate'
+  | 'expiryDate'
+  | 'collectionStatus'
+  | 'performanceCommission'
 
-const FIELD_META: { key: FieldKey; label: string; required: boolean; keywords: string[] }[] = [
+// hidden: 매핑 확인 화면에는 표시하지 않지만(구분/지급월/건수는 자동 인식으로 충분),
+// guessMapping()의 자동 열 인식과 fileRows의 fallback 로직은 그대로 유지한다.
+const FIELD_META: { key: FieldKey; label: string; required: boolean; hidden?: boolean; keywords: string[] }[] = [
   { key: 'agentCode', label: '설계사코드/사번', required: false, keywords: [] },
-  { key: 'agentName', label: '담당자명', required: false, keywords: [] },
-  { key: 'month', label: '지급월', required: false, keywords: ['지급월', '정산월', '귀속월', '기준월', '수수료월', '지급년월', '업적월'] },
-  { key: 'category', label: '종목', required: false, keywords: ['종목', '상품군', '보험종목'] },
-  { key: 'type', label: '구분', required: false, keywords: ['계약구분', '가입구분', '청약구분', '신계약구분', '유형'] },
-  { key: 'count', label: '건수', required: false, keywords: ['건수', '계약건수'] },
+  { key: 'agentName', label: '설계사명(담당자명)', required: false, keywords: [] },
+  { key: 'category', label: '구분(장기/일반)', required: false, keywords: ['종목', '상품군', '보험종목'] },
+  { key: 'policyNo', label: '증권번호(계약번호)', required: false, keywords: ['계약번호', '증권번호', '증권No', '보험증권번호'] },
+  { key: 'productName', label: '보험상품명', required: false, keywords: ['상품명', '상품'] },
+  { key: 'customerName', label: '계약자', required: false, keywords: ['계약자명', '고객명', '계약자'] },
+  { key: 'insuredName', label: '피보험자', required: false, keywords: ['피보험자명', '피보험자'] },
+  { key: 'receiptDate', label: '보험시기', required: false, keywords: ['보험시기', '영수일', '접수일', '청약일', '응당일'] },
+  {
+    key: 'expiryDate',
+    label: '보험종기',
+    required: false,
+    keywords: ['보험종기', '보험만기일자', '만기일자', '만기일', '증권만기일', '만료일', '종기'],
+  },
   { key: 'premium', label: '보험료', required: true, keywords: ['보험료', '납입보험료', '월보험료', '초회보험료'] },
+  {
+    key: 'commission',
+    label: '건별수수료',
+    required: true,
+    keywords: ['건별수수료', '수수료', '지급수수료', '수수료액', '커미션', '지급금액', '수수료금액', '지급액'],
+  },
   { key: 'performanceCommission', label: '성과수수료', required: false, keywords: ['성과수수료', '성과'] },
-  { key: 'commission', label: '건별수수료', required: true, keywords: ['건별수수료', '수수료', '지급수수료', '수수료액', '커미션'] },
-  { key: 'policyNo', label: '계약번호(증권번호)', required: false, keywords: ['계약번호', '증권번호', '증권No', '보험증권번호'] },
-  { key: 'productName', label: '상품명', required: false, keywords: ['상품명', '상품'] },
-  { key: 'customerName', label: '계약자명', required: false, keywords: ['계약자명', '고객명', '계약자'] },
-  { key: 'insuredName', label: '피보험자명', required: false, keywords: ['피보험자명', '피보험자'] },
-  { key: 'receiptDate', label: '보험시기(영수일)', required: false, keywords: ['보험시기', '영수일', '접수일', '청약일', '응당일'] },
-  { key: 'expiryDate', label: '보험종기', required: false, keywords: ['보험종기', '보험만기일자', '만기일자', '만기일', '증권만기일', '만료일', '종기'] },
-  { key: 'collectionStatus', label: '수금상태', required: false, keywords: ['정상집금여부', '집금상태', '수금상태', '수납상태', '미납여부', '수금여부', '입금상태'] },
+  {
+    key: 'collectionStatus',
+    label: '수금상태',
+    required: false,
+    keywords: ['정상집금여부', '집금상태', '수금상태', '수납상태', '미납여부', '수금여부', '입금상태'],
+  },
+  {
+    key: 'month',
+    label: '지급월',
+    required: false,
+    hidden: true,
+    keywords: ['지급월', '정산월', '귀속월', '기준월', '수수료월', '지급년월', '업적월'],
+  },
+  {
+    key: 'type',
+    label: '구분(신규/계속)',
+    required: false,
+    hidden: true,
+    keywords: ['계약구분', '가입구분', '청약구분', '신계약구분', '유형'],
+  },
+  { key: 'count', label: '건수', required: false, hidden: true, keywords: ['건수', '계약건수'] },
 ]
 
 const HEADER_DETECT_KEYWORDS = [
-  '계약번호', '상품명', '계약자', '피보험자', '보험료', '수수료', '커미션', '설계사', '사용인', '모집인', '모집자',
-  '지사', '종목', '구분', '건수', '월납', '청약일', '계약상태', '증권', '고객명',
+  '계약번호',
+  '상품명',
+  '계약자',
+  '피보험자',
+  '보험료',
+  '수수료',
+  '커미션',
+  '설계사',
+  '사용인',
+  '모집인',
+  '모집자',
+  '지사',
+  '종목',
+  '구분',
+  '건수',
+  '월납',
+  '청약일',
+  '계약상태',
+  '증권',
+  '고객명',
 ]
 
 function normalizeHeader(h: string): string {
-  return String(h ?? '').toLowerCase().replace(/\s/g, '')
+  return String(h ?? '')
+    .toLowerCase()
+    .replace(/\s/g, '')
+}
+
+// 일부 보험사(예: 롯데손해보험)는 실제로는 EUC-KR(CP949)로 인코딩된 탭 구분 텍스트를
+// .xlsx 확장자로 내보낸다. 이런 파일은 zip(PK)도 구버전 OLE(xls)도 아니라서 xlsx 라이브러리가
+// 텍스트로 간주해 UTF-8로 읽어버리는데, 그러면 한글이 전부 깨진다("증권번호" → "Áõ±Ç¹øÈ£").
+// 진짜 바이너리 xlsx/xls가 아니면 EUC-KR로 직접 디코딩한 뒤 CSV로 파싱한다.
+function readWorkbook(XLSX: typeof import('xlsx'), buf: ArrayBuffer) {
+  const bytes = new Uint8Array(buf)
+  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b
+  const isOle = bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0
+  if (isZip || isOle) return XLSX.read(buf, { type: 'array' })
+  const text = new TextDecoder('euc-kr').decode(buf)
+  return XLSX.read(text, { type: 'string' })
 }
 
 // 보험사 다운로드 파일은 제목/필터조건 등 안내행이 여러 줄 앞에 붙는 경우가 많아, 보험 업무 용어가 가장 많이 등장하는 행을 실제 헤더 행으로 추정한다.
@@ -183,11 +279,48 @@ function pickBestColumn(headers: string[], body: string[][], predicate: (h: stri
   return best
 }
 
+// 일부 보험사(예: 한화손해보험)는 "사용인코드/사용인명"처럼 담당자 코드와 이름을 한 열에
+// "코드/이름" 형식으로 합쳐서 낸다. 그대로 두면 사용인코드 매핑에 이름까지 섞여 담당자 매칭이 실패하므로,
+// 업로드 시 숫자(코드)와 한글 등 나머지(이름)를 분리해 이름 전용 열을 새로 만들어준다.
+function splitCombinedAgentColumn(headers: string[], body: string[][]): { headers: string[]; body: string[][] } {
+  const idx = headers.findIndex((h) => {
+    const n = normalizeHeader(h)
+    return (
+      PERSON_TOKENS.some((p) => n.includes(p)) && CODE_TOKENS.some((c) => n.includes(c)) && NAME_TOKENS.some((m) => n.includes(m))
+    )
+  })
+  if (idx < 0) return { headers, body }
+  const newHeaders = [...headers, '사용인명(자동분리)']
+  const newBody = body.map((row) => {
+    const raw = (row[idx] ?? '').trim()
+    const code = (raw.match(/\d+/g) ?? []).join('')
+    const name = raw.replace(/[0-9/\-_.\s]+/g, ' ').trim()
+    const next = [...row]
+    next[idx] = code
+    next.push(name)
+    return next
+  })
+  return { headers: newHeaders, body: newBody }
+}
+
 function emptyMapping(): Record<FieldKey, number> {
   return {
-    agentCode: -1, agentName: -1, month: -1, category: -1, type: -1, count: -1, premium: -1, commission: -1,
-    policyNo: -1, productName: -1, customerName: -1, insuredName: -1, receiptDate: -1, expiryDate: -1,
-    collectionStatus: -1, performanceCommission: -1,
+    agentCode: -1,
+    agentName: -1,
+    month: -1,
+    category: -1,
+    type: -1,
+    count: -1,
+    premium: -1,
+    commission: -1,
+    policyNo: -1,
+    productName: -1,
+    customerName: -1,
+    insuredName: -1,
+    receiptDate: -1,
+    expiryDate: -1,
+    collectionStatus: -1,
+    performanceCommission: -1,
   }
 }
 
@@ -195,14 +328,28 @@ function guessMapping(headers: string[], body: string[][]): Record<FieldKey, num
   const used = new Set<number>()
   const result = emptyMapping()
 
-  const agentCode = pickBestColumn(headers, body, (h) => PERSON_TOKENS.some((p) => h.includes(p)) && CODE_TOKENS.some((c) => h.includes(c)))
-  if (agentCode >= 0) { result.agentCode = agentCode; used.add(agentCode) }
+  const agentCode = pickBestColumn(
+    headers,
+    body,
+    (h) => PERSON_TOKENS.some((p) => h.includes(p)) && CODE_TOKENS.some((c) => h.includes(c)),
+  )
+  if (agentCode >= 0) {
+    result.agentCode = agentCode
+    used.add(agentCode)
+  }
 
   const agentName = pickBestColumn(
-    headers, body,
-    (h) => PERSON_TOKENS.some((p) => h.includes(p)) && NAME_TOKENS.some((n) => h.includes(n)) && !CODE_TOKENS.some((c) => h.includes(c)),
+    headers,
+    body,
+    (h) =>
+      PERSON_TOKENS.some((p) => h.includes(p)) &&
+      NAME_TOKENS.some((n) => h.includes(n)) &&
+      !CODE_TOKENS.some((c) => h.includes(c)),
   )
-  if (agentName >= 0 && !used.has(agentName)) { result.agentName = agentName; used.add(agentName) }
+  if (agentName >= 0 && !used.has(agentName)) {
+    result.agentName = agentName
+    used.add(agentName)
+  }
 
   for (const f of FIELD_META) {
     if (f.key === 'agentCode' || f.key === 'agentName') continue
@@ -273,6 +420,15 @@ function normalizeDate(raw: string): string {
   if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
   m = s.match(/^(\d{4})(\d{2})(\d{2})$/)
   if (m) return `${m[1]}-${m[2]}-${m[3]}`
+  // 엑셀에서 날짜 서식이 없는(혹은 천단위 구분쉼표가 붙은 숫자 서식인) 셀로 저장되면 날짜가
+  // "46457"·"45,947" 같은 1900년 기준 일련번호로 그대로 붙어 나온다. 쉼표를 떼고 일련번호를
+  // 실제 날짜로 변환한다.
+  const numeric = s.replace(/,/g, '')
+  if (/^\d{4,6}$/.test(numeric)) {
+    const serial = Number(numeric)
+    const d = new Date(Math.round((serial - 25569) * 86400 * 1000))
+    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+  }
   return s
 }
 
@@ -293,9 +449,9 @@ function toNumber(v: string): number {
 // 한 번의 upsert 호출 안에서 같은 행을 두 번 갱신하려다 "ON CONFLICT DO UPDATE command
 // cannot affect row a second time" 오류가 난다. upsert에 넣기 전에 미리 합쳐서
 // (수수료가 더 큰 쪽을 남기고) 한 건으로 만든다. 증권번호가 없는 행은 그대로 둔다.
-function dedupeByPolicyLine<T extends { company: string; policy_no: string | null; month: string; type: string; commission: number; premium: number }>(
-  payload: T[]
-): T[] {
+function dedupeByPolicyLine<
+  T extends { company: string; policy_no: string | null; month: string; type: string; commission: number; premium: number },
+>(payload: T[]): T[] {
   const map = new Map<string, T>()
   const noPolicyNo: T[] = []
   for (const row of payload) {
@@ -305,7 +461,11 @@ function dedupeByPolicyLine<T extends { company: string; policy_no: string | nul
     }
     const key = `${row.company}|${row.policy_no}|${row.month}|${row.type}`
     const existing = map.get(key)
-    if (!existing || row.commission > existing.commission || (row.commission === existing.commission && row.premium > existing.premium)) {
+    if (
+      !existing ||
+      row.commission > existing.commission ||
+      (row.commission === existing.commission && row.premium > existing.premium)
+    ) {
       map.set(key, row)
     }
   }
@@ -358,19 +518,36 @@ export default function BulkImport() {
 
   // 공통: 담당자/설계사코드 매핑용 데이터
   const [profiles, setProfiles] = useState<Profile[]>([])
-  const [agentProfiles, setAgentProfiles] = useState<{ profile_id: string; company_codes: CompanyCode[] }[]>([])
+  const [agentCodes, setAgentCodes] = useState<AgentInsurerCodeWithName[]>([])
   const [loadedProfiles, setLoadedProfiles] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{ inserted: number; failed: number; errorMessage?: string } | null>(null)
+  const [result, setResult] = useState<{
+    inserted: number
+    failed: number
+    errorMessage?: string
+    autoConfirmed?: number
+  } | null>(null)
+
+  // 예비계약 자동확정: 방금 올린 확정 계약과 같은 보험사+증권번호로 이미 등록돼 있던 예비계약을
+  // 사람 개입 없이 정리한다. 증권번호가 없거나 애매하게 매칭되는 건은 그대로 남아 [계약관리 >
+  // 예비계약 확인] 화면에서 사람이 보게 된다.
+  async function runAutoConfirm(): Promise<number> {
+    const { data, error } = await supabase.rpc('auto_confirm_preliminary_contracts')
+    if (error) {
+      console.error('예비계약 자동확정 실패:', error)
+      return 0
+    }
+    return (data as number) ?? 0
+  }
 
   async function ensureProfiles() {
     if (loadedProfiles) return
-    const [{ data: profs }, { data: aps }] = await Promise.all([
+    const [{ data: profs }, { data: codes }] = await Promise.all([
       supabase.from('profiles').select('*'),
-      supabase.from('agent_profiles').select('profile_id, company_codes'),
+      supabase.from('agent_insurer_codes').select('profile_id, code, insurers(name)'),
     ])
     setProfiles(profs ?? [])
-    setAgentProfiles(aps ?? [])
+    setAgentCodes((codes as AgentInsurerCodeWithName[] | null) ?? [])
     setLoadedProfiles(true)
   }
 
@@ -431,8 +608,9 @@ export default function BulkImport() {
         inserted += data?.length ?? 0
       }
     }
+    const autoConfirmed = inserted > 0 ? await runAutoConfirm() : 0
     setBusy(false)
-    setResult({ inserted, failed, errorMessage })
+    setResult({ inserted, failed, errorMessage, autoConfirmed })
     if (failed === 0) setText('')
   }
 
@@ -467,16 +645,24 @@ export default function BulkImport() {
       const skipped: string[] = []
       for (const f of files) {
         const buf = await f.arrayBuffer()
-        const wb = XLSX.read(buf, { type: 'array' })
+        const wb = readWorkbook(XLSX, buf)
         const ws = wb.Sheets[wb.SheetNames[0]]
         const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as (string | number)[][]
-        if (!grid.length) { skipped.push(`${f.name} (빈 파일)`); continue }
+        if (!grid.length) {
+          skipped.push(`${f.name} (빈 파일)`)
+          continue
+        }
         const headerIdx = findHeaderRowIndex(grid)
-        const hdrs = grid[headerIdx].map((c) => String(c ?? '').trim())
-        const body = grid.slice(headerIdx + 1)
-          .map((r) => hdrs.map((_, i) => String(r[i] ?? '').trim()))
+        const rawHdrs = grid[headerIdx].map((c) => String(c ?? '').trim())
+        const rawBody = grid
+          .slice(headerIdx + 1)
+          .map((r) => rawHdrs.map((_, i) => String(r[i] ?? '').trim()))
           .filter((row) => row.some((cell) => cell))
-        if (!body.length) { skipped.push(`${f.name} (내용 없음)`); continue }
+        if (!rawBody.length) {
+          skipped.push(`${f.name} (내용 없음)`)
+          continue
+        }
+        const { headers: hdrs, body } = splitCombinedAgentColumn(rawHdrs, rawBody)
         groups.push({
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           fileName: f.name,
@@ -508,25 +694,20 @@ export default function BulkImport() {
 
   const codeMap = useMemo(() => {
     const m = new Map<string, Profile>()
-    for (const ap of agentProfiles) {
-      const p = profiles.find((pp) => pp.id === ap.profile_id)
+    for (const c of agentCodes) {
+      const p = profiles.find((pp) => pp.id === c.profile_id)
       if (!p) continue
-      for (const cc of ap.company_codes ?? []) {
-        const company = (cc.company ?? '').trim()
-        const code = (cc.code ?? '').trim()
-        if (company && code) m.set(`${company}|${code}`, p)
-      }
+      const company = (c.insurers?.name ?? '').trim()
+      const code = (c.code ?? '').trim()
+      if (company && code) m.set(`${company}|${code}`, p)
     }
     return m
-  }, [agentProfiles, profiles])
+  }, [agentCodes, profiles])
 
   // 보험사 파일 자체에 사용인코드/사용인명이 둘 다 비어있는 행(담당자 정보 없음)은
   // 미매칭으로 남기지 않고 박세환 앞으로 자동 배정한다.
   const UNASSIGNED_FALLBACK_EMAIL = '34004152@proins.local'
-  const fallbackProfile = useMemo(
-    () => profiles.find((p) => p.email === UNASSIGNED_FALLBACK_EMAIL),
-    [profiles],
-  )
+  const fallbackProfile = useMemo(() => profiles.find((p) => p.email === UNASSIGNED_FALLBACK_EMAIL), [profiles])
 
   const fileRows = useMemo<FileRow[]>(() => {
     if (!fileGroups.length) return []
@@ -537,13 +718,17 @@ export default function BulkImport() {
         const idx = g.mapping[key]
         return idx >= 0 && idx < row.length ? (row[idx] ?? '').trim() : ''
       }
+      // 필수 항목(건별수수료 등)이 매핑 안 된 채로 두면, 값이 없어도 0으로 조용히 들어가서
+      // "필수 항목 미지정" 경고를 못 보고 지나쳐도 등록 자체는 되어버린다(수수료 0원인 채로).
+      // 이 그룹의 필수 항목이 하나라도 안 정해졌으면 그 그룹 행 전체를 등록 불가로 막는다.
+      const missingRequiredFields = FIELD_META.filter((f) => f.required && g.mapping[f.key] < 0)
       g.dataRows.forEach((row, i) => {
         const agentCode = get(row, 'agentCode')
         const agentName = get(row, 'agentName')
         const rawCategory = get(row, 'category')
         const rawType = get(row, 'type')
         const rawMonth = get(row, 'month')
-        const month = rawMonth ? normalizeMonth(rawMonth) : (g.rowMonths[i] || g.fileMonth)
+        const month = rawMonth ? normalizeMonth(rawMonth) : g.rowMonths[i] || g.fileMonth
         const category = rawCategory
           ? normalizeCategory(rawCategory)
           : inferCategoryFallback(g.insurer, g.headers, row) || g.fileCategory
@@ -557,28 +742,56 @@ export default function BulkImport() {
         const nameProfile = !autoProfile && agentName ? profiles.find((p) => p.name.trim() === agentName) : undefined
         const noIdentifier = !agentCode && !agentName
         const matchedAuto = autoProfile ?? nameProfile ?? (noIdentifier ? fallbackProfile : undefined)
-        const agentKey = matchedAuto ? `p:${matchedAuto.id}` : agentCode ? `c:${agentCode}` : agentName ? `n:${agentName}` : 'unknown'
+        const agentKey = matchedAuto
+          ? `p:${matchedAuto.id}`
+          : agentCode
+            ? `c:${agentCode}`
+            : agentName
+              ? `n:${agentName}`
+              : 'unknown'
         const manualId = manualAssign[agentKey]
         const profile = matchedAuto ?? (manualId ? profiles.find((p) => p.id === manualId) : undefined)
         const agentLabel = matchedAuto ? matchedAuto.name : agentCode || agentName || '(식별불가)'
+        const receiptDate = normalizeDate(get(row, 'receiptDate'))
+        const expiryDate = normalizeDate(get(row, 'expiryDate'))
+        const isValidDate = (v: string) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v)
+
+        const customerName = get(row, 'customerName')
 
         let error: string | undefined
         if (!g.insurer) error = '보험사 미지정'
+        else if (missingRequiredFields.length > 0)
+          error = `필수 항목 매핑 필요: ${missingRequiredFields.map((f) => f.label).join(', ')}`
         else if (!month || !/^\d{4}-\d{2}$/.test(month)) error = '지급월 형식 오류'
-        else if (!['장기', '일반', '자동차'].includes(category)) error = '종목 값 오류'
+        else if (!['장기', '일반', '자동차'].includes(category)) error = '구분(장기/일반) 값 오류'
         else if (!profile) error = '담당자 미매칭'
+        else if (!customerName) error = '계약자 누락'
+        else if (['합계', '소계', '총합계'].includes(customerName)) error = '합계/소계 행(실제 계약 아님)'
+        else if (premium === 0) error = '보험료 값 오류'
+        else if (!isValidDate(receiptDate)) error = `영수일 형식 오류(${receiptDate})`
+        else if (!isValidDate(expiryDate)) error = `만기일 형식 오류(${expiryDate})`
 
         rows.push({
-          key: `r${rowIndex++}`, agentKey, agentLabel, profile, insurer: g.insurer, month, category, type,
+          key: `r${rowIndex++}`,
+          agentKey,
+          agentLabel,
+          profile,
+          insurer: g.insurer,
+          month,
+          category,
+          type,
           policyNo: get(row, 'policyNo'),
           productName: get(row, 'productName'),
-          customerName: get(row, 'customerName'),
+          customerName,
           insuredName: get(row, 'insuredName'),
-          receiptDate: normalizeDate(get(row, 'receiptDate')),
-          expiryDate: normalizeDate(get(row, 'expiryDate')),
+          receiptDate,
+          expiryDate,
           collectionStatus: get(row, 'collectionStatus'),
           count: g.mapping.count >= 0 ? toNumber(get(row, 'count')) || 1 : 1,
-          premium, commission, performanceCommission, error,
+          premium,
+          commission,
+          performanceCommission,
+          error,
         })
       })
     }
@@ -665,8 +878,9 @@ export default function BulkImport() {
         inserted += data?.length ?? 0
       }
     }
+    const autoConfirmed = inserted > 0 ? await runAutoConfirm() : 0
     setBusy(false)
-    setResult({ inserted, failed, errorMessage })
+    setResult({ inserted, failed, errorMessage, autoConfirmed })
     if (failed === 0) {
       setFileGroups([])
       setSkippedFiles([])
@@ -695,7 +909,10 @@ export default function BulkImport() {
           엑셀 붙여넣기
         </button>
         <button
-          onClick={() => { setMode('file'); ensureProfiles() }}
+          onClick={() => {
+            setMode('file')
+            ensureProfiles()
+          }}
           className={`px-4 py-2 border-l border-slate-300 ${mode === 'file' ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}
         >
           보험사 포털 엑셀 업로드
@@ -706,9 +923,9 @@ export default function BulkImport() {
         <>
           <p className="text-sm text-slate-500">
             엑셀에서 아래 순서대로 열을 만들어 셀을 드래그 선택 후 복사(Ctrl+C)한 다음, 아래 칸에 붙여넣기(Ctrl+V)하세요.
-            담당자명·보험사·계약번호·계약자명·종목·영수일·보험료만 입력해도 등록되며,
-            지급월은 영수일에서 자동으로 뽑고 구분은 '신규', 건수는 1건, 수수료는 0원으로 처리됩니다(나중에 보험사 확정분으로 갱신 가능).
-            첫 열은 이름으로 먼저 찾고, 이름으로 못 찾으면 아이디로 간주해서 아직 가입 전인 담당자도 나중에 가입 시 자동으로 연결됩니다.
+            담당자명·보험사·계약번호·계약자명·종목·영수일·보험료만 입력해도 등록되며, 지급월은 영수일에서 자동으로 뽑고 구분은
+            '신규', 건수는 1건, 수수료는 0원으로 처리됩니다(나중에 보험사 확정분으로 갱신 가능). 첫 열은 이름으로 먼저 찾고,
+            이름으로 못 찾으면 아이디로 간주해서 아직 가입 전인 담당자도 나중에 가입 시 자동으로 연결됩니다.
           </p>
 
           <div className="bg-white rounded-xl shadow p-5 space-y-3">
@@ -794,15 +1011,17 @@ export default function BulkImport() {
       {mode === 'file' && (
         <>
           <p className="text-sm text-slate-500">
-            보험사 업무포털에서 계약내용을 엑셀(xlsx/xls/csv)로 내려받아 그대로 업로드하세요. 서로 다른 보험사 파일도 한 번에 여러 개 선택할 수 있습니다.
-            보험사는 파일명에서 자동으로 추정하고, 열 이름도 파일마다 자동으로 추정한 뒤 확인할 수 있습니다.
-            담당자는 마이스페이스에 등록된 보험사별 설계사코드로 자동 매칭되고, 매칭되지 않으면 아래에서 직접 지정하면 됩니다.
-            계약은 합산하지 않고 건별로 저장되어(고객명·상품명·만기일 보존) 담당자별로 정리됩니다.
+            보험사 업무포털에서 계약내용을 엑셀(xlsx/xls/csv)로 내려받아 그대로 업로드하세요. 서로 다른 보험사 파일도 한 번에 여러
+            개 선택할 수 있습니다. 보험사는 파일명에서 자동으로 추정하고, 열 이름도 파일마다 자동으로 추정한 뒤 확인할 수
+            있습니다. 담당자는 마이스페이스에 등록된 보험사별 설계사코드로 자동 매칭되고, 매칭되지 않으면 아래에서 직접 지정하면
+            됩니다. 계약은 합산하지 않고 건별로 저장되어(고객명·상품명·만기일 보존) 담당자별로 정리됩니다.
           </p>
 
           <div className="bg-white rounded-xl shadow p-5 space-y-4">
             <label className="text-sm block">
-              <span className="block text-xs font-medium text-slate-500 mb-1">엑셀 파일 (보험사가 다른 파일도 한 번에 선택 가능)</span>
+              <span className="block text-xs font-medium text-slate-500 mb-1">
+                엑셀 파일 (보험사가 다른 파일도 한 번에 선택 가능)
+              </span>
               <input
                 type="file"
                 accept=".xlsx,.xls,.csv"
@@ -812,9 +1031,7 @@ export default function BulkImport() {
                 className="text-sm disabled:opacity-40"
               />
             </label>
-            {skippedFiles.length > 0 && (
-              <p className="text-xs text-amber-600">건너뛴 파일: {skippedFiles.join(', ')}</p>
-            )}
+            {skippedFiles.length > 0 && <p className="text-xs text-amber-600">건너뛴 파일: {skippedFiles.join(', ')}</p>}
 
             {fileGroups.map((g) => {
               const identifierMissing = g.mapping.agentCode < 0 && g.mapping.agentName < 0
@@ -831,16 +1048,18 @@ export default function BulkImport() {
                           className="border border-slate-300 rounded-md px-3 py-2 text-sm min-w-40"
                         >
                           <option value="">선택하세요</option>
-                          {INSURERS.map((c) => <option key={c} value={c}>{c}</option>)}
+                          {INSURERS.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
                         </select>
                       </label>
-                      <span className="text-xs text-slate-500">{g.fileName} · {g.dataRows.length}행</span>
+                      <span className="text-xs text-slate-500">
+                        {g.fileName} · {g.dataRows.length}행
+                      </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => removeGroup(g.id)}
-                      className="text-xs text-slate-400 hover:text-red-500"
-                    >
+                    <button type="button" onClick={() => removeGroup(g.id)} className="text-xs text-slate-400 hover:text-red-500">
                       제거
                     </button>
                   </div>
@@ -851,10 +1070,11 @@ export default function BulkImport() {
                   <div className="border-t border-slate-100 pt-3 space-y-2">
                     <p className="text-xs font-semibold text-slate-500">열 매핑 확인 (자동 추정됨 · 필요시 변경)</p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {FIELD_META.map((f) => (
+                      {FIELD_META.filter((f) => !f.hidden).map((f) => (
                         <label key={f.key} className="text-xs">
                           <span className="block text-slate-500 mb-1">
-                            {f.label}{f.required && <span className="text-red-500"> *</span>}
+                            {f.label}
+                            {f.required && <span className="text-red-500"> *</span>}
                           </span>
                           <select
                             value={g.mapping[f.key]}
@@ -863,7 +1083,9 @@ export default function BulkImport() {
                           >
                             <option value={-1}>(사용 안 함)</option>
                             {g.headers.map((h, i) => (
-                              <option key={i} value={i}>{h || `${i + 1}번째 열`}</option>
+                              <option key={i} value={i}>
+                                {h || `${i + 1}번째 열`}
+                              </option>
                             ))}
                           </select>
                         </label>
@@ -913,7 +1135,9 @@ export default function BulkImport() {
             {unresolvedAgents.length > 0 && (
               <div className="border-t border-slate-100 pt-4 space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-amber-600">담당자 미매칭 ({unresolvedAgents.length}건) · 직접 지정하세요</p>
+                  <p className="text-xs font-semibold text-amber-600">
+                    담당자 미매칭 ({unresolvedAgents.length}건) · 직접 지정하세요
+                  </p>
                   {fallbackProfile && (
                     <button
                       type="button"
@@ -933,14 +1157,20 @@ export default function BulkImport() {
                 <div className="space-y-1.5">
                   {unresolvedAgents.map(([key, label]) => (
                     <div key={key} className="flex items-center gap-2 text-sm">
-                      <span className="w-40 text-slate-600 truncate" title={label}>{label}</span>
+                      <span className="w-40 text-slate-600 truncate" title={label}>
+                        {label}
+                      </span>
                       <select
                         value={manualAssign[key] ?? ''}
                         onChange={(e) => setManualAssign((m) => ({ ...m, [key]: e.target.value }))}
                         className="border border-slate-300 rounded-md px-2 py-1 text-sm flex-1 max-w-xs"
                       >
                         <option value="">담당자 선택…</option>
-                        {profiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.email})</option>)}
+                        {profiles.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.email})
+                          </option>
+                        ))}
                       </select>
                     </div>
                   ))}
@@ -961,10 +1191,12 @@ export default function BulkImport() {
                 <div key={g.agentKey} className="p-3">
                   <div className="flex items-center justify-between px-1 pb-2">
                     <span className="text-sm font-semibold text-slate-700">
-                      {g.label}{!g.profile && <span className="text-amber-600 font-normal"> (미매칭)</span>}
+                      {g.label}
+                      {!g.profile && <span className="text-amber-600 font-normal"> (미매칭)</span>}
                     </span>
                     <span className="text-xs text-slate-400">
-                      건수 {g.subtotal.count} · 보험료 {g.subtotal.premium.toLocaleString('ko-KR')} · 수수료 {g.subtotal.commission.toLocaleString('ko-KR')}
+                      건수 {g.subtotal.count} · 보험료 {g.subtotal.premium.toLocaleString('ko-KR')} · 수수료{' '}
+                      {g.subtotal.commission.toLocaleString('ko-KR')}
                     </span>
                   </div>
                   <table className="w-full text-xs">
@@ -989,8 +1221,12 @@ export default function BulkImport() {
                           <td className="px-3 py-1.5">{r.insurer}</td>
                           <td className="px-3 py-1.5">{r.policyNo}</td>
                           <td className="px-3 py-1.5">{r.customerName}</td>
-                          <td className="px-3 py-1.5 max-w-52 truncate" title={r.productName}>{r.productName}</td>
-                          <td className="px-3 py-1.5">{r.category}/{r.type}</td>
+                          <td className="px-3 py-1.5 max-w-52 truncate" title={r.productName}>
+                            {r.productName}
+                          </td>
+                          <td className="px-3 py-1.5">
+                            {r.category}/{r.type}
+                          </td>
                           <td className="px-3 py-1.5">{r.receiptDate}</td>
                           <td className="px-3 py-1.5">{r.expiryDate}</td>
                           <td className="px-3 py-1.5">{r.collectionStatus}</td>
@@ -1022,9 +1258,12 @@ export default function BulkImport() {
             완료: <span className="text-emerald-600 font-medium">{result.inserted}건 성공</span>
             {result.failed > 0 && <span className="text-red-600 font-medium"> · {result.failed}건 실패</span>}
           </p>
-          {result.errorMessage && (
-            <p className="text-red-600 text-xs mt-1">실패 사유: {result.errorMessage}</p>
+          {!!result.autoConfirmed && (
+            <p className="text-xs text-slate-500 mt-1">
+              그 중 증권번호가 일치하는 예비계약 {result.autoConfirmed}건은 자동으로 확정 처리했습니다(중복 정리).
+            </p>
           )}
+          {result.errorMessage && <p className="text-red-600 text-xs mt-1">실패 사유: {result.errorMessage}</p>}
         </div>
       )}
     </div>

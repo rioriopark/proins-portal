@@ -3,9 +3,21 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Contact } from '../lib/types'
 
+// 업무 연락처 상단의 보험사담당자 필터 버튼 순서를 메인화면 "보험사 업무포털 바로가기"와 맞춘다.
+// 목록에 없는 회사(생명보험사 등)는 뒤로 밀려나되 서로간의 기존 순서는 그대로 유지된다.
+const COMPANY_FILTER_ORDER = ['삼성화재', 'DB', '현대', 'KB', '메리츠', '롯데', '라이나 손보', '한화', '흥국', 'AIG']
+
 const emptyForm = {
-  category: '임직원', company: '', name: '', title: '', business: '',
-  office_phone: '', fax: '', phone: '', email: '', note: '',
+  category: '임직원',
+  company: '',
+  name: '',
+  title: '',
+  business: '',
+  office_phone: '',
+  fax: '',
+  phone: '',
+  email: '',
+  note: '',
 }
 
 // 콤마로 구분된 값이든 줄바꿈 없는 긴 문장이든, 실제 렌더링 후 2줄을 넘는지 측정해서
@@ -14,7 +26,10 @@ function ExpandableCell({ value }: { value: string }) {
   const [expanded, setExpanded] = useState(false)
   const [overflowing, setOverflowing] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const parts = (value ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+  const parts = (value ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -28,7 +43,9 @@ function ExpandableCell({ value }: { value: string }) {
     <div>
       <div
         ref={ref}
-        style={expanded ? undefined : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+        style={
+          expanded ? undefined : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
+        }
       >
         {parts.map((part, i) => (
           <span key={i}>
@@ -38,11 +55,7 @@ function ExpandableCell({ value }: { value: string }) {
         ))}
       </div>
       {overflowing && (
-        <button
-          type="button"
-          onClick={() => setExpanded((e) => !e)}
-          className="text-xs text-blue-500 hover:underline mt-0.5"
-        >
+        <button type="button" onClick={() => setExpanded((e) => !e)} className="text-xs text-blue-500 hover:underline mt-0.5">
           {expanded ? '접기 ▲' : '더보기 ▼'}
         </button>
       )}
@@ -51,7 +64,7 @@ function ExpandableCell({ value }: { value: string }) {
 }
 
 export default function Contacts() {
-  const { can } = useAuth()
+  const { can, canHq } = useAuth()
   const [items, setItems] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState<'전체' | '보험사담당자' | '임직원' | '업무지원'>('전체')
@@ -66,6 +79,8 @@ export default function Contacts() {
   const [overIndex, setOverIndex] = useState<number | null>(null)
 
   const canWrite = can('work_contacts')
+  // 수정/삭제/순서변경은 본사(org_id === 'hq') 소속 담당자만 가능하다.
+  const canManage = canHq('work_contacts')
 
   async function load() {
     setLoading(true)
@@ -78,35 +93,45 @@ export default function Contacts() {
     load()
   }, [])
 
-  const companies = useMemo(
-    () => [...new Set(items.filter((i) => i.category === '보험사담당자').map((i) => i.company))].filter(Boolean),
-    [items]
-  )
+  const companies = useMemo(() => {
+    const list = [...new Set(items.filter((i) => i.category === '보험사담당자').map((i) => i.company))].filter(Boolean)
+    return list.sort((a, b) => {
+      const rank = (c: string) => {
+        const i = COMPANY_FILTER_ORDER.indexOf(c)
+        return i === -1 ? COMPANY_FILTER_ORDER.length : i
+      }
+      return rank(a) - rank(b)
+    })
+  }, [items])
 
   // 직급/부서·담당업무 필터 목록은 선택된 보험사 안에서만 나오는 값으로 좁혀서 보여준다.
   // 앞뒤 공백 차이로 같은 값이 중복 표시되지 않도록 trim한 값으로 목록을 만든다.
   const titles = useMemo(
     () =>
-      [...new Set(
-        items
-          .filter((i) => i.category === '보험사담당자' && (companyFilter === '전체' || i.company === companyFilter))
-          .map((i) => i.title.trim())
-      )].filter(Boolean),
-    [items, companyFilter]
+      [
+        ...new Set(
+          items
+            .filter((i) => i.category === '보험사담당자' && (companyFilter === '전체' || i.company === companyFilter))
+            .map((i) => i.title.trim()),
+        ),
+      ].filter(Boolean),
+    [items, companyFilter],
   )
   const businesses = useMemo(
     () =>
-      [...new Set(
-        items
-          .filter((i) => i.category === '보험사담당자' && (companyFilter === '전체' || i.company === companyFilter))
-          .map((i) => i.business.trim())
-      )].filter(Boolean),
-    [items, companyFilter]
+      [
+        ...new Set(
+          items
+            .filter((i) => i.category === '보험사담당자' && (companyFilter === '전체' || i.company === companyFilter))
+            .map((i) => i.business.trim()),
+        ),
+      ].filter(Boolean),
+    [items, companyFilter],
   )
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return items.filter((i) => {
+    const rows = items.filter((i) => {
       if (categoryFilter !== '전체' && i.category !== categoryFilter) return false
       if (categoryFilter === '보험사담당자' && companyFilter !== '전체' && i.company !== companyFilter) return false
       if (categoryFilter === '보험사담당자' && titleFilter !== '전체' && i.title.trim() !== titleFilter) return false
@@ -116,6 +141,15 @@ export default function Contacts() {
         if (!hay.includes(q)) return false
       }
       return true
+    })
+    // 회사 컬럼도 보험사담당자 필터 버튼과 같은 순서(메인화면 바로가기 순서)로 묶어서 보여준다.
+    // 같은 회사 안에서는 기존 순서(드래그로 정한 sort_order)를 그대로 유지한다.
+    return rows.sort((a, b) => {
+      const rank = (c: string) => {
+        const i = COMPANY_FILTER_ORDER.indexOf(c)
+        return i === -1 ? COMPANY_FILTER_ORDER.length : i
+      }
+      return rank(a.company) - rank(b.company)
     })
   }, [items, categoryFilter, companyFilter, titleFilter, businessFilter, search])
 
@@ -127,8 +161,16 @@ export default function Contacts() {
 
   function startEdit(c: Contact) {
     setForm({
-      category: c.category, company: c.company, name: c.name, title: c.title, business: c.business,
-      office_phone: c.office_phone, fax: c.fax, phone: c.phone, email: c.email, note: c.note ?? '',
+      category: c.category,
+      company: c.company,
+      name: c.name,
+      title: c.title,
+      business: c.business,
+      office_phone: c.office_phone,
+      fax: c.fax,
+      phone: c.phone,
+      email: c.email,
+      note: c.note ?? '',
     })
     setEditingId(c.id)
     setShowForm(true)
@@ -137,7 +179,10 @@ export default function Contacts() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (editingId) {
-      const { error } = await supabase.from('contacts').update({ ...form, updated_at: new Date().toISOString() }).eq('id', editingId)
+      const { error } = await supabase
+        .from('contacts')
+        .update({ ...form, updated_at: new Date().toISOString() })
+        .eq('id', editingId)
       if (error) return alert('수정 실패: ' + error.message)
     } else {
       const { error } = await supabase.from('contacts').insert({ ...form, sort_order: items.length })
@@ -162,55 +207,103 @@ export default function Contacts() {
     const reordered = [...filtered]
     const [moved] = reordered.splice(sourceIdx, 1)
     reordered.splice(targetIdx, 0, moved)
-    const updates = reordered
-      .map((c, i) => ({ c, sort_order: i }))
-      .filter(({ c, sort_order }) => c.sort_order !== sort_order)
+    const updates = reordered.map((c, i) => ({ c, sort_order: i })).filter(({ c, sort_order }) => c.sort_order !== sort_order)
     if (updates.length === 0) return
     const results = await Promise.all(
-      updates.map(({ c, sort_order }) => supabase.from('contacts').update({ sort_order }).eq('id', c.id))
+      updates.map(({ c, sort_order }) => supabase.from('contacts').update({ sort_order }).eq('id', c.id)),
     )
     const err = results.find((r) => r.error)?.error
     if (err) alert('순서 변경 실패: ' + err.message)
     else load()
   }
 
-  // 신규 등록 폼은 상단에, 수정 폼은 해당 행 바로 위에 끼워 넣어 보여준다.
+  // 신규 등록 폼은 상단에, 수정 폼은 해당 행 바로 아래에 끼워 넣어 보여준다.
   function renderContactForm() {
     return (
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
-          <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm">
-            <option value="보험사담당자">보험사담당자</option>
-            <option value="임직원">임직원</option>
-            <option value="업무지원">업무지원</option>
-          </select>
-          <input placeholder="회사" value={form.company} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input required placeholder="이름" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input placeholder="부서/직급" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input placeholder="담당업무" value={form.business} onChange={(e) => setForm((f) => ({ ...f, business: e.target.value }))}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input placeholder="전화번호" maxLength={12} value={form.office_phone} onChange={(e) => setForm((f) => ({ ...f, office_phone: e.target.value }))}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input placeholder="팩스번호" maxLength={15} value={form.fax} onChange={(e) => setForm((f) => ({ ...f, fax: e.target.value }))}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input placeholder="휴대폰번호" maxLength={13} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input placeholder="이메일주소" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm" />
-          <input placeholder="기타/주소" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm col-span-2" />
-          <div className="flex gap-2">
-            <button type="submit" className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium">
-              {editingId ? '수정 저장' : '등록'}
-            </button>
-            <button type="button" onClick={() => { setShowForm(false); setEditingId(null) }} className="text-sm text-slate-500 px-4 py-2">
-              취소
-            </button>
-          </div>
-        </form>
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+        <select
+          value={form.category}
+          onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+        >
+          <option value="보험사담당자">보험사담당자</option>
+          <option value="임직원">임직원</option>
+          <option value="업무지원">업무지원</option>
+        </select>
+        <input
+          placeholder="회사"
+          value={form.company}
+          onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+        />
+        <input
+          required
+          placeholder="이름"
+          value={form.name}
+          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+        />
+        <input
+          placeholder="부서/직급"
+          value={form.title}
+          onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+        />
+        <input
+          placeholder="담당업무"
+          value={form.business}
+          onChange={(e) => setForm((f) => ({ ...f, business: e.target.value }))}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+        />
+        <input
+          placeholder="전화번호"
+          maxLength={12}
+          value={form.office_phone}
+          onChange={(e) => setForm((f) => ({ ...f, office_phone: e.target.value }))}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+        />
+        <input
+          placeholder="팩스번호"
+          maxLength={15}
+          value={form.fax}
+          onChange={(e) => setForm((f) => ({ ...f, fax: e.target.value }))}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+        />
+        <input
+          placeholder="휴대폰번호"
+          maxLength={13}
+          value={form.phone}
+          onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+        />
+        <input
+          placeholder="이메일주소"
+          value={form.email}
+          onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+        />
+        <input
+          placeholder="기타/주소"
+          value={form.note}
+          onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm col-span-2"
+        />
+        <div className="flex gap-2">
+          <button type="submit" className="bg-slate-800 text-white rounded-md px-4 py-2 text-sm font-medium">
+            {editingId ? '수정 저장' : '등록'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowForm(false)
+              setEditingId(null)
+            }}
+            className="text-sm text-slate-500 px-4 py-2"
+          >
+            취소
+          </button>
+        </div>
+      </form>
     )
   }
 
@@ -232,8 +325,16 @@ export default function Contacts() {
 
       <div className="flex flex-wrap gap-2 items-center">
         {(['전체', '보험사담당자', '임직원', '업무지원'] as const).map((c) => (
-          <button key={c} onClick={() => { setCategoryFilter(c); setCompanyFilter('전체'); setTitleFilter('전체'); setBusinessFilter('전체') }}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium ${categoryFilter === c ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
+          <button
+            key={c}
+            onClick={() => {
+              setCategoryFilter(c)
+              setCompanyFilter('전체')
+              setTitleFilter('전체')
+              setBusinessFilter('전체')
+            }}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium ${categoryFilter === c ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
+          >
             {c}
           </button>
         ))}
@@ -247,13 +348,26 @@ export default function Contacts() {
 
       {categoryFilter === '보험사담당자' && (
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => { setCompanyFilter('전체'); setTitleFilter('전체'); setBusinessFilter('전체') }}
-            className={`px-2.5 py-1 rounded text-xs font-medium ${companyFilter === '전체' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
+          <button
+            onClick={() => {
+              setCompanyFilter('전체')
+              setTitleFilter('전체')
+              setBusinessFilter('전체')
+            }}
+            className={`px-2.5 py-1 rounded text-xs font-medium ${companyFilter === '전체' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'}`}
+          >
             전체
           </button>
           {companies.map((c) => (
-            <button key={c} onClick={() => { setCompanyFilter(c); setTitleFilter('전체'); setBusinessFilter('전체') }}
-              className={`px-2.5 py-1 rounded text-xs font-medium ${companyFilter === c ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
+            <button
+              key={c}
+              onClick={() => {
+                setCompanyFilter(c)
+                setTitleFilter('전체')
+                setBusinessFilter('전체')
+              }}
+              className={`px-2.5 py-1 rounded text-xs font-medium ${companyFilter === c ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'}`}
+            >
               {c}
             </button>
           ))}
@@ -262,15 +376,29 @@ export default function Contacts() {
 
       {categoryFilter === '보험사담당자' && (
         <div className="flex flex-wrap gap-3">
-          <select value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+          <select
+            value={titleFilter}
+            onChange={(e) => setTitleFilter(e.target.value)}
+            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white"
+          >
             <option value="전체">전체 부서/직급</option>
-            {titles.map((t) => <option key={t} value={t}>{t}</option>)}
+            {titles.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
           </select>
-          <select value={businessFilter} onChange={(e) => setBusinessFilter(e.target.value)}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+          <select
+            value={businessFilter}
+            onChange={(e) => setBusinessFilter(e.target.value)}
+            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white"
+          >
             <option value="전체">전체 담당업무</option>
-            {businesses.map((b) => <option key={b} value={b}>{b}</option>)}
+            {businesses.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
           </select>
         </div>
       )}
@@ -283,9 +411,10 @@ export default function Contacts() {
           <table className="w-full text-sm table-fixed">
             <thead className="bg-slate-100 text-xs text-slate-600">
               <tr>
-                {canWrite && <th className="px-2 py-2 w-[2em] box-content"></th>}
-                <th className="text-center px-3 py-2 w-[5em] box-content break-words">회사</th>
-                <th className="text-center px-3 py-2 w-[5em] box-content break-words">이름</th>
+                {canManage && <th className="px-2 py-2 w-[2em] box-content"></th>}
+                {canManage && <th className="text-center px-3 py-2 w-[6em] box-content break-words">관리</th>}
+                <th className="text-center px-3 py-2 w-[8em] box-content break-words">회사</th>
+                <th className="text-center px-3 py-2 w-[7em] box-content break-words">이름</th>
                 <th className="text-center px-3 py-2 w-36 box-content break-words">부서/직급</th>
                 <th className="text-center px-3 py-2 w-[10em] box-content break-words">담당업무</th>
                 <th className="text-center px-3 py-2 w-[12em] box-content break-words">전화번호</th>
@@ -293,46 +422,94 @@ export default function Contacts() {
                 <th className="text-center px-3 py-2 w-[13em] box-content break-words">휴대폰번호</th>
                 <th className="text-center px-3 py-2 w-[20em] box-content break-words">이메일주소</th>
                 <th className="text-center px-3 py-2 w-[15em] box-content break-words">기타/주소</th>
-                {canWrite && <th className="px-3 py-2"></th>}
               </tr>
             </thead>
             <tbody>
               {filtered.map((c, idx) => (
                 <Fragment key={c.id}>
-                {showForm && editingId === c.id && (
-                  <tr>
-                    <td colSpan={canWrite ? 11 : 9} className="p-0">
-                      {renderContactForm()}
+                  <tr
+                    onDragOver={
+                      canManage
+                        ? (e) => {
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = 'move'
+                            setOverIndex(idx)
+                          }
+                        : undefined
+                    }
+                    onDragLeave={canManage ? () => setOverIndex((o) => (o === idx ? null : o)) : undefined}
+                    onDrop={
+                      canManage
+                        ? (e) => {
+                            e.preventDefault()
+                            handleDrop(Number(e.dataTransfer.getData('text/plain')), idx)
+                          }
+                        : undefined
+                    }
+                    className={`border-t border-slate-100 ${dragIndex === idx ? 'opacity-40' : ''} ${overIndex === idx && dragIndex !== idx ? 'bg-slate-50 border-t-2 border-t-slate-400' : ''}`}
+                  >
+                    {canManage && (
+                      <td
+                        className="px-2 py-2 text-center text-slate-400 select-none cursor-grab"
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = 'move'
+                          e.dataTransfer.setData('text/plain', String(idx))
+                          setDragIndex(idx)
+                        }}
+                        onDragEnd={() => {
+                          setDragIndex(null)
+                          setOverIndex(null)
+                        }}
+                      >
+                        ⠿
+                      </td>
+                    )}
+                    {canManage && (
+                      <td className="text-center px-3 py-2 whitespace-nowrap">
+                        <button onClick={() => startEdit(c)} className="text-xs text-slate-500 hover:underline mr-2">
+                          수정
+                        </button>
+                        <button onClick={() => remove(c.id)} className="text-xs text-red-500 hover:underline">
+                          삭제
+                        </button>
+                      </td>
+                    )}
+                    <td className="text-center px-3 py-2 text-slate-500 break-words">
+                      <ExpandableCell value={c.company} />
+                    </td>
+                    <td className="text-center px-3 py-2 font-medium break-words">
+                      <ExpandableCell value={c.name} />
+                    </td>
+                    <td className="text-center px-3 py-2 break-words">
+                      <ExpandableCell value={c.title} />
+                    </td>
+                    <td className="text-center px-3 py-2 break-words">
+                      <ExpandableCell value={c.business} />
+                    </td>
+                    <td className="text-center px-3 py-2 break-words">
+                      <ExpandableCell value={c.office_phone} />
+                    </td>
+                    <td className="text-center px-3 py-2 break-words">
+                      <ExpandableCell value={c.fax} />
+                    </td>
+                    <td className="text-center px-3 py-2 break-words">
+                      <ExpandableCell value={c.phone} />
+                    </td>
+                    <td className="text-center px-3 py-2 text-slate-500 break-words">
+                      <ExpandableCell value={c.email} />
+                    </td>
+                    <td className="text-center px-3 py-2 text-slate-500 break-words">
+                      <ExpandableCell value={c.note} />
                     </td>
                   </tr>
-                )}
-                <tr
-                  onDragOver={canWrite ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOverIndex(idx) } : undefined}
-                  onDragLeave={canWrite ? () => setOverIndex((o) => (o === idx ? null : o)) : undefined}
-                  onDrop={canWrite ? (e) => { e.preventDefault(); handleDrop(Number(e.dataTransfer.getData('text/plain')), idx) } : undefined}
-                  className={`border-t border-slate-100 ${dragIndex === idx ? 'opacity-40' : ''} ${overIndex === idx && dragIndex !== idx ? 'bg-slate-50 border-t-2 border-t-slate-400' : ''}`}>
-                  {canWrite && (
-                    <td className="px-2 py-2 text-center text-slate-400 select-none cursor-grab"
-                      draggable
-                      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(idx)); setDragIndex(idx) }}
-                      onDragEnd={() => { setDragIndex(null); setOverIndex(null) }}>⠿</td>
+                  {showForm && editingId === c.id && (
+                    <tr>
+                      <td colSpan={canManage ? 11 : 9} className="p-0">
+                        {renderContactForm()}
+                      </td>
+                    </tr>
                   )}
-                  <td className="text-center px-3 py-2 text-slate-500 break-words"><ExpandableCell value={c.company} /></td>
-                  <td className="text-center px-3 py-2 font-medium break-words"><ExpandableCell value={c.name} /></td>
-                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.title} /></td>
-                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.business} /></td>
-                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.office_phone} /></td>
-                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.fax} /></td>
-                  <td className="text-center px-3 py-2 break-words"><ExpandableCell value={c.phone} /></td>
-                  <td className="text-center px-3 py-2 text-slate-500 break-words"><ExpandableCell value={c.email} /></td>
-                  <td className="text-center px-3 py-2 text-slate-500 break-words"><ExpandableCell value={c.note} /></td>
-                  {canWrite && (
-                    <td className="text-center px-3 py-2 whitespace-nowrap">
-                      <button onClick={() => startEdit(c)} className="text-xs text-slate-500 hover:underline mr-2">수정</button>
-                      <button onClick={() => remove(c.id)} className="text-xs text-red-500 hover:underline">삭제</button>
-                    </td>
-                  )}
-                </tr>
                 </Fragment>
               ))}
             </tbody>

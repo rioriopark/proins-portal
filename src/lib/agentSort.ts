@@ -14,6 +14,19 @@ export function orgPriority(orgId: string, orgsById: Map<string, Organization>):
   return type ? ORG_TYPE_PRIORITY[type] : 99
 }
 
+// 조직을 최상위 조직(본사)의 직속 하위 조직 단위(관리조직: 본사직영, 각 지점 등)로 묶기 위해,
+// parent_id를 타고 올라가 "부모가 최상위(본사)이거나 자기 자신이 최상위인" 조직을 찾아 반환한다.
+export function topLevelOrgId(orgId: string, orgsById: Map<string, Organization>): string {
+  let node = orgsById.get(orgId)
+  if (!node) return orgId
+  while (node.parent_id) {
+    const parent = orgsById.get(node.parent_id)
+    if (!parent || !parent.parent_id) return node.id
+    node = parent
+  }
+  return node.id
+}
+
 export function titleRank(title: string): number {
   const idx = AGENT_GRADES.indexOf(title)
   if (idx >= 0) return idx

@@ -12,8 +12,13 @@ interface AuthState {
   signOut: () => Promise<void>
   // 포털 항목별로 개별 부여된 관리자급 쓰기 권한 (menu_key 목록)
   permissions: Set<string>
-  // profile.role !== 'agent' 이거나 해당 menu_key 로 개별 권한을 부여받았으면 true
+  // profile.role !== 'agent' 이거나 해당 menu_key 로 개별 권한을 부여받았으면 true.
+  // 주의: 이 조건은 소속 조직을 따지지 않는다 — 지사/지점 관리자도 그대로 통과된다.
+  // 본사(hq) 소속에만 해당하는 기능(예: 임금명세서)에는 can()을 직접 쓰지 말고 canHq()를 쓸 것.
   can: (menuKey: string) => boolean
+  // can()과 동일하지만 본사(org_id === 'hq') 소속일 때만 true. 임금명세서처럼 본사 전용
+  // 기능에 사용 — 지사/지점 관리자는 역할과 무관하게 항상 false가 된다.
+  canHq: (menuKey: string) => boolean
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -65,8 +70,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return !!profile && (profile.role !== 'agent' || permissions.has(menuKey))
   }
 
+  function canHq(menuKey: string) {
+    return !!profile && profile.org_id === 'hq' && can(menuKey)
+  }
+
   return (
-    <AuthContext.Provider value={{ session, profile, loading, noProfile, signOut, permissions, can }}>
+    <AuthContext.Provider value={{ session, profile, loading, noProfile, signOut, permissions, can, canHq }}>
       {children}
     </AuthContext.Provider>
   )

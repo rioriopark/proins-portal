@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
-import { ROLE_LABEL, type Profile } from '../lib/types'
+import { roleDisplayLabel, type Profile } from '../lib/types'
 
 interface NavItem {
   to: string
@@ -21,6 +21,8 @@ interface NavGroup {
 
 type NavEntry = ({ standalone: true } & NavItem) | ({ standalone: false } & NavGroup)
 
+// 계약 등록/조회(계약업무)와 급여성 서류(정산)를 분리하고, 공지사항 묶음은 한 단계 더 들어가면
+// 클릭이 늘어나기만 해서(업무지원 > 공지사항 > 시상안) 업무지원 아래 평평하게 둔다.
 const NAV: NavEntry[] = [
   { standalone: true, to: '/', label: '메인화면', end: true },
   {
@@ -32,6 +34,13 @@ const NAV: NavEntry[] = [
       { to: '/renewals', label: '갱신관리' },
       { to: '/collections', label: '수금관리' },
       { to: '/bulk-import', label: '계약 일괄등록', visible: (p) => p.org_id === 'hq' },
+    ],
+  },
+  {
+    standalone: false,
+    key: 'settlement',
+    label: '정산',
+    items: [
       { to: '/statement', label: '수수료명세서', visible: (p) => p.role !== 'agent' || p.org_id !== 'hq' },
       { to: '/wage-statement', label: '임금명세서', visible: (p) => p.org_id === 'hq' },
     ],
@@ -42,22 +51,22 @@ const NAV: NavEntry[] = [
     label: '업무지원',
     items: [
       { to: '/contacts', label: '업무 연락처' },
-      { to: '/incentives', label: '보험사 시상안' },
+      { to: '/notices', label: '공지사항' },
+      { to: '/education', label: '교육일정' },
+      { to: '/incentives', label: '시상안' },
+      { to: '/board', label: '게시판' },
     ],
   },
   {
     standalone: false,
     key: 'admin',
     label: '관리자',
-    items: [
-      { to: '/orgs', label: '조직관리', adminOnly: true },
-      { to: '/info', label: '정보관리', adminOnly: true },
-    ],
+    items: [{ to: '/orgs', label: '조직관리', adminOnly: true }],
   },
   { standalone: true, to: '/my-space', label: '나의공간' },
 ]
 
-function findGroupKey(pathname: string): string | null {
+function findOpenKey(pathname: string): string | null {
   for (const entry of NAV) {
     if (!entry.standalone && entry.items.some((i) => pathname === i.to || pathname.startsWith(i.to + '/'))) {
       return entry.key
@@ -70,12 +79,12 @@ export default function Layout() {
   const { profile, signOut, can } = useAuth()
   const location = useLocation()
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
-    const key = findGroupKey(location.pathname)
+    const key = findOpenKey(location.pathname)
     return new Set(key ? [key] : [])
   })
 
   useEffect(() => {
-    const key = findGroupKey(location.pathname)
+    const key = findOpenKey(location.pathname)
     if (key) setOpenGroups((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
   }, [location.pathname])
 
@@ -162,7 +171,7 @@ export default function Layout() {
         </nav>
         <div className="px-5 py-4 border-t border-white/10 text-xs text-white/70">
           <p className="font-medium text-white">{profile.name}</p>
-          <p>{ROLE_LABEL[profile.role]}</p>
+          <p>{profile.title || roleDisplayLabel(profile.role, profile.org_id)}</p>
           <button onClick={signOut} className="mt-3 text-white/60 hover:text-white underline">
             로그아웃
           </button>

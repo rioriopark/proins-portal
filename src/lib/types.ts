@@ -14,6 +14,12 @@ export const ROLE_RANK: Record<Role, number> = {
   agent: 3,
 }
 
+// 본사(hq) 소속이 아닌 일반 담당자(agent)는 위촉 계약을 맺은 설계사이므로 "위촉직 설계사"로 구분해 보여준다.
+export function roleDisplayLabel(role: Role, orgId: string): string {
+  if (role === 'agent' && orgId !== 'hq') return '위촉직 설계사'
+  return ROLE_LABEL[role]
+}
+
 export type OrgType = 'HQ' | 'REGION' | 'CENTER' | 'STORE'
 
 export interface Organization {
@@ -37,7 +43,7 @@ export interface Profile {
 }
 
 export type ContractCategory = '장기' | '일반' | '자동차'
-export type ContractType = '신규' | '계속' | '환수' | '부활' | '비례공동'
+export type ContractType = '신규' | '계속' | '환수' | '부활' | '비례공동' | '변경'
 
 export interface Contract {
   id: string
@@ -62,6 +68,17 @@ export interface Contract {
   memo: string | null
   is_preliminary: boolean
   created_at: string
+  co_insurers: CoInsurerShare[] | null
+  duration_type: string | null
+  change_reason: string | null
+  prior_contract_id: string | null
+}
+
+// 비례공동 계약: 수수료를 나눠 가질 담당자와 비율(%, 합계 100)
+export interface CoInsurerShare {
+  agent_id: string
+  name: string
+  ratio: number
 }
 
 export interface Incentive {
@@ -78,7 +95,7 @@ export interface Incentive {
   updated_at: string
 }
 
-// 포털 항목별 수정권한 부여 대상 메뉴 (조직관리/정보관리는 권한 상승 위험으로 제외, hq_admin 전용 유지)
+// 포털 항목별 수정권한 부여 대상 메뉴 (조직관리는 권한 상승 위험으로 제외, hq_admin 전용 유지)
 export const MENU_OPTIONS: { key: string; label: string }[] = [
   { key: 'contracts', label: '계약관리(관리자기능)' },
   { key: 'bulk_import', label: '계약 일괄등록' },
@@ -88,20 +105,56 @@ export const MENU_OPTIONS: { key: string; label: string }[] = [
   { key: 'wage_statement', label: '임금명세서' },
 ]
 
-export interface CompanyCode { company: string; code: string; code_auth: string }
-export interface LicenseInfo { name: string; valid_until: string }
-export interface EducationRecord { course: string; completed_date: string }
-export interface TerminationRecord { date: string; reason: string }
-
+// 보험사 마스터 목록: 본사(org_id='hq')만 이름/순서를 등록·수정할 수 있다.
+export interface Insurer {
+  id: string
+  name: string
+  sort_order: number
+  // 대리점이 해당 보험사와 유지하는 영업보증·선지급이행보증 보험의 만료일(YYYY-MM-DD). 미가입/미입력 시 null.
+  business_guarantee_expiry: string | null
+  advance_guarantee_expiry: string | null
+  created_at: string
+}
+// 담당자 개인의 보험사별 코드(사번/비밀번호). insurer_id로 insurers를 참조한다.
+export interface AgentInsurerCode {
+  id: string
+  profile_id: string
+  insurer_id: string
+  code: string
+  code_auth: string
+  created_at: string
+  updated_at: string
+}
+export interface LicenseInfo {
+  name: string
+  valid_until: string
+}
+export interface EducationRecord {
+  course: string
+  completed_date: string
+}
+export interface TerminationRecord {
+  date: string
+  reason: string
+}
 export interface AgentProfile {
   profile_id: string
   phone: string
   address: string
   email: string
-  company_codes: CompanyCode[]
   registration_no: string
   licenses: LicenseInfo[]
   education_records: EducationRecord[]
+  updated_at: string
+}
+
+// 사이트 아이디정보: 개인 프로필이 아니라 본사(org_id='hq') 전체가 공유하는 자료라 별도 테이블로 둔다.
+export interface SharedSiteAccount {
+  id: string
+  site: string
+  login_id: string
+  password: string
+  updated_by: string | null
   updated_at: string
 }
 
@@ -126,9 +179,10 @@ export interface Banner {
   updated_at: string
 }
 
+// 보험사 대표사번/비밀번호(대표관리자·본사담당자 전체 공유). insurer_id로 insurers를 참조한다.
 export interface InsurerAccount {
   id: string
-  company: string
+  insurer_id: string
   login_id: string
   password: string
   memo: string
@@ -153,6 +207,16 @@ export interface EducationEvent {
   title: string
   event_date: string
   event_time: string
+  created_at: string
+  updated_at: string
+}
+
+export interface BoardPost {
+  id: string
+  title: string
+  content: string
+  author_id: string | null
+  author_name: string
   created_at: string
   updated_at: string
 }
