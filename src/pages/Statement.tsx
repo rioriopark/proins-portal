@@ -168,9 +168,11 @@ export default function Statement() {
     else setTarget(agents.find((a) => a.id === agentId) ?? null)
   }, [agentId, month, agents, profile])
 
+  // 수수료 0원 건(계속 확정 전 등, 아직 실적으로 잡히지 않는 트래킹용 행)은 계약관리 화면과
+  // 동일하게 업적현황 집계에서도 제외한다.
   function group(categories: ContractCategory[]) {
     const byKey = new Map<string, { category: ContractCategory; type: ContractType; count: number; premium: number }>()
-    for (const c of contracts.filter((c) => categories.includes(c.category))) {
+    for (const c of contracts.filter((c) => categories.includes(c.category) && c.commission !== 0)) {
       const key = `${c.category}__${c.type}`
       const cur = byKey.get(key) ?? { category: c.category, type: c.type, count: 0, premium: 0 }
       cur.count += c.count
