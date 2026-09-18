@@ -151,11 +151,13 @@ export default function Statement() {
 
   useEffect(() => {
     if (!agentId) return
+    // 계약관리 화면과 동일하게 지급월(month)이 아니라 실제 계약월(receipt_date)로 범위를 맞추기
+    // 위해, 지급월로 서버에서 미리 좁히지 않고 이 담당자의 계약 전체를 가져와 아래
+    // scopedContracts에서 클라이언트에서 걸러낸다.
     supabase
       .from('contracts')
       .select('*')
       .eq('agent_id', agentId)
-      .eq('month', prevMonth(month))
       .then(({ data }) => setContracts(data ?? []))
     supabase
       .from('statements')
@@ -168,11 +170,22 @@ export default function Statement() {
     else setTarget(agents.find((a) => a.id === agentId) ?? null)
   }, [agentId, month, agents, profile])
 
+  // 계약관리 화면과 동일하게 "월"은 지급월(month)이 아니라 실제 계약월(보험시기/receipt_date)
+  // 기준이다 — 수수료가 익월 지급되는 보험사 파일은 지급월을 계약 다음 달로 적어 넣기 때문에,
+  // 지급월로 걸러내면 계약관리에서 보이는 것과 건수·금액이 어긋난다. receipt_date가 없는
+  // (옛 데이터 등) 행만 지급월로 대체한다.
+  const contractMonthOf = (c: Contract) => c.receipt_date?.slice(0, 7) || c.month
+  const contractMonth = useMemo(() => prevMonth(month), [month])
+  const scopedContracts = useMemo(
+    () => contracts.filter((c) => contractMonthOf(c) === contractMonth),
+    [contracts, contractMonth],
+  )
+
   // 수수료 0원 건(계속 확정 전 등, 아직 실적으로 잡히지 않는 트래킹용 행)은 계약관리 화면과
   // 동일하게 업적현황 집계에서도 제외한다.
   function group(categories: ContractCategory[]) {
     const byKey = new Map<string, { category: ContractCategory; type: ContractType; count: number; premium: number }>()
-    for (const c of contracts.filter((c) => categories.includes(c.category) && c.commission !== 0)) {
+    for (const c of scopedContracts.filter((c) => categories.includes(c.category) && c.commission !== 0)) {
       const key = `${c.category}__${c.type}`
       const cur = byKey.get(key) ?? { category: c.category, type: c.type, count: 0, premium: 0 }
       cur.count += c.count
@@ -182,9 +195,8 @@ export default function Statement() {
     return [...byKey.values()]
   }
 
-  const contractMonth = useMemo(() => prevMonth(month), [month])
-  const longRows = useMemo(() => group(['장기']), [contracts])
-  const generalAutoRows = useMemo(() => group(['일반', '자동차']), [contracts])
+  const longRows = useMemo(() => group(['장기']), [scopedContracts])
+  const generalAutoRows = useMemo(() => group(['일반', '자동차']), [scopedContracts])
   const longTotal = longRows.reduce((s, r) => s + r.premium, 0)
   const longCount = longRows.reduce((s, r) => s + r.count, 0)
   const gaTotal = generalAutoRows.reduce((s, r) => s + r.premium, 0)
@@ -206,7 +218,7 @@ export default function Statement() {
     let clawbackRevive = 0
     let generalAmt = 0
     let autoAmt = 0
-    for (const c of contracts) {
+    for (const c of scopedContracts) {
       const rate = c.category === '장기' ? target.rate_long : target.rate_general
       const amount = c.commission * rate
       if (c.type === '환수' || c.type === '부활') {
@@ -234,7 +246,7 @@ export default function Statement() {
       general: Math.round(generalAmt),
       auto: Math.round(autoAmt),
     }
-  }, [contracts, target])
+  }, [scopedContracts, target])
 
   function applyAutoCalc() {
     if (!autoCalc) return
