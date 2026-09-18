@@ -16,6 +16,13 @@ function prevMonth(m: string) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+// 'YYYY-MM' 두 값 사이의 개월 수 차이 (to가 from보다 몇 개월 뒤인지).
+function monthsBetween(from: string, to: string): number {
+  const [fy, fm] = from.split('-').map(Number)
+  const [ty, tm] = to.split('-').map(Number)
+  return (ty - fy) * 12 + (tm - fm)
+}
+
 const ZERO_STMT = {
   recruit_first: 0,
   recruit_installment: 0,
@@ -174,6 +181,56 @@ export default function Statement() {
   const longCount = longRows.reduce((s, r) => s + r.count, 0)
   const gaTotal = generalAutoRows.reduce((s, r) => s + r.premium, 0)
   const gaCount = generalAutoRows.reduce((s, r) => s + r.count, 0)
+
+  // 지급률 자동계산: 건별수수료(contracts.commission) × 담당자 지급률(장기/일반)을 계약 유형별로 나눠 합산한다.
+  // - 모집초회수수료: 장기·신규(비례공동 포함) 중 지급월이 계약월 기준 1개월 이내
+  // - 모집분급수수료: 장기·신규(비례공동 포함) 중 지급월이 계약월 기준 2~24개월
+  // - 유지: 장기·계속
+  // - 환수/부활: 종목 무관, 환수·부활 (해당 건의 종목에 맞는 지급률 적용)
+  // - 일반/자동차: 각 종목의 신규·계속·비례공동 (환수/부활은 위에서 이미 반영해 중복 집계하지 않음)
+  // 관리수수료·수금수수료는 직급/관리자 여부에 따른 별도 기준이 필요해 자동계산 대상에서 제외한다.
+  const autoCalc = useMemo(() => {
+    if (!target) return null
+    let recruitFirst = 0
+    let recruitInstallment = 0
+    let maintainAmt = 0
+    let clawbackRevive = 0
+    let generalAmt = 0
+    let autoAmt = 0
+    for (const c of contracts) {
+      const rate = c.category === '장기' ? target.rate_long : target.rate_general
+      const amount = c.commission * rate
+      if (c.type === '환수' || c.type === '부활') {
+        clawbackRevive += amount
+      } else if (c.category === '장기') {
+        if (c.type === '신규' || c.type === '비례공동') {
+          if (!c.receipt_date) continue
+          const offset = monthsBetween(c.receipt_date.slice(0, 7), c.month)
+          if (offset <= 1) recruitFirst += amount
+          else if (offset <= 24) recruitInstallment += amount
+        } else if (c.type === '계속') {
+          maintainAmt += amount
+        }
+      } else if (c.category === '일반') {
+        if (c.type === '신규' || c.type === '계속' || c.type === '비례공동') generalAmt += amount
+      } else if (c.category === '자동차') {
+        if (c.type === '신규' || c.type === '계속' || c.type === '비례공동') autoAmt += amount
+      }
+    }
+    return {
+      recruit_first: Math.round(recruitFirst),
+      recruit_installment: Math.round(recruitInstallment),
+      maintain: Math.round(maintainAmt),
+      clawback_revive: Math.round(clawbackRevive),
+      general: Math.round(generalAmt),
+      auto: Math.round(autoAmt),
+    }
+  }, [contracts, target])
+
+  function applyAutoCalc() {
+    if (!autoCalc) return
+    setStmt((s) => ({ ...s, ...autoCalc }))
+  }
 
   const totalIncome = INCOME_SUM_FIELDS.reduce((s, k) => s + Number(stmt[k] || 0), 0)
   const totalDeduction = DEDUCTION_SUM_FIELDS.reduce((s, k) => s + Number(stmt[k] || 0), 0)
@@ -393,7 +450,20 @@ export default function Statement() {
               <p className="bg-blue-600 text-white text-xs font-semibold px-3 py-1.5 rounded-t-md">급여명세</p>
               <div className="border border-t-0 border-slate-100 rounded-b-md p-3 space-y-3">
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 mb-1">업적수수료</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-semibold text-slate-400">업적수수료</p>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={applyAutoCalc}
+                        disabled={!autoCalc}
+                        title="건별수수료 × 지급률로 모집초회/모집분급/유지/환수·부활/일반/자동차를 자동 계산해 채웁니다. 관리수수료·수금수수료는 대상이 아닙니다."
+                        className="text-[11px] text-indigo-600 hover:underline disabled:opacity-40 disabled:no-underline"
+                      >
+                        지급률 자동계산
+                      </button>
+                    )}
+                  </div>
                   {INCOME_FIELDS.map(([k, label]) => (
                     <NumberField key={k} k={k} label={label} />
                   ))}
