@@ -156,7 +156,10 @@ const FIELD_META: { key: FieldKey; label: string; required: boolean; hidden?: bo
     required: true,
     keywords: ['건별수수료', '수수료', '지급수수료', '수수료액', '커미션', '지급금액', '수수료금액', '지급액'],
   },
-  { key: 'performanceCommission', label: '성과수수료', required: false, keywords: ['성과수수료', '성과'] },
+  // "성과" 한 글자만으로는 "평가실적(성과대상)"처럼 실제 성과금액이 아닌 평가기준 열까지
+  // 잘못 걸려서(그 열이 먼저 나오면 그 열을 골라버리고 진짜 성과금액 열은 매핑에서 빠짐) 반드시
+  // "성과금액"/"성과수수료"처럼 금액을 가리키는 온전한 표현으로만 매칭한다.
+  { key: 'performanceCommission', label: '성과수수료', required: false, keywords: ['성과수수료', '성과금액'] },
   {
     key: 'collectionStatus',
     label: '수금상태',
@@ -445,10 +448,12 @@ function toNumber(v: string): number {
   return Number.isFinite(n) ? n : 0
 }
 
-// 같은 파일/붙여넣기 안에 같은 보험사·증권번호·지급월·구분 행이 중복으로 들어있으면,
+// 같은 파일/붙여넣기 안에 같은 보험사·증권번호·지급월·구분·보험료 행이 중복으로 들어있으면,
 // 한 번의 upsert 호출 안에서 같은 행을 두 번 갱신하려다 "ON CONFLICT DO UPDATE command
 // cannot affect row a second time" 오류가 난다. upsert에 넣기 전에 미리 합쳐서
 // (수수료가 더 큰 쪽을 남기고) 한 건으로 만든다. 증권번호가 없는 행은 그대로 둔다.
+// 보험료를 키에 포함하는 이유: 종합보험은 같은 증권번호 안에 재물/배상 등 섹션별로
+// 보험료·수수료가 다른 여러 행이 정상적으로 존재하므로, 보험료가 다르면 별개 행으로 남겨야 한다.
 function dedupeByPolicyLine<
   T extends { company: string; policy_no: string | null; month: string; type: string; commission: number; premium: number },
 >(payload: T[]): T[] {
@@ -459,7 +464,7 @@ function dedupeByPolicyLine<
       noPolicyNo.push(row)
       continue
     }
-    const key = `${row.company}|${row.policy_no}|${row.month}|${row.type}`
+    const key = `${row.company}|${row.policy_no}|${row.month}|${row.type}|${row.premium}`
     const existing = map.get(key)
     if (
       !existing ||
@@ -598,7 +603,7 @@ export default function BulkImport() {
       const chunk = dedupedPayload.slice(i, i + chunkSize)
       const { error, data } = await supabase
         .from('contracts')
-        .upsert(chunk, { onConflict: 'company,policy_no,month,type,is_preliminary' })
+        .upsert(chunk, { onConflict: 'company,policy_no,month,type,is_preliminary,premium' })
         .select('id')
       if (error) {
         failed += chunk.length
@@ -868,7 +873,7 @@ export default function BulkImport() {
       const chunk = dedupedPayload.slice(i, i + chunkSize)
       const { error, data } = await supabase
         .from('contracts')
-        .upsert(chunk, { onConflict: 'company,policy_no,month,type,is_preliminary' })
+        .upsert(chunk, { onConflict: 'company,policy_no,month,type,is_preliminary,premium' })
         .select('id')
       if (error) {
         failed += chunk.length

@@ -254,7 +254,7 @@ export default function Renewals() {
         commission: 0,
         is_preliminary: true,
       },
-      { onConflict: 'company,policy_no,month,type,is_preliminary' },
+      { onConflict: 'company,policy_no,month,type,is_preliminary,premium' },
     )
     setRenewSaving(false)
     if (prelimError) {

@@ -53,7 +53,9 @@ create table contracts (
   constraint contracts_has_owner check (agent_id is not null or agent_email is not null),
   -- 같은 보험사 파일을 실수로 다시 업로드해도 같은 계약이 중복 등록되지 않도록 함.
   -- policy_no가 없는(건별 상세 없이 합산 등록한) 행은 null끼리 서로 다른 값으로 취급되어 제한 없음.
-  constraint contracts_unique_policy_line unique (company, policy_no, month, type, is_preliminary)
+  -- premium을 포함하는 이유: 종합보험은 같은 증권번호 안에 재물/배상 등 섹션별로 보험료가
+  -- 다른 여러 행이 정상적으로 존재하므로, 보험료까지 같아야 진짜 중복으로 본다.
+  constraint contracts_unique_policy_line unique (company, policy_no, month, type, is_preliminary, premium)
 );
 
 -- ── 가입 초대장 (이메일 화이트리스트) ─────────────────────
