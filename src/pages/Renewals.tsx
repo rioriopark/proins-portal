@@ -36,6 +36,13 @@ function sum<T>(rows: T[], pick: (row: T) => number): number {
   return rows.reduce((s, r) => s + pick(r), 0)
 }
 
+// 예비계약 자동확정: 같은 보험사+증권번호로 이미 확정 계약이 들어와 있으면 방금 등록한 갱신
+// 예비계약을 즉시 정리한다(Contracts.tsx의 신규계약 등록 3곳과 동일하게 맞춘다).
+async function runAutoConfirm(): Promise<void> {
+  const { error } = await supabase.rpc('auto_confirm_preliminary_contracts')
+  if (error) console.error('예비계약 자동확정 실패:', error)
+}
+
 const PERIOD_OPTIONS = [
   { value: 'this_month', label: '당월만기' },
   { value: 'next_month', label: '익월만기' },
@@ -256,11 +263,13 @@ export default function Renewals() {
       },
       { onConflict: 'company,policy_no,month,type,is_preliminary,premium' },
     )
-    setRenewSaving(false)
     if (prelimError) {
+      setRenewSaving(false)
       alert('예비계약 등록 실패: ' + prelimError.message)
       return
     }
+    await runAutoConfirm()
+    setRenewSaving(false)
     setRenewingId(null)
   }
 
