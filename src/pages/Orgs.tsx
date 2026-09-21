@@ -25,6 +25,7 @@ interface Invite {
   title: string
   rate_long: number
   rate_general: number
+  general_performance_rate: number
 }
 
 interface Person {
@@ -38,6 +39,7 @@ interface Person {
   title: string
   rate_long: number
   rate_general: number
+  general_performance_rate: number
 }
 
 export default function Orgs() {
@@ -103,6 +105,7 @@ export default function Orgs() {
         title: m.title,
         rate_long: m.rate_long,
         rate_general: m.rate_general,
+        general_performance_rate: m.general_performance_rate,
       })),
       ...invites.map((i) => ({
         key: `i:${i.email}`,
@@ -114,6 +117,7 @@ export default function Orgs() {
         title: i.title,
         rate_long: i.rate_long,
         rate_general: i.rate_general,
+        general_performance_rate: i.general_performance_rate,
       })),
     ],
     [members, invites],
@@ -304,7 +308,13 @@ export default function Orgs() {
 
   async function updatePerson(
     p: Person,
-    patch: Partial<{ title: string; rate_long: number; rate_general: number; org_id: string }>,
+    patch: Partial<{
+      title: string
+      rate_long: number
+      rate_general: number
+      general_performance_rate: number
+      org_id: string
+    }>,
   ) {
     const table = p.kind === 'profile' ? 'profiles' : 'pending_invites'
     const match = p.kind === 'profile' ? { id: p.id! } : { email: p.email }
@@ -435,6 +445,24 @@ export default function Orgs() {
                       alert(`본인 수수료율(${cap}%)보다 높게 설정할 수 없습니다.`)
                     }
                     updatePerson(p, { rate_general: val / 100 })
+                  }}
+                  className="border border-slate-200 rounded px-1.5 py-1 w-14 text-right disabled:bg-slate-50 disabled:text-slate-400"
+                />
+                <span className="text-slate-400">%</span>
+                <label className="text-slate-400" title="수수료명세서 '지급률 자동계산' 시 본인 일반+자동차 실적수수료에 곱해 일반성과로 채운다.">
+                  일반성과
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  disabled={p.id === profile?.id}
+                  title={p.id === profile?.id ? '본인 수수료율은 본인이 수정할 수 없습니다.' : undefined}
+                  defaultValue={Math.round(p.general_performance_rate * 100)}
+                  onBlur={(e) => {
+                    const val = Math.min(100, Math.max(0, Number(e.target.value)))
+                    e.target.value = String(val)
+                    updatePerson(p, { general_performance_rate: val / 100 })
                   }}
                   className="border border-slate-200 rounded px-1.5 py-1 w-14 text-right disabled:bg-slate-50 disabled:text-slate-400"
                 />

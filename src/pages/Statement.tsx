@@ -226,6 +226,8 @@ export default function Statement() {
   // - 환수/부활: 종목 무관, 환수·부활 (해당 건의 종목에 맞는 지급률 적용)
   // - 일반/자동차: 환수·부활을 제외한 나머지 전부 (계약관리 화면과 동일하게 유형 값을 가리지 않고 합산)
   // 관리수수료·수금수수료는 직급/관리자 여부에 따른 별도 기준이 필요해 자동계산 대상에서 제외한다.
+  // 일반성과는 개인시책·기타시상과 달리, 본인 일반+자동차 실적수수료(=아래 general+auto) ×
+  // 개별 성과비율(target.general_performance_rate, 조직관리에서 대상자만 0보다 크게 설정)로 계산한다.
   const autoCalc = useMemo(() => {
     if (!target) return null
     let recruitFirst = 0
@@ -261,6 +263,7 @@ export default function Statement() {
       clawback_revive: Math.round(clawbackRevive),
       general: Math.round(generalAmt),
       auto: Math.round(autoAmt),
+      general_performance: Math.round((generalAmt + autoAmt) * (target.general_performance_rate || 0)),
     }
   }, [scopedContracts, target])
 
@@ -494,7 +497,7 @@ export default function Statement() {
                         type="button"
                         onClick={applyAutoCalc}
                         disabled={!autoCalc}
-                        title="건별수수료 × 지급률로 모집초회/모집분급/유지/환수·부활/일반/자동차를 자동 계산해 채웁니다. 관리수수료·수금수수료는 대상이 아닙니다."
+                        title="건별수수료 × 지급률로 모집초회/모집분급/유지/환수·부활/일반/자동차를 자동 계산해 채웁니다. 일반성과는 (일반+자동차) × 개별 성과비율로 함께 계산됩니다. 관리수수료·수금수수료는 대상이 아닙니다."
                         className="text-[11px] text-indigo-600 hover:underline disabled:opacity-40 disabled:no-underline"
                       >
                         지급률 자동계산

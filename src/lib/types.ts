@@ -38,6 +38,8 @@ export interface Profile {
   title: string
   rate_long: number
   rate_general: number
+  // 수수료명세서 "일반성과" 자동계산에 쓰는 개별 비율(0~1). 성과 시상 대상자만 0보다 크게 설정한다.
+  general_performance_rate: number
   bank: string
   account: string
 }
