@@ -23,6 +23,21 @@ function monthsBetween(from: string, to: string): number {
   return (ty - fy) * 12 + (tm - fm)
 }
 
+// 위촉직 설계사(사업소득자) 산재보험료/고용보험료 계산 상수 — 근로복지공단이 매년 고시하는
+// 특고종사자(보험설계사) 고시금액·요율. "서사업소득 명세.xlsx"(2026-09, 업종: 보험대리점)의
+// 참고표를 그대로 옮긴 값이라, 고시가 개정되면 이 값들도 함께 갱신해야 한다.
+const INDUSTRIAL_ACCIDENT_WAGE_BASE = 2_401_300 // 산재보험 고시금액(원)
+const INDUSTRIAL_ACCIDENT_RATE = 0.007 // 산재보험 사업장요율
+const EMPLOYMENT_INS_MIN1 = 850_000 // 고용보험 가입 최저한1(월보수 기준, 미만이면 미가입)
+const EMPLOYMENT_INS_MIN2 = 1_330_000 // 고용보험 부과 최저한2(월보수가 이보다 작아도 이 금액으로 부과)
+const EMPLOYMENT_INS_RATE = 0.018 // 고용보험 특고요율
+const NECESSARY_EXPENSE_RATE = 0.25 // 사업소득 필요경비율(고용보험 월보수 산정에만 쓰임, 소득세 계산에는 미적용)
+
+// 엑셀 ROUNDDOWN(x, -1)과 동일: 10원 단위 절사(음수 없는 금액 전제).
+function roundDownTens(x: number) {
+  return Math.floor(x / 10) * 10
+}
+
 const ZERO_STMT = {
   recruit_first: 0,
   recruit_installment: 0,
@@ -277,16 +292,66 @@ export default function Statement() {
         autoAmt += amount
       }
     }
-    return {
-      recruit_first: Math.round(recruitFirst),
-      recruit_installment: Math.round(recruitInstallment),
-      maintain: Math.round(maintainAmt),
-      clawback_revive: Math.round(clawbackRevive),
-      general: Math.round(generalAmt),
-      auto: Math.round(autoAmt),
-      general_performance: Math.round(generalPerformanceCommission * (target.general_performance_rate || 0)),
+    const recruit_first = Math.round(recruitFirst)
+    const recruit_installment = Math.round(recruitInstallment)
+    const maintain = Math.round(maintainAmt)
+    const clawback_revive = Math.round(clawbackRevive)
+    const general = Math.round(generalAmt)
+    const auto = Math.round(autoAmt)
+    const general_performance = Math.round(generalPerformanceCommission * (target.general_performance_rate || 0))
+
+    // 산재보험/고용보험/소득세/주민세는 사업소득자(본사 소속이 아닌 모든 담당자 — 위촉직 설계사는
+    // 물론 지사장/본부장/지점관리자도 동일하게 처리)만 대상이다. 본사(org_id='hq') 소속 담당자·
+    // 관리자만 임금명세서(별도 메뉴)로 급여소득 처리하므로 여기서는 건드리지 않는다.
+    // 세전지급액(과세소득합계)은 이번 자동계산으로 채워질 급여명세 항목들의 합("① 합계"와 동일한
+    // 구성) — 자동계산 대상이 아닌 기타 항목(관리수수료·수금수수료·개인시책·법인시책·기타시상)은
+    // 현재 입력된 값을 그대로 더한다.
+    const isBusinessIncomeAgent = target.org_id !== 'hq'
+    let taxFields: Partial<StmtFields> = {}
+    if (isBusinessIncomeAgent) {
+      const taxable_income =
+        recruit_first +
+        recruit_installment +
+        maintain +
+        clawback_revive +
+        general +
+        auto +
+        general_performance +
+        (stmt.mgmt_fee || 0) +
+        (stmt.collection_fee || 0) +
+        (stmt.personal_incentive || 0) +
+        (stmt.corporate_incentive || 0) +
+        (stmt.other_incentive || 0)
+      const industrial_accident_ins = roundDownTens((INDUSTRIAL_ACCIDENT_WAGE_BASE * INDUSTRIAL_ACCIDENT_RATE) / 2)
+      const monthlyPay = taxable_income - Math.trunc(taxable_income * NECESSARY_EXPENSE_RATE)
+      const employment_ins =
+        monthlyPay < EMPLOYMENT_INS_MIN1
+          ? 0
+          : roundDownTens((Math.max(monthlyPay, EMPLOYMENT_INS_MIN2) * EMPLOYMENT_INS_RATE) / 2)
+      const income_tax = taxable_income <= 33330 ? 0 : roundDownTens(taxable_income * 0.03)
+      const resident_tax = roundDownTens(income_tax * 0.1)
+      taxFields = { taxable_income, industrial_accident_ins, employment_ins, income_tax, resident_tax }
     }
-  }, [scopedContracts, target])
+
+    return {
+      recruit_first,
+      recruit_installment,
+      maintain,
+      clawback_revive,
+      general,
+      auto,
+      general_performance,
+      ...taxFields,
+    }
+  }, [
+    scopedContracts,
+    target,
+    stmt.mgmt_fee,
+    stmt.collection_fee,
+    stmt.personal_incentive,
+    stmt.corporate_incentive,
+    stmt.other_incentive,
+  ])
 
   function applyAutoCalc() {
     if (!autoCalc) return
@@ -583,7 +648,7 @@ export default function Statement() {
                         type="button"
                         onClick={applyAutoCalc}
                         disabled={!autoCalc}
-                        title="건별수수료 × 지급률로 모집초회/모집분급/유지/환수·부활/일반/자동차를 자동 계산해 채웁니다. 일반성과는 일반 계약의 성과수수료 합 × 개별 성과비율로 함께 계산됩니다. 관리수수료·수금수수료는 대상이 아닙니다."
+                        title="건별수수료 × 지급률로 모집초회/모집분급/유지/환수·부활/일반/자동차를 자동 계산해 채웁니다. 일반성과는 일반 계약의 성과수수료 합 × 개별 성과비율로 함께 계산됩니다. 본사 소속이 아닌 사업소득자(위촉직 설계사, 지사장/본부장/지점관리자 등)는 과세소득합계·산재보험·고용보험·소득세·주민세도 고시금액 기준으로 함께 계산됩니다. 관리수수료·수금수수료는 대상이 아닙니다."
                         className="text-[11px] text-indigo-600 hover:underline disabled:opacity-40 disabled:no-underline"
                       >
                         지급률 자동계산
