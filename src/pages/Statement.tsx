@@ -597,7 +597,7 @@ export default function Statement() {
                       <th className="text-left px-3 py-1.5">보험시기</th>
                       <th className="text-right px-3 py-1.5">보험료</th>
                       <th className="text-right px-3 py-1.5">수수료(지급률 적용)</th>
-                      {canSeeGeneralPerformance && <th className="text-right px-3 py-1.5">성과수수료</th>}
+                      {canSeeGeneralPerformance && <th className="text-right px-3 py-1.5">성과수수료(비율 적용)</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -625,7 +625,9 @@ export default function Statement() {
                         </td>
                         {canSeeGeneralPerformance && (
                           <td className="px-3 py-1.5 text-right">
-                            {Math.round(c.performance_commission).toLocaleString('ko-KR')}
+                            {Math.round(c.performance_commission * (target.general_performance_rate || 0)).toLocaleString(
+                              'ko-KR',
+                            )}
                           </td>
                         )}
                       </tr>
