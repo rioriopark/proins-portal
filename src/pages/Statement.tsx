@@ -215,19 +215,21 @@ export default function Statement() {
     [contracts, contractMonth],
   )
 
-  // "적용된 계약 내역": 담당자가 본인 수수료명세서에 어떤 계약이 반영됐는지 직접 확인할 수 있게,
-  // 업적현황과 동일한 기준(수수료 0원 트래킹용 행 제외)으로 개별 계약을 나열한다.
+  // "적용된 계약 내역": 담당자가 본인 수수료명세서에 어떤 계약이 반영됐는지 직접 확인할 수 있게
+  // 보여주되, 업적현황(계약월/receipt_date 기준)과 달리 계약관리와 동일하게 정산년월
+  // (contracts.month, 지급월) 기준으로 나열한다 — 관리자가 계약관리에서 정산년월을 직접
+  // 고쳐둔 경우 그 값을 그대로 따른다.
   const contractListRows = useMemo(
     () =>
-      scopedContracts
-        .filter((c) => c.commission !== 0)
+      contracts
+        .filter((c) => c.month === month && c.commission !== 0)
         .slice()
         .sort((a, b) => {
           const byCategory = CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category)
           if (byCategory !== 0) return byCategory
           return (b.receipt_date ?? '').localeCompare(a.receipt_date ?? '')
         }),
-    [scopedContracts],
+    [contracts, month],
   )
 
   // 수수료 0원 건(계속 확정 전 등, 아직 실적으로 잡히지 않는 트래킹용 행)은 계약관리 화면과
@@ -580,7 +582,7 @@ export default function Statement() {
               <span className="inline-block w-3 text-slate-400">{contractListOpen ? '▾' : '▸'}</span>
               <span className="font-semibold text-sm text-slate-700">적용된 계약 내역</span>
               <span className="text-xs text-slate-400">
-                ({contractListRows.length}건, {contractMonth} 계약월 기준)
+                ({contractListRows.length}건, {month} 정산년월 기준)
               </span>
             </button>
             {contractListOpen && (
