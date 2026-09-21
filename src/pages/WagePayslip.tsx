@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import type { Profile, WageCalcNote, WageStatement } from '../lib/types'
+import type { Profile, WageCalcNote, WageCustomDeduction, WageStatement } from '../lib/types'
 
 function thisMonth() {
   const d = new Date()
@@ -31,6 +31,7 @@ const ZERO: Omit<WageStatement, 'id' | 'profile_id' | 'month' | 'updated_at'> = 
   local_income_tax: 0,
   agri_tax: 0,
   calc_notes: [],
+  custom_deductions: [],
 }
 type Fields = typeof ZERO
 
@@ -102,7 +103,8 @@ export default function WagePayslip() {
   }, [targetId, month, staff, profile])
 
   const payTotal = PAY_SUM_FIELDS.reduce((s, k) => s + Number(form[k] || 0), 0)
-  const deductionTotal = DEDUCTION_SUM_FIELDS.reduce((s, k) => s + Number(form[k] || 0), 0)
+  const customDeductionTotal = form.custom_deductions.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+  const deductionTotal = DEDUCTION_SUM_FIELDS.reduce((s, k) => s + Number(form[k] || 0), 0) + customDeductionTotal
   const netPay = payTotal - deductionTotal
 
   function setNum(key: keyof Fields, value: number) {
@@ -116,6 +118,19 @@ export default function WagePayslip() {
   }
   function updateNotes(rows: WageCalcNote[]) {
     setForm((f) => ({ ...f, calc_notes: rows }))
+  }
+
+  function updateCustomDeductions(rows: WageCustomDeduction[]) {
+    setForm((f) => ({ ...f, custom_deductions: rows }))
+  }
+  function addCustomDeduction() {
+    updateCustomDeductions([...form.custom_deductions, { label: '', amount: '' }])
+  }
+  function updateCustomDeduction(i: number, key: keyof WageCustomDeduction, value: string) {
+    updateCustomDeductions(form.custom_deductions.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)))
+  }
+  function removeCustomDeduction(i: number) {
+    updateCustomDeductions(form.custom_deductions.filter((_, idx) => idx !== i))
   }
 
   async function save() {
@@ -311,6 +326,49 @@ export default function WagePayslip() {
                 {DEDUCTION_FIELDS.map(([k, label]) => (
                   <NumberField key={k} k={k} label={label} />
                 ))}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-semibold text-slate-400">추가 공제 항목</p>
+                    {canEdit && (
+                      <button type="button" onClick={addCustomDeduction} className="text-xs text-slate-500 hover:underline">
+                        + 항목 추가
+                      </button>
+                    )}
+                  </div>
+                  {form.custom_deductions.length === 0 && (
+                    <p className="text-xs text-slate-400">추가된 공제 항목이 없습니다.</p>
+                  )}
+                  <div className="space-y-1.5">
+                    {form.custom_deductions.map((row, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <input
+                          placeholder="항목명"
+                          disabled={!canEdit}
+                          value={row.label}
+                          onChange={(e) => updateCustomDeduction(i, 'label', e.target.value)}
+                          className="flex-1 border border-slate-200 rounded px-2 py-1 text-sm disabled:bg-slate-50"
+                        />
+                        <input
+                          type="number"
+                          placeholder="금액"
+                          disabled={!canEdit}
+                          value={row.amount}
+                          onChange={(e) => updateCustomDeduction(i, 'amount', e.target.value)}
+                          className="w-28 border border-slate-200 rounded px-2 py-1 text-sm text-right disabled:bg-slate-50"
+                        />
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => removeCustomDeduction(i)}
+                            className="text-slate-400 hover:text-red-500 text-sm px-1"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-semibold">
                   <span>공제액 계</span>
                   <span className="text-rose-600">{deductionTotal.toLocaleString('ko-KR')} 원</span>

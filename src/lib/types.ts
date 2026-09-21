@@ -256,6 +256,12 @@ export interface WageCalcNote {
   amount: string
 }
 
+// 임금명세서 공제: 정해진 12개 항목 외에 필요할 때마다 자유롭게 추가하는 항목.
+export interface WageCustomDeduction {
+  label: string
+  amount: string
+}
+
 export interface WageStatement {
   id: string
   profile_id: string | null
@@ -282,6 +288,7 @@ export interface WageStatement {
   local_income_tax: number
   agri_tax: number
   calc_notes: WageCalcNote[]
+  custom_deductions: WageCustomDeduction[]
   updated_at: string
 }
 
