@@ -86,6 +86,8 @@ const OTHER_DEDUCTION_FIELDS: [keyof StmtFields, string][] = [
   ['unit_cost', '사업단운영비'],
 ]
 
+const CATEGORY_ORDER: ContractCategory[] = ['장기', '일반', '자동차']
+
 const DEDUCTION_SUM_FIELDS: (keyof StmtFields)[] = [
   'industrial_accident_ins',
   'employment_ins',
@@ -124,6 +126,7 @@ export default function Statement() {
   const [target, setTarget] = useState<Profile | null>(profile)
   const [stmt, setStmt] = useState<StmtFields>(ZERO_STMT)
   const [saving, setSaving] = useState(false)
+  const [contractListOpen, setContractListOpen] = useState(false)
 
   const canEdit = can('statement')
   // 위촉직 설계사(본사 소속이 아닌 agent)는 직급/관리 조직에 속하지 않아 직급수수료(관리수수료·수금수수료)와
@@ -195,6 +198,21 @@ export default function Statement() {
   const scopedContracts = useMemo(
     () => contracts.filter((c) => contractMonthOf(c) === contractMonth),
     [contracts, contractMonth],
+  )
+
+  // "적용된 계약 내역": 담당자가 본인 수수료명세서에 어떤 계약이 반영됐는지 직접 확인할 수 있게,
+  // 업적현황과 동일한 기준(수수료 0원 트래킹용 행 제외)으로 개별 계약을 나열한다.
+  const contractListRows = useMemo(
+    () =>
+      scopedContracts
+        .filter((c) => c.commission !== 0)
+        .slice()
+        .sort((a, b) => {
+          const byCategory = CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category)
+          if (byCategory !== 0) return byCategory
+          return (b.receipt_date ?? '').localeCompare(a.receipt_date ?? '')
+        }),
+    [scopedContracts],
   )
 
   // 수수료 0원 건(계속 확정 전 등, 아직 실적으로 잡히지 않는 트래킹용 행)은 계약관리 화면과
@@ -486,6 +504,71 @@ export default function Statement() {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setContractListOpen((v) => !v)}
+              className="w-full flex items-center gap-1.5 bg-slate-100 px-3 py-2 text-left hover:bg-slate-200 rounded-t-md"
+            >
+              <span className="inline-block w-3 text-slate-400">{contractListOpen ? '▾' : '▸'}</span>
+              <span className="font-semibold text-sm text-slate-700">적용된 계약 내역</span>
+              <span className="text-xs text-slate-400">
+                ({contractListRows.length}건, {contractMonth} 계약월 기준)
+              </span>
+            </button>
+            {contractListOpen && (
+              <div className="overflow-x-auto border border-t-0 border-slate-100 rounded-b-md">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs text-slate-500">
+                    <tr>
+                      <th className="text-left px-3 py-1.5">보험사</th>
+                      <th className="text-left px-3 py-1.5">증권번호</th>
+                      <th className="text-left px-3 py-1.5">상품명</th>
+                      <th className="text-left px-3 py-1.5">계약자명</th>
+                      <th className="text-left px-3 py-1.5">종목</th>
+                      <th className="text-left px-3 py-1.5">구분</th>
+                      <th className="text-left px-3 py-1.5">보험시기</th>
+                      <th className="text-right px-3 py-1.5">보험료</th>
+                      <th className="text-right px-3 py-1.5">수수료(지급률 적용)</th>
+                      {canSeeGeneralPerformance && <th className="text-right px-3 py-1.5">성과수수료</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {contractListRows.length === 0 && (
+                      <tr>
+                        <td colSpan={canSeeGeneralPerformance ? 10 : 9} className="px-3 py-3 text-center text-slate-400">
+                          반영된 계약이 없습니다.
+                        </td>
+                      </tr>
+                    )}
+                    {contractListRows.map((c) => (
+                      <tr key={c.id} className="border-t border-slate-50">
+                        <td className="px-3 py-1.5">{c.company}</td>
+                        <td className="px-3 py-1.5">{c.policy_no ?? '-'}</td>
+                        <td className="px-3 py-1.5">{c.product_name || '-'}</td>
+                        <td className="px-3 py-1.5">{c.customer_name}</td>
+                        <td className="px-3 py-1.5">{c.category}</td>
+                        <td className="px-3 py-1.5">{c.type}</td>
+                        <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
+                        <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
+                        <td className="px-3 py-1.5 text-right">
+                          {Math.round(
+                            c.commission * (c.category === '장기' ? target.rate_long : target.rate_general),
+                          ).toLocaleString('ko-KR')}
+                        </td>
+                        {canSeeGeneralPerformance && (
+                          <td className="px-3 py-1.5 text-right">
+                            {Math.round(c.performance_commission).toLocaleString('ko-KR')}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
