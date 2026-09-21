@@ -746,11 +746,12 @@ export default function Contracts() {
     for (const c of contracts) {
       if (c.is_preliminary) continue
       if (c.policy_no?.trim()) {
-        // 자동확정(auto_confirm_preliminary_contracts)이 보험사+증권번호로 매칭하는 것과
-        // 기준을 맞춘다 — 증권번호만으로 매칭하면 보험사가 다른데 우연히 같은 증권번호인
-        // 확정 계약을 "매칭됨"으로 잘못 보여줘서, 자동 확정을 눌러도 지워지지 않는 것처럼
-        // 보이는 문제가 있었다.
-        const key = `${c.company.trim()}|${c.policy_no.trim()}`
+        // 자동확정(auto_confirm_preliminary_contracts)이 보험사+증권번호+계약일+보험료로
+        // 매칭하는 것과 기준을 맞춘다. 종합보험처럼 같은 증권번호 안에 재물/배상 등 섹션별로
+        // 보험료가 다른 확정 계약이 여러 건 있을 수 있어서, 증권번호(+보험사)만으로는 예비계약이
+        // 실제로는 다른 섹션 건인데도 "매칭됨"으로 잘못 보여 자동확정 때 안 지워지거나, 반대로
+        // 상관없는 확정 건에 매칭돼 지워지는 문제가 있었다.
+        const key = `${c.company.trim()}|${c.policy_no.trim()}|${c.receipt_date ?? ''}|${c.premium}`
         if (!officialByPolicyNo.has(key)) officialByPolicyNo.set(key, [])
         officialByPolicyNo.get(key)!.push(c)
       }
@@ -777,7 +778,9 @@ export default function Contracts() {
       })
       .map((prelim) => {
         const byPolicyNo = prelim.policy_no?.trim()
-          ? officialByPolicyNo.get(`${prelim.company.trim()}|${prelim.policy_no.trim()}`)
+          ? officialByPolicyNo.get(
+              `${prelim.company.trim()}|${prelim.policy_no.trim()}|${prelim.receipt_date ?? ''}|${prelim.premium}`,
+            )
           : undefined
         if (byPolicyNo?.length) return { prelim, matches: byPolicyNo }
         // 갱신은 항상 새 증권번호를 입력받으므로 증권번호로만 매칭한다. 이름(담당자+보험사+계약자명) 대체
