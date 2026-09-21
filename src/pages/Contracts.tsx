@@ -921,6 +921,70 @@ export default function Contracts() {
     else load()
   }
 
+  // 확정 계약 건별 수정(본사관리자 전용): 보험사 파일 업로드 과정에서 잘못 들어온 값을
+  // 증권번호·상품명·계약자명 등 개별 항목 단위로 바로잡을 수 있게 한다. 건별수수료는
+  // 지급률 적용 전 원본 값을 그대로 수정한다(표시는 지급률이 곱해진 값).
+  const [editingContractId, setEditingContractId] = useState<string | null>(null)
+  const [contractEditForm, setContractEditForm] = useState({
+    policy_no: '',
+    product_name: '',
+    customer_name: '',
+    insured_name: '',
+    category: '일반' as ContractCategory,
+    duration_type: '',
+    receipt_date: '',
+    expiry_date: '',
+    premium: 0,
+    commission: 0,
+    performance_commission: 0,
+  })
+
+  function startEditContract(c: Contract) {
+    setEditingContractId(c.id)
+    setContractEditForm({
+      policy_no: c.policy_no ?? '',
+      product_name: c.product_name ?? '',
+      customer_name: c.customer_name,
+      insured_name: c.insured_name ?? '',
+      category: c.category,
+      duration_type: c.duration_type ?? '',
+      receipt_date: c.receipt_date ?? '',
+      expiry_date: c.expiry_date ?? '',
+      premium: c.premium,
+      commission: c.commission,
+      performance_commission: c.performance_commission,
+    })
+  }
+
+  function cancelEditContract() {
+    setEditingContractId(null)
+  }
+
+  async function saveContractEdit(contractId: string) {
+    const { error } = await supabase
+      .from('contracts')
+      .update({
+        policy_no: contractEditForm.policy_no.trim() || null,
+        product_name: contractEditForm.product_name,
+        customer_name: contractEditForm.customer_name,
+        insured_name: contractEditForm.insured_name.trim() || null,
+        category: contractEditForm.category,
+        duration_type: contractEditForm.duration_type || null,
+        receipt_date: contractEditForm.receipt_date || null,
+        expiry_date: contractEditForm.expiry_date || null,
+        premium: contractEditForm.premium,
+        commission: contractEditForm.commission,
+        performance_commission: contractEditForm.performance_commission,
+      })
+      .eq('id', contractId)
+    if (error) {
+      alert(error.code === '23505' ? '이미 등록된 증권번호입니다.' : '수정 실패: ' + error.message)
+      return
+    }
+    setEditingContractId(null)
+    load()
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold text-slate-800">계약관리</h1>
@@ -1854,79 +1918,230 @@ export default function Contracts() {
                                   <tbody>
                                     {cg.rows.map((c) => {
                                       const rate = rateFor(c, agentInfo(c))
+                                      const isEditing = canReassign && editingContractId === c.id
                                       return (
                                         <tr key={c.id} className="border-t border-slate-100">
-                                          <td className="px-3 py-1.5">{c.policy_no ?? '-'}</td>
-                                          <td className="px-3 py-1.5">{c.product_name}</td>
                                           <td className="px-3 py-1.5">
-                                            {c.customer_name}
-                                            {c.type === '비례공동' && c.co_insurers && c.co_insurers.length > 0 && (
-                                              <span
-                                                className="ml-1 inline-block text-[10px] font-semibold text-purple-600 bg-purple-50 px-1 py-0.5 rounded cursor-help"
-                                                title={c.co_insurers.map((s) => `${s.name} ${s.ratio}%`).join(' / ')}
-                                              >
-                                                분배 {c.co_insurers.length}
-                                              </span>
-                                            )}
-                                            {c.type === '변경' && (
-                                              <span className="ml-1 inline-block text-[10px] font-semibold text-amber-600 bg-amber-50 px-1 py-0.5 rounded">
-                                                변경{c.change_reason ? ` · ${c.change_reason}` : ''}
-                                              </span>
+                                            {isEditing ? (
+                                              <input
+                                                value={contractEditForm.policy_no}
+                                                onChange={(e) =>
+                                                  setContractEditForm((f) => ({ ...f, policy_no: e.target.value }))
+                                                }
+                                                className="border border-slate-200 rounded px-1.5 py-1 w-28"
+                                              />
+                                            ) : (
+                                              (c.policy_no ?? '-')
                                             )}
                                           </td>
-                                          <td className="px-3 py-1.5">{c.insured_name ?? '-'}</td>
                                           <td className="px-3 py-1.5">
-                                            {c.category}
-                                            {c.duration_type && <span className="text-slate-400"> · {c.duration_type}</span>}
+                                            {isEditing ? (
+                                              <input
+                                                value={contractEditForm.product_name}
+                                                onChange={(e) =>
+                                                  setContractEditForm((f) => ({ ...f, product_name: e.target.value }))
+                                                }
+                                                className="border border-slate-200 rounded px-1.5 py-1 w-28"
+                                              />
+                                            ) : (
+                                              c.product_name
+                                            )}
                                           </td>
                                           <td className="px-3 py-1.5">
-                                            <div className="flex items-center gap-1">
-                                              <span>{c.receipt_date ?? '-'}</span>
-                                              <details className="relative">
-                                                <summary
-                                                  className="relative list-none cursor-pointer leading-none text-slate-300"
-                                                  title={c.memo || '메모 추가'}
-                                                >
-                                                  📝
-                                                  {c.memo && (
-                                                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
-                                                  )}
-                                                </summary>
-                                                <div className="absolute left-full top-0 ml-1 z-10 bg-white border border-slate-200 rounded shadow-md p-1.5 space-y-1">
-                                                  <textarea
-                                                    autoFocus
-                                                    defaultValue={c.memo ?? ''}
-                                                    onBlur={(e) => {
-                                                      if (e.target.value !== (c.memo ?? '')) updateMemo(c.id, e.target.value)
-                                                    }}
-                                                    placeholder="메모"
-                                                    rows={3}
-                                                    className="border border-slate-200 rounded px-1.5 py-1 text-xs w-40 text-left resize overflow-auto block"
-                                                  />
-                                                  <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                      updateMemo(c.id, '')
-                                                      e.currentTarget.closest('details')?.removeAttribute('open')
-                                                    }}
-                                                    className="text-[10px] text-rose-500 hover:underline"
+                                            {isEditing ? (
+                                              <input
+                                                value={contractEditForm.customer_name}
+                                                onChange={(e) =>
+                                                  setContractEditForm((f) => ({ ...f, customer_name: e.target.value }))
+                                                }
+                                                className="border border-slate-200 rounded px-1.5 py-1 w-28"
+                                              />
+                                            ) : (
+                                              <>
+                                                {c.customer_name}
+                                                {c.type === '비례공동' && c.co_insurers && c.co_insurers.length > 0 && (
+                                                  <span
+                                                    className="ml-1 inline-block text-[10px] font-semibold text-purple-600 bg-purple-50 px-1 py-0.5 rounded cursor-help"
+                                                    title={c.co_insurers.map((s) => `${s.name} ${s.ratio}%`).join(' / ')}
                                                   >
-                                                    메모 삭제
-                                                  </button>
-                                                </div>
-                                              </details>
-                                            </div>
+                                                    분배 {c.co_insurers.length}
+                                                  </span>
+                                                )}
+                                                {c.type === '변경' && (
+                                                  <span className="ml-1 inline-block text-[10px] font-semibold text-amber-600 bg-amber-50 px-1 py-0.5 rounded">
+                                                    변경{c.change_reason ? ` · ${c.change_reason}` : ''}
+                                                  </span>
+                                                )}
+                                              </>
+                                            )}
                                           </td>
-                                          <td className="px-3 py-1.5">{c.expiry_date ?? '-'}</td>
-                                          <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
+                                          <td className="px-3 py-1.5">
+                                            {isEditing ? (
+                                              <input
+                                                value={contractEditForm.insured_name}
+                                                onChange={(e) =>
+                                                  setContractEditForm((f) => ({ ...f, insured_name: e.target.value }))
+                                                }
+                                                className="border border-slate-200 rounded px-1.5 py-1 w-24"
+                                              />
+                                            ) : (
+                                              (c.insured_name ?? '-')
+                                            )}
+                                          </td>
+                                          <td className="px-3 py-1.5">
+                                            {isEditing ? (
+                                              <div className="flex items-center gap-1">
+                                                <select
+                                                  value={contractEditForm.category}
+                                                  onChange={(e) =>
+                                                    setContractEditForm((f) => ({
+                                                      ...f,
+                                                      category: e.target.value as ContractCategory,
+                                                    }))
+                                                  }
+                                                  className="border border-slate-200 rounded px-1 py-1 bg-white"
+                                                >
+                                                  {CATEGORIES.map((cat) => (
+                                                    <option key={cat} value={cat}>
+                                                      {cat}
+                                                    </option>
+                                                  ))}
+                                                </select>
+                                                <input
+                                                  value={contractEditForm.duration_type}
+                                                  onChange={(e) =>
+                                                    setContractEditForm((f) => ({ ...f, duration_type: e.target.value }))
+                                                  }
+                                                  placeholder="기간구분"
+                                                  className="border border-slate-200 rounded px-1.5 py-1 w-16"
+                                                />
+                                              </div>
+                                            ) : (
+                                              <>
+                                                {c.category}
+                                                {c.duration_type && (
+                                                  <span className="text-slate-400"> · {c.duration_type}</span>
+                                                )}
+                                              </>
+                                            )}
+                                          </td>
+                                          <td className="px-3 py-1.5">
+                                            {isEditing ? (
+                                              <input
+                                                type="date"
+                                                value={contractEditForm.receipt_date}
+                                                onChange={(e) =>
+                                                  setContractEditForm((f) => ({ ...f, receipt_date: e.target.value }))
+                                                }
+                                                className="border border-slate-200 rounded px-1.5 py-1"
+                                              />
+                                            ) : (
+                                              <div className="flex items-center gap-1">
+                                                <span>{c.receipt_date ?? '-'}</span>
+                                                <details className="relative">
+                                                  <summary
+                                                    className="relative list-none cursor-pointer leading-none text-slate-300"
+                                                    title={c.memo || '메모 추가'}
+                                                  >
+                                                    📝
+                                                    {c.memo && (
+                                                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                                    )}
+                                                  </summary>
+                                                  <div className="absolute left-full top-0 ml-1 z-10 bg-white border border-slate-200 rounded shadow-md p-1.5 space-y-1">
+                                                    <textarea
+                                                      autoFocus
+                                                      defaultValue={c.memo ?? ''}
+                                                      onBlur={(e) => {
+                                                        if (e.target.value !== (c.memo ?? '')) updateMemo(c.id, e.target.value)
+                                                      }}
+                                                      placeholder="메모"
+                                                      rows={3}
+                                                      className="border border-slate-200 rounded px-1.5 py-1 text-xs w-40 text-left resize overflow-auto block"
+                                                    />
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => {
+                                                        updateMemo(c.id, '')
+                                                        e.currentTarget.closest('details')?.removeAttribute('open')
+                                                      }}
+                                                      className="text-[10px] text-rose-500 hover:underline"
+                                                    >
+                                                      메모 삭제
+                                                    </button>
+                                                  </div>
+                                                </details>
+                                              </div>
+                                            )}
+                                          </td>
+                                          <td className="px-3 py-1.5">
+                                            {isEditing ? (
+                                              <input
+                                                type="date"
+                                                value={contractEditForm.expiry_date}
+                                                onChange={(e) =>
+                                                  setContractEditForm((f) => ({ ...f, expiry_date: e.target.value }))
+                                                }
+                                                className="border border-slate-200 rounded px-1.5 py-1"
+                                              />
+                                            ) : (
+                                              (c.expiry_date ?? '-')
+                                            )}
+                                          </td>
+                                          <td className="px-3 py-1.5 text-right">
+                                            {isEditing ? (
+                                              <input
+                                                type="number"
+                                                value={contractEditForm.premium}
+                                                onChange={(e) =>
+                                                  setContractEditForm((f) => ({ ...f, premium: Number(e.target.value) }))
+                                                }
+                                                className="border border-slate-200 rounded px-1.5 py-1 w-24 text-right"
+                                              />
+                                            ) : (
+                                              c.premium.toLocaleString('ko-KR')
+                                            )}
+                                          </td>
                                           {!isHqStaff && (
                                             <td className="px-3 py-1.5 text-right">
-                                              {Math.round(c.commission * rate).toLocaleString('ko-KR')}
+                                              {isEditing ? (
+                                                <div>
+                                                  <input
+                                                    type="number"
+                                                    title="지급률 적용 전 원본 건별수수료"
+                                                    value={contractEditForm.commission}
+                                                    onChange={(e) =>
+                                                      setContractEditForm((f) => ({
+                                                        ...f,
+                                                        commission: Number(e.target.value),
+                                                      }))
+                                                    }
+                                                    className="border border-slate-200 rounded px-1.5 py-1 w-24 text-right"
+                                                  />
+                                                  <div className="text-[9px] text-slate-400 text-right">지급률 적용 전</div>
+                                                </div>
+                                              ) : (
+                                                Math.round(c.commission * rate).toLocaleString('ko-KR')
+                                              )}
                                             </td>
                                           )}
                                           {canSeePerformanceCommission && (
                                             <td className="px-3 py-1.5 text-right">
-                                              {Math.round(c.performance_commission).toLocaleString('ko-KR')}
+                                              {isEditing ? (
+                                                <input
+                                                  type="number"
+                                                  value={contractEditForm.performance_commission}
+                                                  onChange={(e) =>
+                                                    setContractEditForm((f) => ({
+                                                      ...f,
+                                                      performance_commission: Number(e.target.value),
+                                                    }))
+                                                  }
+                                                  className="border border-slate-200 rounded px-1.5 py-1 w-24 text-right"
+                                                />
+                                              ) : (
+                                                Math.round(c.performance_commission).toLocaleString('ko-KR')
+                                              )}
                                             </td>
                                           )}
                                           {canReassign && (
@@ -1934,7 +2149,8 @@ export default function Contracts() {
                                               <select
                                                 value={currentAgentValue(c)}
                                                 onChange={(e) => reassignAgent(c.id, e.target.value)}
-                                                className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white"
+                                                disabled={isEditing}
+                                                className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white disabled:bg-slate-50 disabled:text-slate-400"
                                               >
                                                 {agentOptions.map((o) => (
                                                   <option key={o.value} value={o.value}>
@@ -1945,14 +2161,44 @@ export default function Contracts() {
                                             </td>
                                           )}
                                           {canReassign && (
-                                            <td className="px-3 py-1.5">
-                                              <button
-                                                type="button"
-                                                onClick={() => deleteContract(c.id)}
-                                                className="text-rose-500 hover:underline"
-                                              >
-                                                삭제
-                                              </button>
+                                            <td className="px-3 py-1.5 whitespace-nowrap">
+                                              {isEditing ? (
+                                                <>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => saveContractEdit(c.id)}
+                                                    className="text-emerald-600 hover:underline"
+                                                  >
+                                                    저장
+                                                  </button>
+                                                  <span className="text-slate-300 mx-1">/</span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={cancelEditContract}
+                                                    className="text-slate-400 hover:underline"
+                                                  >
+                                                    취소
+                                                  </button>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => startEditContract(c)}
+                                                    className="text-indigo-600 hover:underline"
+                                                  >
+                                                    수정
+                                                  </button>
+                                                  <span className="text-slate-300 mx-1">/</span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => deleteContract(c.id)}
+                                                    className="text-rose-500 hover:underline"
+                                                  >
+                                                    삭제
+                                                  </button>
+                                                </>
+                                              )}
                                             </td>
                                           )}
                                         </tr>
