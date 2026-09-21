@@ -2,7 +2,15 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { toAuthEmail } from '../lib/id'
-import { MENU_OPTIONS, ROLE_LABEL, roleDisplayLabel, type Organization, type Profile, type Role } from '../lib/types'
+import {
+  MENU_OPTIONS,
+  ROLE_LABEL,
+  roleDisplayLabel,
+  STATEMENT_VIEW_OPTIONS,
+  type Organization,
+  type Profile,
+  type Role,
+} from '../lib/types'
 import { AGENT_GRADES as GRADE_SUGGESTIONS, agentCode, compareAgentCode } from '../lib/agentSort'
 
 const ROLES: Role[] = ['hq_admin', 'branch_admin', 'store_manager', 'agent']
@@ -707,6 +715,52 @@ export default function Orgs() {
                           {p.name} <span className="text-slate-400 text-xs">({p.email})</span>
                         </td>
                         {MENU_OPTIONS.map((m) => (
+                          <td key={m.key} className="text-center px-3 py-2">
+                            <input type="checkbox" checked={hasGrant(p.id, m.key)} onChange={() => toggleGrant(p.id, m.key)} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isHq && (
+        <div className="bg-white rounded-xl shadow p-5 space-y-3">
+          <div>
+            <h2 className="font-semibold text-sm">수수료명세서 예외 열람 권한</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              위촉직 설계사는 기본적으로 수수료명세서의 "일반성과" 시상 항목을 볼 수 없습니다(회사 정책). 특정
+              설계사에게만 예외적으로 열어주려면 아래에서 체크하세요.
+            </p>
+          </div>
+          {members.filter((p) => p.role === 'agent' && p.org_id !== 'hq').length === 0 ? (
+            <p className="text-sm text-slate-400 py-4 text-center">위촉직 설계사 계정이 없습니다.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-100 text-xs text-slate-600">
+                  <tr>
+                    <th className="text-left px-3 py-2">이름</th>
+                    {STATEMENT_VIEW_OPTIONS.map((m) => (
+                      <th key={m.key} className="text-center px-3 py-2">
+                        {m.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {members
+                    .filter((p) => p.role === 'agent' && p.org_id !== 'hq')
+                    .map((p) => (
+                      <tr key={p.id} className="border-t border-slate-100">
+                        <td className="px-3 py-2 font-medium whitespace-nowrap">
+                          {p.name} <span className="text-slate-400 text-xs">({p.email})</span>
+                        </td>
+                        {STATEMENT_VIEW_OPTIONS.map((m) => (
                           <td key={m.key} className="text-center px-3 py-2">
                             <input type="checkbox" checked={hasGrant(p.id, m.key)} onChange={() => toggleGrant(p.id, m.key)} />
                           </td>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import type { Contract, ContractCategory, ContractType, Profile } from '../lib/types'
+import { GENERAL_PERFORMANCE_VIEW_KEY, type Contract, type ContractCategory, type ContractType, type Profile } from '../lib/types'
 
 function thisMonth() {
   const d = new Date()
@@ -127,11 +127,27 @@ export default function Statement() {
 
   const canEdit = can('statement')
   // 위촉직 설계사(본사 소속이 아닌 agent)는 직급/관리 조직에 속하지 않아 직급수수료(관리수수료·수금수수료)와
-  // 법인 단위 시상(법인시책·일반성과) 대상이 아니므로 명세서에서 아예 보이지 않게 한다.
+  // 법인 단위 시상(법인시책) 대상이 아니므로 명세서에서 아예 보이지 않게 한다. "일반성과"도 기본적으로는
+  // 같은 이유로 숨기지만, 조직관리 화면에서 개별로 예외(view_general_performance)를 부여받은 설계사는 볼 수 있다.
   const isFieldAgent = target?.role === 'agent' && target?.org_id !== 'hq'
-  const visibleIncentiveFields = isFieldAgent
-    ? INCENTIVE_FIELDS.filter(([k]) => k !== 'corporate_incentive' && k !== 'general_performance')
-    : INCENTIVE_FIELDS
+  const [targetGrants, setTargetGrants] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    if (!target) {
+      setTargetGrants(new Set())
+      return
+    }
+    supabase
+      .from('menu_permissions')
+      .select('menu_key')
+      .eq('profile_id', target.id)
+      .then(({ data }) => setTargetGrants(new Set((data ?? []).map((g) => g.menu_key))))
+  }, [target])
+  const canSeeGeneralPerformance = !isFieldAgent || targetGrants.has(GENERAL_PERFORMANCE_VIEW_KEY)
+  const visibleIncentiveFields = INCENTIVE_FIELDS.filter(([k]) => {
+    if (k === 'corporate_incentive' && isFieldAgent) return false
+    if (k === 'general_performance' && !canSeeGeneralPerformance) return false
+    return true
+  })
 
   useEffect(() => {
     if (!profile) return

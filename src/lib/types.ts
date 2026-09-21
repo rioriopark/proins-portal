@@ -105,6 +105,14 @@ export const MENU_OPTIONS: { key: string; label: string }[] = [
   { key: 'wage_statement', label: '임금명세서' },
 ]
 
+// 위촉직 설계사는 회사 정책상 수수료명세서의 "일반성과" 시상 항목을 기본적으로 보지 못한다
+// (Statement.tsx의 isFieldAgent). menu_permissions 테이블을 그대로 재사용해, 특정 설계사에게만
+// 예외적으로 열어줄 때 쓰는 키 — MENU_OPTIONS(관리자급 수정권한)와는 성격이 달라 별도 목록으로 둔다.
+export const GENERAL_PERFORMANCE_VIEW_KEY = 'view_general_performance'
+export const STATEMENT_VIEW_OPTIONS: { key: string; label: string }[] = [
+  { key: GENERAL_PERFORMANCE_VIEW_KEY, label: '일반성과 시상 열람' },
+]
+
 // 보험사 마스터 목록: 본사(org_id='hq')만 이름/순서를 등록·수정할 수 있다.
 export interface Insurer {
   id: string
