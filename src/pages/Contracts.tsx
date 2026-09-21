@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import type { Contract, ContractCategory, ContractType, CoInsurerShare, Organization, Profile } from '../lib/types'
+import type { Contract, ContractCategory, ContractType, CoInsurerShare, Insurer, Organization, Profile } from '../lib/types'
 import { agentCode, compareAgentCode, compareByOrgGradeCode, ORG_TYPE_PRIORITY, topLevelOrgId } from '../lib/agentSort'
 
 const CATEGORIES: ContractCategory[] = ['장기', '일반', '자동차']
@@ -82,6 +82,7 @@ export default function Contracts() {
   const [agents, setAgents] = useState<Profile[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
   const [orgs, setOrgs] = useState<Organization[]>([])
+  const [insurers, setInsurers] = useState<Insurer[]>([])
   const [loading, setLoading] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState<'전체' | ContractCategory>('전체')
   const [typeFilter, setTypeFilter] = useState<'전체' | ContractType>('전체')
@@ -140,6 +141,7 @@ export default function Contracts() {
   const [openPrelimGroups, setOpenPrelimGroups] = useState<Set<string>>(new Set())
   const [editingPrelimId, setEditingPrelimId] = useState<string | null>(null)
   const [prelimEditForm, setPrelimEditForm] = useState({
+    company: '',
     policy_no: '',
     customer_name: '',
     premium: 0,
@@ -271,6 +273,10 @@ export default function Contracts() {
     setInvites(i ?? [])
     const { data: o } = await supabase.from('organizations').select('*')
     setOrgs(o ?? [])
+    // 신규계약/예비계약 수정 화면의 "보험사"를 자유 입력 대신 마스터 목록에서 고르게 해서,
+    // "삼성" vs "삼성화재"처럼 보험사 확정 계약과 표기가 달라 자동확정 매칭이 안 되는 문제를 막는다.
+    const { data: ins } = await supabase.from('insurers').select('*').order('sort_order')
+    setInsurers(ins ?? [])
     setLoading(false)
   }
 
@@ -897,6 +903,7 @@ export default function Contracts() {
   function startEditPrelim(prelim: Contract) {
     setEditingPrelimId(prelim.id)
     setPrelimEditForm({
+      company: prelim.company,
       policy_no: prelim.policy_no ?? '',
       customer_name: prelim.customer_name,
       premium: prelim.premium,
@@ -909,6 +916,7 @@ export default function Contracts() {
       new_policy_no: prelimEditForm.policy_no || null,
       new_customer_name: prelimEditForm.customer_name,
       new_premium: prelimEditForm.premium,
+      new_company: prelimEditForm.company,
     })
     if (error) {
       alert(error.code === '23505' ? '이미 등록된 증권번호입니다.' : '수정 실패: ' + error.message)
@@ -1109,12 +1117,19 @@ export default function Contracts() {
                 </div>
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">보험사</label>
-                  <input
+                  <select
                     required
                     value={form.company}
                     onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
-                    className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm"
-                  />
+                    className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white"
+                  >
+                    <option value="">선택</option>
+                    {insurers.map((ins) => (
+                      <option key={ins.id} value={ins.name}>
+                        {ins.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">증권번호</label>
@@ -1491,12 +1506,19 @@ export default function Contracts() {
                 <label className="block text-xs text-slate-500 mb-1">
                   보험사 <span className="text-rose-500">*</span>
                 </label>
-                <input
+                <select
                   required
                   value={selfForm.company}
                   onChange={(e) => setSelfForm((f) => ({ ...f, company: e.target.value }))}
-                  className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm"
-                />
+                  className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white"
+                >
+                  <option value="">선택</option>
+                  {insurers.map((ins) => (
+                    <option key={ins.id} value={ins.name}>
+                      {ins.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs text-slate-500 mb-1">
@@ -1645,7 +1667,26 @@ export default function Contracts() {
                                       const editing = matches.length === 0 && editingPrelimId === prelim.id
                                       return (
                                         <tr key={prelim.id} className="border-t border-slate-50">
-                                          <td className="px-4 py-2">{prelim.company}</td>
+                                          <td className="px-4 py-2">
+                                            {editing ? (
+                                              <select
+                                                value={prelimEditForm.company}
+                                                onChange={(e) =>
+                                                  setPrelimEditForm((f) => ({ ...f, company: e.target.value }))
+                                                }
+                                                className="border border-slate-300 rounded px-1.5 py-1 text-xs bg-white"
+                                              >
+                                                <option value="">선택</option>
+                                                {insurers.map((ins) => (
+                                                  <option key={ins.id} value={ins.name}>
+                                                    {ins.name}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            ) : (
+                                              prelim.company
+                                            )}
+                                          </td>
                                           <td className="px-4 py-2">
                                             <span
                                               className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${
