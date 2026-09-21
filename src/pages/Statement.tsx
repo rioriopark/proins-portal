@@ -144,6 +144,9 @@ export default function Statement() {
   const [contractListOpen, setContractListOpen] = useState(false)
 
   const canEdit = can('statement')
+  // 적용된 계약 내역에서 계약 자체를 건별로 수정/삭제하는 기능은 계약관리와 동일하게 본사관리자
+  // 전용이다(수수료명세서 편집 권한(canEdit)과는 별개 — 계약 원본 데이터를 건드리는 작업이라서).
+  const canEditContracts = profile?.role === 'hq_admin'
   // 위촉직 설계사(본사 소속이 아닌 agent)는 직급/관리 조직에 속하지 않아 직급수수료(관리수수료·수금수수료)와
   // 법인 단위 시상(법인시책) 대상이 아니므로 명세서에서 아예 보이지 않게 한다. "일반성과"도 기본적으로는
   // 같은 이유로 숨기지만, 조직관리 화면에서 개별로 예외(view_general_performance)를 부여받은 설계사는 볼 수 있다.
@@ -183,16 +186,19 @@ export default function Statement() {
     setAgentId(profile?.id ?? '')
   }, [profile])
 
+  // 계약관리 화면과 동일하게 지급월(month)이 아니라 실제 계약월(receipt_date)로 범위를 맞추기
+  // 위해, 지급월로 서버에서 미리 좁히지 않고 이 담당자의 계약 전체를 가져와 아래
+  // scopedContracts에서 클라이언트에서 걸러낸다. 적용된 계약 내역에서 건별 수정/삭제한 뒤
+  // 다시 불러올 때도 이 함수를 그대로 쓴다.
+  async function reloadContracts() {
+    if (!agentId) return
+    const { data } = await supabase.from('contracts').select('*').eq('agent_id', agentId)
+    setContracts(data ?? [])
+  }
+
   useEffect(() => {
     if (!agentId) return
-    // 계약관리 화면과 동일하게 지급월(month)이 아니라 실제 계약월(receipt_date)로 범위를 맞추기
-    // 위해, 지급월로 서버에서 미리 좁히지 않고 이 담당자의 계약 전체를 가져와 아래
-    // scopedContracts에서 클라이언트에서 걸러낸다.
-    supabase
-      .from('contracts')
-      .select('*')
-      .eq('agent_id', agentId)
-      .then(({ data }) => setContracts(data ?? []))
+    reloadContracts()
     supabase
       .from('statements')
       .select('*')
@@ -202,7 +208,82 @@ export default function Statement() {
       .then(({ data }) => setStmt(data ? { ...ZERO_STMT, ...data } : ZERO_STMT))
     if (agentId === profile?.id) setTarget(profile)
     else setTarget(agents.find((a) => a.id === agentId) ?? null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, month, agents, profile])
+
+  // 적용된 계약 내역 건별 수정(본사관리자 전용, 계약관리와 동일한 방식): 보험사 파일 업로드
+  // 과정에서 잘못 들어온 값을 바로잡을 수 있게 한다. 건별수수료는 지급률 적용 전 원본 값을
+  // 그대로 수정한다(표시는 지급률이 곱해진 값).
+  const [editingContractId, setEditingContractId] = useState<string | null>(null)
+  const [contractEditForm, setContractEditForm] = useState({
+    policy_no: '',
+    product_name: '',
+    customer_name: '',
+    category: '일반' as ContractCategory,
+    receipt_date: '',
+    premium: 0,
+    commission: 0,
+    performance_commission: 0,
+  })
+
+  function startEditContract(c: Contract) {
+    setEditingContractId(c.id)
+    setContractEditForm({
+      policy_no: c.policy_no ?? '',
+      product_name: c.product_name ?? '',
+      customer_name: c.customer_name,
+      category: c.category,
+      receipt_date: c.receipt_date ?? '',
+      premium: c.premium,
+      commission: c.commission,
+      performance_commission: c.performance_commission,
+    })
+  }
+
+  function cancelEditContract() {
+    setEditingContractId(null)
+  }
+
+  async function saveContractEdit(contractId: string) {
+    const { error } = await supabase
+      .from('contracts')
+      .update({
+        policy_no: contractEditForm.policy_no.trim() || null,
+        product_name: contractEditForm.product_name,
+        customer_name: contractEditForm.customer_name,
+        category: contractEditForm.category,
+        receipt_date: contractEditForm.receipt_date || null,
+        premium: contractEditForm.premium,
+        commission: contractEditForm.commission,
+        performance_commission: contractEditForm.performance_commission,
+      })
+      .eq('id', contractId)
+    if (error) {
+      alert(error.code === '23505' ? '이미 등록된 증권번호입니다.' : '수정 실패: ' + error.message)
+      return
+    }
+    setEditingContractId(null)
+    reloadContracts()
+  }
+
+  async function deleteContractRow(contractId: string) {
+    if (!confirm('이 계약을 삭제할까요? 되돌릴 수 없습니다.')) return
+    const { error } = await supabase.from('contracts').delete().eq('id', contractId)
+    if (error) {
+      // 23503 = FK 위반. 이 계약을 원 계약(prior_contract_id)으로 참조하는 "계약변경" 이력이
+      // 남아있으면 원 계약을 먼저 지울 수 없다(참조 무결성) — 계약관리와 동일한 안내.
+      if (error.code === '23503') {
+        alert(
+          '삭제 실패: 이 계약에 연결된 "계약변경" 이력이 있어 원 계약을 먼저 삭제할 수 없습니다.\n' +
+            '같은 증권번호로 등록된 변경 건(구분=변경)을 먼저 삭제한 뒤 다시 시도해주세요.',
+        )
+      } else {
+        alert('삭제 실패: ' + error.message)
+      }
+      return
+    }
+    reloadContracts()
+  }
 
   // 계약관리 화면과 동일하게 "월"은 지급월(month)이 아니라 실제 계약월(보험시기/receipt_date)
   // 기준이다 — 수수료가 익월 지급되는 보험사 파일은 지급월을 계약 다음 달로 적어 넣기 때문에,
@@ -600,40 +681,189 @@ export default function Statement() {
                       <th className="text-right px-3 py-1.5">보험료</th>
                       <th className="text-right px-3 py-1.5">수수료(지급률 적용)</th>
                       {canSeeGeneralPerformance && <th className="text-right px-3 py-1.5">성과수수료(비율 적용)</th>}
+                      {canEditContracts && <th className="px-3 py-1.5" />}
                     </tr>
                   </thead>
                   <tbody>
                     {contractListRows.length === 0 && (
                       <tr>
-                        <td colSpan={canSeeGeneralPerformance ? 10 : 9} className="px-3 py-3 text-center text-slate-400">
+                        <td
+                          colSpan={9 + (canSeeGeneralPerformance ? 1 : 0) + (canEditContracts ? 1 : 0)}
+                          className="px-3 py-3 text-center text-slate-400"
+                        >
                           반영된 계약이 없습니다.
                         </td>
                       </tr>
                     )}
-                    {contractListRows.map((c) => (
-                      <tr key={c.id} className="border-t border-slate-50">
-                        <td className="px-3 py-1.5">{c.company}</td>
-                        <td className="px-3 py-1.5">{c.policy_no ?? '-'}</td>
-                        <td className="px-3 py-1.5">{c.product_name || '-'}</td>
-                        <td className="px-3 py-1.5">{c.customer_name}</td>
-                        <td className="px-3 py-1.5">{c.category}</td>
-                        <td className="px-3 py-1.5">{c.type}</td>
-                        <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
-                        <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}</td>
-                        <td className="px-3 py-1.5 text-right">
-                          {Math.round(
-                            c.commission * (c.category === '장기' ? target.rate_long : target.rate_general),
-                          ).toLocaleString('ko-KR')}
-                        </td>
-                        {canSeeGeneralPerformance && (
-                          <td className="px-3 py-1.5 text-right">
-                            {Math.round(c.performance_commission * (target.general_performance_rate || 0)).toLocaleString(
-                              'ko-KR',
+                    {contractListRows.map((c) => {
+                      const isEditingContract = canEditContracts && editingContractId === c.id
+                      return (
+                        <tr key={c.id} className="border-t border-slate-50">
+                          <td className="px-3 py-1.5">{c.company}</td>
+                          <td className="px-3 py-1.5">
+                            {isEditingContract ? (
+                              <input
+                                value={contractEditForm.policy_no}
+                                onChange={(e) => setContractEditForm((f) => ({ ...f, policy_no: e.target.value }))}
+                                className="border border-slate-200 rounded px-1.5 py-1 w-28"
+                              />
+                            ) : (
+                              (c.policy_no ?? '-')
                             )}
                           </td>
-                        )}
-                      </tr>
-                    ))}
+                          <td className="px-3 py-1.5">
+                            {isEditingContract ? (
+                              <input
+                                value={contractEditForm.product_name}
+                                onChange={(e) => setContractEditForm((f) => ({ ...f, product_name: e.target.value }))}
+                                className="border border-slate-200 rounded px-1.5 py-1 w-28"
+                              />
+                            ) : (
+                              c.product_name || '-'
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5">
+                            {isEditingContract ? (
+                              <input
+                                value={contractEditForm.customer_name}
+                                onChange={(e) => setContractEditForm((f) => ({ ...f, customer_name: e.target.value }))}
+                                className="border border-slate-200 rounded px-1.5 py-1 w-28"
+                              />
+                            ) : (
+                              c.customer_name
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5">
+                            {isEditingContract ? (
+                              <select
+                                value={contractEditForm.category}
+                                onChange={(e) =>
+                                  setContractEditForm((f) => ({ ...f, category: e.target.value as ContractCategory }))
+                                }
+                                className="border border-slate-200 rounded px-1 py-1 bg-white"
+                              >
+                                {CATEGORY_ORDER.map((cat) => (
+                                  <option key={cat} value={cat}>
+                                    {cat}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              c.category
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5">{c.type}</td>
+                          <td className="px-3 py-1.5">
+                            {isEditingContract ? (
+                              <input
+                                type="date"
+                                value={contractEditForm.receipt_date}
+                                onChange={(e) => setContractEditForm((f) => ({ ...f, receipt_date: e.target.value }))}
+                                className="border border-slate-200 rounded px-1.5 py-1"
+                              />
+                            ) : (
+                              (c.receipt_date ?? '-')
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 text-right">
+                            {isEditingContract ? (
+                              <input
+                                type="number"
+                                value={contractEditForm.premium}
+                                onChange={(e) =>
+                                  setContractEditForm((f) => ({ ...f, premium: Number(e.target.value) }))
+                                }
+                                className="border border-slate-200 rounded px-1.5 py-1 w-24 text-right"
+                              />
+                            ) : (
+                              c.premium.toLocaleString('ko-KR')
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 text-right">
+                            {isEditingContract ? (
+                              <div>
+                                <input
+                                  type="number"
+                                  title="지급률 적용 전 원본 건별수수료"
+                                  value={contractEditForm.commission}
+                                  onChange={(e) =>
+                                    setContractEditForm((f) => ({ ...f, commission: Number(e.target.value) }))
+                                  }
+                                  className="border border-slate-200 rounded px-1.5 py-1 w-24 text-right"
+                                />
+                                <div className="text-[9px] text-slate-400 text-right">지급률 적용 전</div>
+                              </div>
+                            ) : (
+                              Math.round(
+                                c.commission * (c.category === '장기' ? target.rate_long : target.rate_general),
+                              ).toLocaleString('ko-KR')
+                            )}
+                          </td>
+                          {canSeeGeneralPerformance && (
+                            <td className="px-3 py-1.5 text-right">
+                              {isEditingContract ? (
+                                <input
+                                  type="number"
+                                  value={contractEditForm.performance_commission}
+                                  onChange={(e) =>
+                                    setContractEditForm((f) => ({
+                                      ...f,
+                                      performance_commission: Number(e.target.value),
+                                    }))
+                                  }
+                                  className="border border-slate-200 rounded px-1.5 py-1 w-24 text-right"
+                                />
+                              ) : (
+                                Math.round(
+                                  c.performance_commission * (target.general_performance_rate || 0),
+                                ).toLocaleString('ko-KR')
+                              )}
+                            </td>
+                          )}
+                          {canEditContracts && (
+                            <td className="px-3 py-1.5 whitespace-nowrap">
+                              {isEditingContract ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => saveContractEdit(c.id)}
+                                    className="text-emerald-600 hover:underline"
+                                  >
+                                    저장
+                                  </button>
+                                  <span className="text-slate-300 mx-1">/</span>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditContract}
+                                    className="text-slate-400 hover:underline"
+                                  >
+                                    취소
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditContract(c)}
+                                    className="text-indigo-600 hover:underline"
+                                  >
+                                    수정
+                                  </button>
+                                  <span className="text-slate-300 mx-1">/</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteContractRow(c.id)}
+                                    className="text-rose-500 hover:underline"
+                                  >
+                                    삭제
+                                  </button>
+                                </>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
