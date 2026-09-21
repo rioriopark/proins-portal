@@ -41,6 +41,13 @@ function monthEnd() {
   const [y, m] = today().slice(0, 7).split('-').map(Number)
   return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
 }
+// 신규계약은 보험사에서 계약월 익월에 비례수수료를 확정 지급하므로, 월말에 접수된 계약은
+// 담당자가 다음 달이 돼서야 입력하는 경우가 흔하다. 그런 건도 놓치지 않고 수수료명세에서
+// 보험사 확정 계약과 비교할 수 있도록 전월 영수일까지는 입력을 허용한다.
+function prevMonthStart() {
+  const [y, m] = today().slice(0, 7).split('-').map(Number)
+  return new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 10)
+}
 
 export default function Contracts() {
   const { profile, permissions } = useAuth()
@@ -208,8 +215,8 @@ export default function Contracts() {
   async function handleChangeSubmit(e: FormEvent) {
     e.preventDefault()
     if (!selectedOriginal) return
-    if (changeForm.receipt_date < monthStart() || changeForm.receipt_date > monthEnd()) {
-      alert('계약변경은 이번 달 처리일로만 등록할 수 있습니다.')
+    if (changeForm.receipt_date < prevMonthStart() || changeForm.receipt_date > monthEnd()) {
+      alert('계약변경은 지난달 또는 이번 달 처리일로만 등록할 수 있습니다.')
       return
     }
     const { error } = await supabase.from('contracts').insert({
@@ -302,8 +309,8 @@ export default function Contracts() {
       alert('보험료를 입력해주세요.')
       return
     }
-    if (form.receipt_date < monthStart() || form.receipt_date > monthEnd()) {
-      alert('신규계약은 이번 달 영수일로만 등록할 수 있습니다.')
+    if (form.receipt_date < prevMonthStart() || form.receipt_date > monthEnd()) {
+      alert('신규계약은 지난달 또는 이번 달 영수일로만 등록할 수 있습니다.')
       return
     }
     if (!form.duration_type) {
@@ -361,7 +368,7 @@ export default function Contracts() {
   }
 
   // 신규계약 옆 "엑셀 일괄등록": 담당자명·보험사·계약번호·계약자명·피보험자명·종목·영수일·보험료를 붙여넣어 한 번에 여러 건 등록.
-  // 단일 등록 폼과 동일하게 전부 이번 달 영수일 + 증권번호 필수 + 신규(예비계약)로 들어간다.
+  // 단일 등록 폼과 동일하게 전부 지난달·이번 달 영수일 + 증권번호 필수 + 신규(예비계약)로 들어간다.
   interface BulkRow {
     raw: string[]
     agentName: string
@@ -401,7 +408,7 @@ export default function Contracts() {
         else if (!company?.trim()) error = '보험사 누락'
         else if (!policyNo?.trim()) error = '증권번호 누락'
         else if (!customerName?.trim()) error = '계약자명 누락'
-        else if (!receiptDate || receiptDate < monthStart() || receiptDate > monthEnd()) error = '영수일은 이번 달만 가능'
+        else if (!receiptDate || receiptDate < prevMonthStart() || receiptDate > monthEnd()) error = '영수일은 지난달·이번 달만 가능'
         else if (!['장기', '일반', '자동차'].includes(category ?? '')) error = '종목 값 오류'
         else if (premium <= 0) error = '보험료 값 오류'
         return {
@@ -476,7 +483,7 @@ export default function Contracts() {
     XLSX.writeFile(wb, '신규계약_샘플.xlsx')
   }
 
-  // 관리자가 아닌 임직원이 보험사 확정 전 직접 등록하는 예비계약: 본인 앞으로, 이번 달만.
+  // 관리자가 아닌 임직원이 보험사 확정 전 직접 등록하는 예비계약: 본인 앞으로, 지난달·이번 달만.
   // 수수료는 아직 몰라 0으로 두고, 익월 본사에서 보험사 확정 계약을 업로드하면 매칭 후 이 예비계약은 삭제된다.
   async function handleSelfReportSubmit(e: FormEvent) {
     e.preventDefault()
@@ -488,8 +495,8 @@ export default function Contracts() {
       alert('보험료를 입력해주세요.')
       return
     }
-    if (selfForm.receipt_date < monthStart() || selfForm.receipt_date > monthEnd()) {
-      alert('신규계약은 이번 달 계약일로만 등록할 수 있습니다.')
+    if (selfForm.receipt_date < prevMonthStart() || selfForm.receipt_date > monthEnd()) {
+      alert('신규계약은 지난달 또는 이번 달 계약일로만 등록할 수 있습니다.')
       return
     }
     if (!selfForm.duration_type) {
@@ -948,11 +955,11 @@ export default function Contracts() {
                   </div>
                 )}
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">계약일 (이번 달만 등록 가능)</label>
+                  <label className="block text-xs text-slate-500 mb-1">계약일 (지난달·이번 달만 등록 가능)</label>
                   <input
                     type="date"
                     value={form.receipt_date}
-                    min={monthStart()}
+                    min={prevMonthStart()}
                     max={monthEnd()}
                     onChange={(e) => setForm((f) => ({ ...f, receipt_date: e.target.value }))}
                     className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm"
@@ -1250,11 +1257,11 @@ export default function Contracts() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-500 mb-1">처리일 (이번 달만 등록 가능)</label>
+                      <label className="block text-xs text-slate-500 mb-1">처리일 (지난달·이번 달만 등록 가능)</label>
                       <input
                         type="date"
                         value={changeForm.receipt_date}
-                        min={monthStart()}
+                        min={prevMonthStart()}
                         max={monthEnd()}
                         onChange={(e) => setChangeForm((f) => ({ ...f, receipt_date: e.target.value }))}
                         className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm"
@@ -1335,16 +1342,16 @@ export default function Contracts() {
           {selfReportOpen && (
             <form onSubmit={handleSelfReportSubmit} className="p-5 grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
               <p className="col-span-2 md:col-span-4 text-xs text-slate-500 -mt-1 mb-1">
-                이번 달 계약을 미리 등록해두면, 다음 달 보험사 확정 계약이 올라올 때 매칭되어 정리됩니다.
+                지난달·이번 달 계약을 미리 등록해두면, 다음 달 보험사 확정 계약이 올라올 때 매칭되어 정리됩니다.
                 보험사·증권번호·계약자명·보험료(
                 <span className="text-rose-500">*</span>)는 필수입력이며, 수수료는 확정 후 반영돼요.
               </p>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">계약일 (이번 달만 등록 가능)</label>
+                <label className="block text-xs text-slate-500 mb-1">계약일 (지난달·이번 달만 등록 가능)</label>
                 <input
                   type="date"
                   value={selfForm.receipt_date}
-                  min={monthStart()}
+                  min={prevMonthStart()}
                   max={monthEnd()}
                   onChange={(e) => setSelfForm((f) => ({ ...f, receipt_date: e.target.value }))}
                   className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm"
