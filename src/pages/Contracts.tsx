@@ -870,8 +870,19 @@ export default function Contracts() {
   async function deleteContract(contractId: string) {
     if (!confirm('이 계약을 삭제할까요? 되돌릴 수 없습니다.')) return
     const { error } = await supabase.from('contracts').delete().eq('id', contractId)
-    if (error) alert('삭제 실패: ' + error.message)
-    else load()
+    if (error) {
+      // 23503 = FK 위반. 이 계약을 원 계약(prior_contract_id)으로 참조하는 "계약변경"
+      // 이력이 남아있으면 원 계약을 먼저 지울 수 없다(참조 무결성) — 원인을 그대로 노출하지
+      // 않고, 어떻게 해야 하는지 바로 알 수 있게 안내한다.
+      if (error.code === '23503') {
+        alert(
+          '삭제 실패: 이 계약에 연결된 "계약변경" 이력이 있어 원 계약을 먼저 삭제할 수 없습니다.\n' +
+            '같은 증권번호로 등록된 변경 건(구분=변경)을 먼저 삭제한 뒤 다시 시도해주세요.',
+        )
+      } else {
+        alert('삭제 실패: ' + error.message)
+      }
+    } else load()
   }
 
   function startEditPrelim(prelim: Contract) {
