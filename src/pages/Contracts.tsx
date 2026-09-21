@@ -752,12 +752,14 @@ export default function Contracts() {
     for (const c of contracts) {
       if (c.is_preliminary) continue
       if (c.policy_no?.trim()) {
-        // 자동확정(auto_confirm_preliminary_contracts)이 보험사+증권번호+계약일+보험료로
-        // 매칭하는 것과 기준을 맞춘다. 종합보험처럼 같은 증권번호 안에 재물/배상 등 섹션별로
-        // 보험료가 다른 확정 계약이 여러 건 있을 수 있어서, 증권번호(+보험사)만으로는 예비계약이
-        // 실제로는 다른 섹션 건인데도 "매칭됨"으로 잘못 보여 자동확정 때 안 지워지거나, 반대로
-        // 상관없는 확정 건에 매칭돼 지워지는 문제가 있었다.
-        const key = `${c.company.trim()}|${c.policy_no.trim()}|${c.receipt_date ?? ''}|${c.premium}`
+        // 자동확정(auto_confirm_preliminary_contracts)이 증권번호+계약일+보험료로 매칭하는 것과
+        // 기준을 맞춘다. 종합보험처럼 같은 증권번호 안에 재물/배상 등 섹션별로 보험료가 다른
+        // 확정 계약이 여러 건 있을 수 있어서, 증권번호만으로는 예비계약이 실제로는 다른 섹션
+        // 건인데도 "매칭됨"으로 잘못 보여 자동확정 때 안 지워지거나, 반대로 상관없는 확정
+        // 건에 매칭돼 지워지는 문제가 있었다. 보험사는 이 키에 넣지 않고, 아래에서 앞 2글자만
+        // 비교한다 — "삼성"(예비계약 자유입력 시절 표기) vs "삼성화재"(확정 계약 정식 명칭)처럼
+        // 표기만 다른 경우도 매칭되게 하기 위해서다.
+        const key = `${c.policy_no.trim()}|${c.receipt_date ?? ''}|${c.premium}`
         if (!officialByPolicyNo.has(key)) officialByPolicyNo.set(key, [])
         officialByPolicyNo.get(key)!.push(c)
       }
@@ -783,12 +785,13 @@ export default function Contracts() {
         return true
       })
       .map((prelim) => {
-        const byPolicyNo = prelim.policy_no?.trim()
-          ? officialByPolicyNo.get(
-              `${prelim.company.trim()}|${prelim.policy_no.trim()}|${prelim.receipt_date ?? ''}|${prelim.premium}`,
-            )
-          : undefined
-        if (byPolicyNo?.length) return { prelim, matches: byPolicyNo }
+        const candidates = prelim.policy_no?.trim()
+          ? (officialByPolicyNo.get(`${prelim.policy_no.trim()}|${prelim.receipt_date ?? ''}|${prelim.premium}`) ?? [])
+          : []
+        // 보험사는 앞 2글자만 같으면 매칭으로 본다(표기 차이 허용, 아래 SQL 함수와 동일 기준).
+        const prelimCompanyPrefix = prelim.company.trim().slice(0, 2)
+        const byPolicyNo = candidates.filter((c) => c.company.trim().slice(0, 2) === prelimCompanyPrefix)
+        if (byPolicyNo.length) return { prelim, matches: byPolicyNo }
         // 갱신은 항상 새 증권번호를 입력받으므로 증권번호로만 매칭한다. 이름(담당자+보험사+계약자명) 대체
         // 매칭은 신규(증권번호가 비어있을 수 있음)에만 쓴다 — 갱신 고객은 매년 이름이 같아 작년 확정계약과
         // 항상 잘못 매칭돼버리기 때문.
