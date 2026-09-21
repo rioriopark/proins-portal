@@ -448,14 +448,26 @@ function toNumber(v: string): number {
   return Number.isFinite(n) ? n : 0
 }
 
-// 같은 파일/붙여넣기 안에 같은 보험사·증권번호·지급월·구분·보험료 행이 중복으로 들어있으면,
+// 같은 파일/붙여넣기 안에 같은 보험사·증권번호·지급월·구분·보험료 행이 여러 번 들어있으면,
 // 한 번의 upsert 호출 안에서 같은 행을 두 번 갱신하려다 "ON CONFLICT DO UPDATE command
-// cannot affect row a second time" 오류가 난다. upsert에 넣기 전에 미리 합쳐서
-// (수수료가 더 큰 쪽을 남기고) 한 건으로 만든다. 증권번호가 없는 행은 그대로 둔다.
+// cannot affect row a second time" 오류가 난다. 예전에는 이럴 때 수수료가 더 큰 쪽만 남기고
+// 나머지를 버렸는데, 일부 보험사 파일은 계약 하나의 비례수수료를 여러 줄로 나눠 보내서(예:
+// 같은 증권번호·보험료인데 비례수수료만 다른 행이 2줄) 수수료가 누락되는 문제가 있었다.
+// 이제 upsert에 넣기 전에 미리 합쳐서, 같은 키인 행들의 수수료·성과수수료를 전부 더한
+// 한 건으로 만든다(건수는 중복 합산으로 실적이 부풀지 않도록 그대로 둔다). 증권번호가
+// 없는 행은 그대로 둔다.
 // 보험료를 키에 포함하는 이유: 종합보험은 같은 증권번호 안에 재물/배상 등 섹션별로
 // 보험료·수수료가 다른 여러 행이 정상적으로 존재하므로, 보험료가 다르면 별개 행으로 남겨야 한다.
 function dedupeByPolicyLine<
-  T extends { company: string; policy_no: string | null; month: string; type: string; commission: number; premium: number },
+  T extends {
+    company: string
+    policy_no: string | null
+    month: string
+    type: string
+    commission: number
+    premium: number
+    performance_commission?: number
+  },
 >(payload: T[]): T[] {
   const map = new Map<string, T>()
   const noPolicyNo: T[] = []
@@ -466,12 +478,17 @@ function dedupeByPolicyLine<
     }
     const key = `${row.company}|${row.policy_no}|${row.month}|${row.type}|${row.premium}`
     const existing = map.get(key)
-    if (
-      !existing ||
-      row.commission > existing.commission ||
-      (row.commission === existing.commission && row.premium > existing.premium)
-    ) {
+    if (!existing) {
       map.set(key, row)
+    } else {
+      map.set(
+        key,
+        {
+          ...existing,
+          commission: existing.commission + row.commission,
+          performance_commission: (existing.performance_commission ?? 0) + (row.performance_commission ?? 0),
+        } as T,
+      )
     }
   }
   return [...map.values(), ...noPolicyNo]
