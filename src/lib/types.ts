@@ -14,9 +14,11 @@ export const ROLE_RANK: Record<Role, number> = {
   agent: 3,
 }
 
-// 본사(hq) 소속이 아닌 일반 담당자(agent)는 위촉 계약을 맺은 설계사이므로 "위촉직 설계사"로 구분해 보여준다.
+// 본사(hq) 소속이 아닌 인원(지사장/본부장/지점관리자 포함)은 전부 위촉 계약을 맺은 설계사이므로
+// 역할(role)과 무관하게 "위촉직 설계사"로 구분해 보여준다. 직급(title)과 포털 권한(role 기반
+// can()/canHq()/RLS)에는 영향을 주지 않는, 순수 표시용 라벨이다.
 export function roleDisplayLabel(role: Role, orgId: string): string {
-  if (role === 'agent' && orgId !== 'hq') return '위촉직 설계사'
+  if (orgId !== 'hq') return '위촉직 설계사'
   return ROLE_LABEL[role]
 }
 
