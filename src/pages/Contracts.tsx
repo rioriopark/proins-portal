@@ -934,6 +934,7 @@ export default function Contracts() {
     duration_type: '',
     receipt_date: '',
     expiry_date: '',
+    month: '',
     premium: 0,
     commission: 0,
     performance_commission: 0,
@@ -950,6 +951,7 @@ export default function Contracts() {
       duration_type: c.duration_type ?? '',
       receipt_date: c.receipt_date ?? '',
       expiry_date: c.expiry_date ?? '',
+      month: c.month,
       premium: c.premium,
       commission: c.commission,
       performance_commission: c.performance_commission,
@@ -961,6 +963,10 @@ export default function Contracts() {
   }
 
   async function saveContractEdit(contractId: string) {
+    if (!/^\d{4}-\d{2}$/.test(contractEditForm.month)) {
+      alert('정산년월은 비워둘 수 없습니다.')
+      return
+    }
     const { error } = await supabase
       .from('contracts')
       .update({
@@ -972,6 +978,7 @@ export default function Contracts() {
         duration_type: contractEditForm.duration_type || null,
         receipt_date: contractEditForm.receipt_date || null,
         expiry_date: contractEditForm.expiry_date || null,
+        month: contractEditForm.month,
         premium: contractEditForm.premium,
         commission: contractEditForm.commission,
         performance_commission: contractEditForm.performance_commission,
@@ -1904,6 +1911,7 @@ export default function Contracts() {
                                       <th className="text-left px-3 py-1.5">보험종목</th>
                                       <th className="text-left px-3 py-1.5">보험시기</th>
                                       <th className="text-left px-3 py-1.5">보험종기</th>
+                                      <th className="text-left px-3 py-1.5">정산년월</th>
                                       <th className="text-right px-3 py-1.5">보험료</th>
                                       {!isHqStaff && (
                                         <th className="text-right px-3 py-1.5">
@@ -2088,6 +2096,20 @@ export default function Contracts() {
                                               (c.expiry_date ?? '-')
                                             )}
                                           </td>
+                                          <td className="px-3 py-1.5">
+                                            {isEditing ? (
+                                              <input
+                                                type="month"
+                                                value={contractEditForm.month}
+                                                onChange={(e) =>
+                                                  setContractEditForm((f) => ({ ...f, month: e.target.value }))
+                                                }
+                                                className="border border-slate-200 rounded px-1.5 py-1"
+                                              />
+                                            ) : (
+                                              c.month
+                                            )}
+                                          </td>
                                           <td className="px-3 py-1.5 text-right">
                                             {isEditing ? (
                                               <input
@@ -2205,7 +2227,7 @@ export default function Contracts() {
                                       )
                                     })}
                                     <tr className="border-t border-slate-200 font-semibold">
-                                      <td className="px-3 py-1.5" colSpan={7}>
+                                      <td className="px-3 py-1.5" colSpan={8}>
                                         합계
                                       </td>
                                       <td className="px-3 py-1.5 text-right">{cg.premium.toLocaleString('ko-KR')}</td>
