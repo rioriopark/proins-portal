@@ -746,7 +746,11 @@ export default function Contracts() {
     for (const c of contracts) {
       if (c.is_preliminary) continue
       if (c.policy_no?.trim()) {
-        const key = c.policy_no.trim()
+        // 자동확정(auto_confirm_preliminary_contracts)이 보험사+증권번호로 매칭하는 것과
+        // 기준을 맞춘다 — 증권번호만으로 매칭하면 보험사가 다른데 우연히 같은 증권번호인
+        // 확정 계약을 "매칭됨"으로 잘못 보여줘서, 자동 확정을 눌러도 지워지지 않는 것처럼
+        // 보이는 문제가 있었다.
+        const key = `${c.company.trim()}|${c.policy_no.trim()}`
         if (!officialByPolicyNo.has(key)) officialByPolicyNo.set(key, [])
         officialByPolicyNo.get(key)!.push(c)
       }
@@ -772,7 +776,9 @@ export default function Contracts() {
         return true
       })
       .map((prelim) => {
-        const byPolicyNo = prelim.policy_no?.trim() ? officialByPolicyNo.get(prelim.policy_no.trim()) : undefined
+        const byPolicyNo = prelim.policy_no?.trim()
+          ? officialByPolicyNo.get(`${prelim.company.trim()}|${prelim.policy_no.trim()}`)
+          : undefined
         if (byPolicyNo?.length) return { prelim, matches: byPolicyNo }
         // 갱신은 항상 새 증권번호를 입력받으므로 증권번호로만 매칭한다. 이름(담당자+보험사+계약자명) 대체
         // 매칭은 신규(증권번호가 비어있을 수 있음)에만 쓴다 — 갱신 고객은 매년 이름이 같아 작년 확정계약과
