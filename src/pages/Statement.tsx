@@ -315,11 +315,15 @@ export default function Statement() {
 
   // 수수료 0원 건(계속 확정 전 등, 아직 실적으로 잡히지 않는 트래킹용 행)은 계약관리 화면과
   // 동일하게 업적현황 집계에서도 제외한다.
+  // 일반/자동차는 보험사 파일마다 원본 "구분" 값이 제각각(대부분 비어있음)이라 그대로는 의미
+  // 있는 분류가 안 된다. 건별수수료가 음수인 건은 해약(수수료 환수)로 보고 별도 구분으로
+  // 묶는다(장기는 신규/계속/환수/부활 값이 이미 있으므로 그대로 둔다).
   function group(list: Contract[], categories: ContractCategory[]) {
-    const byKey = new Map<string, { category: ContractCategory; type: ContractType; count: number; premium: number }>()
+    const byKey = new Map<string, { category: ContractCategory; type: string; count: number; premium: number }>()
     for (const c of list.filter((c) => categories.includes(c.category) && c.commission !== 0)) {
-      const key = `${c.category}__${c.type}`
-      const cur = byKey.get(key) ?? { category: c.category, type: c.type, count: 0, premium: 0 }
+      const type = c.category === '장기' ? c.type : c.commission < 0 ? '해약' : '일반'
+      const key = `${c.category}__${type}`
+      const cur = byKey.get(key) ?? { category: c.category, type, count: 0, premium: 0 }
       cur.count += c.count
       cur.premium += c.premium
       byKey.set(key, cur)
