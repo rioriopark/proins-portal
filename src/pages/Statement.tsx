@@ -315,9 +315,9 @@ export default function Statement() {
 
   // 수수료 0원 건(계속 확정 전 등, 아직 실적으로 잡히지 않는 트래킹용 행)은 계약관리 화면과
   // 동일하게 업적현황 집계에서도 제외한다.
-  function group(categories: ContractCategory[]) {
+  function group(list: Contract[], categories: ContractCategory[]) {
     const byKey = new Map<string, { category: ContractCategory; type: ContractType; count: number; premium: number }>()
-    for (const c of scopedContracts.filter((c) => categories.includes(c.category) && c.commission !== 0)) {
+    for (const c of list.filter((c) => categories.includes(c.category) && c.commission !== 0)) {
       const key = `${c.category}__${c.type}`
       const cur = byKey.get(key) ?? { category: c.category, type: c.type, count: 0, premium: 0 }
       cur.count += c.count
@@ -327,8 +327,11 @@ export default function Statement() {
     return [...byKey.values()]
   }
 
-  const longRows = useMemo(() => group(['장기']), [scopedContracts])
-  const generalAutoRows = useMemo(() => group(['일반', '자동차']), [scopedContracts])
+  // "자동차/일반 실적"은 "적용된 계약 내역"과 동일하게 지급월(contracts.month, 정산년월) 기준으로
+  // 맞춘다 — 장기(업적현황)만 계약관리 화면과 같이 계약월(receipt_date) 기준을 유지한다.
+  const settlementContracts = useMemo(() => contracts.filter((c) => c.month === month), [contracts, month])
+  const longRows = useMemo(() => group(scopedContracts, ['장기']), [scopedContracts])
+  const generalAutoRows = useMemo(() => group(settlementContracts, ['일반', '자동차']), [settlementContracts])
   const longTotal = longRows.reduce((s, r) => s + r.premium, 0)
   const longCount = longRows.reduce((s, r) => s + r.count, 0)
   const gaTotal = generalAutoRows.reduce((s, r) => s + r.premium, 0)
@@ -615,7 +618,7 @@ export default function Statement() {
             <div>
               <p className="bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-t-md flex items-center justify-between">
                 <span>자동차 / 일반 실적</span>
-                <span className="font-normal text-slate-300">{contractMonth} 실적 기준</span>
+                <span className="font-normal text-slate-300">{month} 정산년월 기준</span>
               </p>
               <table className="w-full text-sm border border-t-0 border-slate-100 rounded-b-md overflow-hidden">
                 <thead className="bg-slate-50 text-xs text-slate-500">
