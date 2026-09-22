@@ -183,11 +183,16 @@ export default function Contracts() {
     setLookupError('')
     setLookupResults([])
     setSelectedOriginal(null)
+    // "변경" 이력 행 자체는 기계약으로 고를 수 없게 제외한다 — 포함시키면 이전 변경 건(흔히
+    // 보험료 0원짜리 증감액 행)이 원 계약과 같이 나열돼 실수로 그걸 기계약으로 선택하면, 실제
+    // 원 계약이 아닌 이력 행을 상대로 또 "변경"을 쌓게 되고 company/policy_no/month/premium이
+    // 기존 변경 행과 겹쳐 저장 시 중복키 오류가 난다.
     const { data, error } = await supabase
       .from('contracts')
       .select('*')
       .eq('policy_no', policyNo)
       .eq('is_preliminary', false)
+      .neq('type', '변경')
       .order('receipt_date', { ascending: false })
     setLookupBusy(false)
     if (error) {
@@ -249,6 +254,11 @@ export default function Contracts() {
       setLookupResults([])
       setSelectedOriginal(null)
       load()
+    } else if (error.code === '23505') {
+      alert(
+        '저장 실패: 이 증권번호로 같은 달·같은 증감액(보험료)의 변경 이력이 이미 등록돼 있습니다.\n' +
+          '처리일(월)을 다르게 하거나 보험료 증감액을 다르게 입력해주세요.',
+      )
     } else {
       alert('저장 실패: ' + error.message)
     }
