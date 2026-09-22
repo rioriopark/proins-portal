@@ -357,24 +357,35 @@ export default function Statement() {
     let generalAmt = 0
     let autoAmt = 0
     let generalPerformanceCommission = 0
+    // 장기(모집초회/모집분급/유지/환수·부활)는 "업적현황(장기)"와 동일하게 계약월(receipt_date)
+    // 기준 범위(scopedContracts)를 쓴다.
     for (const c of scopedContracts) {
-      const rate = c.category === '장기' ? target.rate_long : target.rate_general
-      const amount = c.commission * rate
+      if (c.category !== '장기') continue
+      const amount = c.commission * target.rate_long
+      if (c.type === '환수' || c.type === '부활') {
+        clawbackRevive += amount
+        continue
+      }
+      const offset = c.receipt_date ? monthsBetween(c.receipt_date.slice(0, 7), c.month) : NaN
+      if ((c.type === '신규' || c.type === '비례공동') && !Number.isNaN(offset) && offset <= 1) {
+        recruitFirst += amount
+      } else if ((c.type === '신규' || c.type === '비례공동') && !Number.isNaN(offset) && offset >= 2) {
+        recruitInstallment += amount
+      } else {
+        maintainAmt += amount
+      }
+    }
+    // 일반/자동차(환수·부활, 일반성과 포함)는 "자동차/일반 실적"·"적용된 계약 내역"과 동일하게
+    // 지급월(정산년월) 기준 범위(settlementContracts)를 쓴다.
+    for (const c of settlementContracts) {
+      if (c.category !== '일반' && c.category !== '자동차') continue
+      const amount = c.commission * target.rate_general
       if (c.category === '일반') generalPerformanceCommission += c.performance_commission
       if (c.type === '환수' || c.type === '부활') {
         clawbackRevive += amount
-      } else if (c.category === '장기') {
-        const offset = c.receipt_date ? monthsBetween(c.receipt_date.slice(0, 7), c.month) : NaN
-        if ((c.type === '신규' || c.type === '비례공동') && !Number.isNaN(offset) && offset <= 1) {
-          recruitFirst += amount
-        } else if ((c.type === '신규' || c.type === '비례공동') && !Number.isNaN(offset) && offset >= 2) {
-          recruitInstallment += amount
-        } else {
-          maintainAmt += amount
-        }
       } else if (c.category === '일반') {
         generalAmt += amount
-      } else if (c.category === '자동차') {
+      } else {
         autoAmt += amount
       }
     }
@@ -431,6 +442,7 @@ export default function Statement() {
     }
   }, [
     scopedContracts,
+    settlementContracts,
     target,
     stmt.mgmt_fee,
     stmt.collection_fee,
