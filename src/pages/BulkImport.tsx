@@ -10,6 +10,11 @@ interface AgentInsurerCodeWithName {
   insurers: { name: string } | null
 }
 
+// 보험사 파일은 수천 행짜리도 흔해서, 미리보기 테이블에 모든 행을 그대로 그리면
+// (특히 담당자별로 여러 그룹이 생기면) DOM 노드가 폭증해 화면이 멈춘 것처럼 느려진다.
+// 등록은 전체 행을 대상으로 하되, 미리보기는 담당자 그룹당 이 개수까지만 렌더링한다.
+const ROWS_PER_AGENT_PREVIEW = 50
+
 const HEADER_HINT = '담당자명\t보험사\t계약번호\t계약자명\t종목\t영수일\t보험료'
 const EXAMPLE = '김은지\t삼성화재\t52616634160000\t홍길동\t일반\t2026-09-15\t2428500'
 
@@ -1285,7 +1290,7 @@ export default function BulkImport() {
                       </tr>
                     </thead>
                     <tbody>
-                      {g.rows.map((r) => (
+                      {g.rows.slice(0, ROWS_PER_AGENT_PREVIEW).map((r) => (
                         <tr key={r.key} className={`border-t border-slate-100 ${r.error ? 'bg-red-50' : ''}`}>
                           <td className="px-3 py-1.5">{r.insurer}</td>
                           <td className="px-3 py-1.5">{r.policyNo}</td>
@@ -1306,6 +1311,9 @@ export default function BulkImport() {
                       ))}
                     </tbody>
                   </table>
+                  {g.rows.length > ROWS_PER_AGENT_PREVIEW && (
+                    <p className="text-xs text-slate-400 px-3 pt-1">…외 {g.rows.length - ROWS_PER_AGENT_PREVIEW}행 (등록 시에는 전부 포함됩니다)</p>
+                  )}
                 </div>
               ))}
             </div>
