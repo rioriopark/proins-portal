@@ -183,16 +183,15 @@ export default function Contracts() {
     setLookupError('')
     setLookupResults([])
     setSelectedOriginal(null)
-    // "변경" 이력 행 자체는 기계약으로 고를 수 없게 제외한다 — 포함시키면 이전 변경 건(흔히
-    // 보험료 0원짜리 증감액 행)이 원 계약과 같이 나열돼 실수로 그걸 기계약으로 선택하면, 실제
-    // 원 계약이 아닌 이력 행을 상대로 또 "변경"을 쌓게 되고 company/policy_no/month/premium이
-    // 기존 변경 행과 겹쳐 저장 시 중복키 오류가 난다.
+    // "변경" 이력 행도 함께 불러온다 — 원 계약(기계약 후보)과는 별도로 아래에 이력 목록으로
+    // 보여주고 수정/삭제할 수 있게 하기 위해서다. 다만 기계약으로 "선택"할 수 있는 후보에서는
+    // 변경 이력 행을 제외한다(제외하지 않으면 실수로 변경 이력을 기계약으로 골라, 그걸 상대로
+    // 또 "변경"을 쌓게 되고 company/policy_no/month/premium이 겹쳐 저장 시 중복키 오류가 난다).
     const { data, error } = await supabase
       .from('contracts')
       .select('*')
       .eq('policy_no', policyNo)
       .eq('is_preliminary', false)
-      .neq('type', '변경')
       .order('receipt_date', { ascending: false })
     setLookupBusy(false)
     if (error) {
@@ -262,6 +261,86 @@ export default function Contracts() {
     } else {
       alert('저장 실패: ' + error.message)
     }
+  }
+
+  // 변경증권 이력 건별 수정/삭제: 계약변경 등록 시 기간구분·증감액 등을 잘못 입력한 경우
+  // 원 계약을 다시 조회하지 않고 그 이력 행만 바로 잡거나 지울 수 있게 한다.
+  const [editingChangeId, setEditingChangeId] = useState<string | null>(null)
+  const [changeEditForm, setChangeEditForm] = useState({
+    reason: CHANGE_REASONS[0] as (typeof CHANGE_REASONS)[number],
+    receipt_date: '',
+    duration_type: '',
+    expiry_date: '',
+    premium: 0,
+    commission: 0,
+    memo: '',
+  })
+
+  function startEditChange(c: Contract) {
+    setEditingChangeId(c.id)
+    setChangeEditForm({
+      reason: (CHANGE_REASONS as readonly string[]).includes(c.change_reason ?? '')
+        ? (c.change_reason as (typeof CHANGE_REASONS)[number])
+        : CHANGE_REASONS[0],
+      receipt_date: c.receipt_date ?? '',
+      duration_type: c.duration_type ?? '',
+      expiry_date: c.expiry_date ?? '',
+      premium: c.premium,
+      commission: c.commission,
+      memo: c.memo ?? '',
+    })
+  }
+
+  function cancelEditChange() {
+    setEditingChangeId(null)
+  }
+
+  async function saveChangeEdit(contractId: string) {
+    if (changeEditForm.receipt_date < prevMonthStart() || changeEditForm.receipt_date > monthEnd()) {
+      alert('계약변경은 지난달 또는 이번 달 처리일로만 등록할 수 있습니다.')
+      return
+    }
+    const { error } = await supabase
+      .from('contracts')
+      .update({
+        change_reason: changeEditForm.reason,
+        receipt_date: changeEditForm.receipt_date || null,
+        month: changeEditForm.receipt_date.slice(0, 7),
+        duration_type: changeEditForm.duration_type || null,
+        expiry_date: changeEditForm.expiry_date || null,
+        premium: changeEditForm.premium,
+        commission: changeEditForm.commission,
+        memo: changeEditForm.memo || null,
+      })
+      .eq('id', contractId)
+    if (error) {
+      alert(
+        error.code === '23505'
+          ? '수정 실패: 같은 증권번호·정산월·증감액(보험료)의 변경 이력이 이미 있습니다.'
+          : '수정 실패: ' + error.message,
+      )
+      return
+    }
+    setEditingChangeId(null)
+    lookupPolicy()
+    load()
+  }
+
+  async function deleteChangeRow(contractId: string) {
+    if (!confirm('이 변경 이력을 삭제할까요? 되돌릴 수 없습니다.')) return
+    const { error } = await supabase.from('contracts').delete().eq('id', contractId)
+    if (error) {
+      // 23503 = FK 위반. 이 변경 행을 원 계약(prior_contract_id)으로 참조하는 더 나중의
+      // 변경 이력이 남아있으면(예: 잘못 선택된 기계약 위에 또 변경을 쌓은 경우) 먼저 지울 수 없다.
+      if (error.code === '23503') {
+        alert('삭제 실패: 이 이력을 기계약으로 삼은 더 나중의 변경 이력이 있습니다. 그것부터 먼저 삭제해주세요.')
+      } else {
+        alert('삭제 실패: ' + error.message)
+      }
+      return
+    }
+    lookupPolicy()
+    load()
   }
 
   async function load() {
@@ -1310,30 +1389,183 @@ export default function Contracts() {
                     </tr>
                   </thead>
                   <tbody>
-                    {lookupResults.map((c) => (
-                      <tr key={c.id} className="border-t border-slate-100">
-                        <td className="px-3 py-1.5">{agentInfo(c).name}</td>
-                        <td className="px-3 py-1.5">{c.company}</td>
-                        <td className="px-3 py-1.5">
-                          {c.category}
-                          {c.duration_type && ` · ${c.duration_type}`}
-                        </td>
-                        <td className="px-3 py-1.5">{c.customer_name}</td>
-                        <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
-                        <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}원</td>
-                        <td className="px-3 py-1.5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => selectOriginal(c)}
-                            className="text-xs text-indigo-600 hover:underline"
-                          >
-                            선택
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {lookupResults
+                      .filter((c) => c.type !== '변경')
+                      .map((c) => (
+                        <tr key={c.id} className="border-t border-slate-100">
+                          <td className="px-3 py-1.5">{agentInfo(c).name}</td>
+                          <td className="px-3 py-1.5">{c.company}</td>
+                          <td className="px-3 py-1.5">
+                            {c.category}
+                            {c.duration_type && ` · ${c.duration_type}`}
+                          </td>
+                          <td className="px-3 py-1.5">{c.customer_name}</td>
+                          <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
+                          <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}원</td>
+                          <td className="px-3 py-1.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => selectOriginal(c)}
+                              className="text-xs text-indigo-600 hover:underline"
+                            >
+                              선택
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
+              )}
+              {lookupResults.some((c) => c.type === '변경') && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold text-slate-500">기존 변경 이력 (잘못 입력했다면 여기서 수정·삭제)</p>
+                  <table className="w-full text-xs border border-slate-100 rounded-md overflow-hidden">
+                    <thead className="bg-slate-50 text-slate-500">
+                      <tr>
+                        <th className="text-left px-3 py-1.5">변경사유</th>
+                        <th className="text-left px-3 py-1.5">처리일</th>
+                        <th className="text-left px-3 py-1.5">기간구분</th>
+                        <th className="text-left px-3 py-1.5">만기일</th>
+                        <th className="text-right px-3 py-1.5">보험료증감</th>
+                        <th className="text-right px-3 py-1.5">수수료증감</th>
+                        <th className="text-left px-3 py-1.5">메모</th>
+                        <th className="px-3 py-1.5" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lookupResults
+                        .filter((c) => c.type === '변경')
+                        .map((c) => {
+                          const isEditing = editingChangeId === c.id
+                          return (
+                            <tr key={c.id} className="border-t border-slate-100">
+                              {isEditing ? (
+                                <>
+                                  <td className="px-3 py-1.5">
+                                    <select
+                                      value={changeEditForm.reason}
+                                      onChange={(e) =>
+                                        setChangeEditForm((f) => ({
+                                          ...f,
+                                          reason: e.target.value as (typeof CHANGE_REASONS)[number],
+                                        }))
+                                      }
+                                      className="border border-slate-200 rounded px-1 py-1 bg-white"
+                                    >
+                                      {CHANGE_REASONS.map((r) => (
+                                        <option key={r} value={r}>
+                                          {r}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="px-3 py-1.5">
+                                    <input
+                                      type="date"
+                                      value={changeEditForm.receipt_date}
+                                      min={prevMonthStart()}
+                                      max={monthEnd()}
+                                      onChange={(e) => setChangeEditForm((f) => ({ ...f, receipt_date: e.target.value }))}
+                                      className="border border-slate-200 rounded px-1.5 py-1"
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1.5">
+                                    <select
+                                      value={changeEditForm.duration_type}
+                                      onChange={(e) => setChangeEditForm((f) => ({ ...f, duration_type: e.target.value }))}
+                                      className="border border-slate-200 rounded px-1 py-1 bg-white"
+                                    >
+                                      <option value="">(없음)</option>
+                                      {DURATION_OPTIONS[c.category].map((opt) => (
+                                        <option key={opt} value={opt}>
+                                          {opt}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="px-3 py-1.5">
+                                    <input
+                                      type="date"
+                                      value={changeEditForm.expiry_date}
+                                      onChange={(e) => setChangeEditForm((f) => ({ ...f, expiry_date: e.target.value }))}
+                                      className="border border-slate-200 rounded px-1.5 py-1"
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right">
+                                    <input
+                                      type="number"
+                                      value={changeEditForm.premium}
+                                      onChange={(e) =>
+                                        setChangeEditForm((f) => ({ ...f, premium: Number(e.target.value) }))
+                                      }
+                                      className="border border-slate-200 rounded px-1.5 py-1 w-24 text-right"
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right">
+                                    <input
+                                      type="number"
+                                      value={changeEditForm.commission}
+                                      onChange={(e) =>
+                                        setChangeEditForm((f) => ({ ...f, commission: Number(e.target.value) }))
+                                      }
+                                      className="border border-slate-200 rounded px-1.5 py-1 w-24 text-right"
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1.5">
+                                    <input
+                                      value={changeEditForm.memo}
+                                      onChange={(e) => setChangeEditForm((f) => ({ ...f, memo: e.target.value }))}
+                                      className="border border-slate-200 rounded px-1.5 py-1 w-full"
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1.5 whitespace-nowrap">
+                                    <button
+                                      type="button"
+                                      onClick={() => saveChangeEdit(c.id)}
+                                      className="text-emerald-600 hover:underline"
+                                    >
+                                      저장
+                                    </button>
+                                    <span className="text-slate-300 mx-1">/</span>
+                                    <button type="button" onClick={cancelEditChange} className="text-slate-400 hover:underline">
+                                      취소
+                                    </button>
+                                  </td>
+                                </>
+                              ) : (
+                                <>
+                                  <td className="px-3 py-1.5">{c.change_reason ?? '-'}</td>
+                                  <td className="px-3 py-1.5">{c.receipt_date ?? '-'}</td>
+                                  <td className="px-3 py-1.5">{c.duration_type ?? '-'}</td>
+                                  <td className="px-3 py-1.5">{c.expiry_date ?? '-'}</td>
+                                  <td className="px-3 py-1.5 text-right">{c.premium.toLocaleString('ko-KR')}원</td>
+                                  <td className="px-3 py-1.5 text-right">{c.commission.toLocaleString('ko-KR')}원</td>
+                                  <td className="px-3 py-1.5">{c.memo ?? '-'}</td>
+                                  <td className="px-3 py-1.5 whitespace-nowrap">
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditChange(c)}
+                                      className="text-indigo-600 hover:underline"
+                                    >
+                                      수정
+                                    </button>
+                                    <span className="text-slate-300 mx-1">/</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteChangeRow(c.id)}
+                                      className="text-rose-500 hover:underline"
+                                    >
+                                      삭제
+                                    </button>
+                                  </td>
+                                </>
+                              )}
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                  </table>
+                </div>
               )}
               {selectedOriginal && (
                 <form onSubmit={handleChangeSubmit} className="space-y-3">
