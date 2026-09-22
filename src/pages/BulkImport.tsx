@@ -428,6 +428,14 @@ function normalizeDate(raw: string): string {
   if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
   m = s.match(/^(\d{4})(\d{2})(\d{2})$/)
   if (m) return `${m[1]}-${m[2]}-${m[3]}`
+  // 일부 보험사 파일(예: 라이나손보)은 계약일자 셀이 실제로는 엑셀 날짜 값인데 셀 서식이
+  // "m/d/yy"(예: "8/14/26")로 되어 있어, raw:false로 읽으면 그 서식 그대로의 문자열이 온다.
+  // 엑셀 기본 서식이 월/일/연 순이므로 그 순서로 해석한다.
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/)
+  if (m) {
+    const year = m[3].length === 2 ? `20${m[3]}` : m[3]
+    return `${year}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`
+  }
   // 엑셀에서 날짜 서식이 없는(혹은 천단위 구분쉼표가 붙은 숫자 서식인) 셀로 저장되면 날짜가
   // "46457"·"45,947" 같은 1900년 기준 일련번호로 그대로 붙어 나온다. 쉼표를 떼고 일련번호를
   // 실제 날짜로 변환한다.
@@ -721,7 +729,16 @@ export default function BulkImport() {
         const buf = await f.arrayBuffer()
         const wb = readWorkbook(XLSX, buf)
         const ws = wb.Sheets[wb.SheetNames[0]]
-        const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as (string | number)[][]
+        // 보험사 포털 엑셀은 실제 데이터가 수십 행뿐이어도 서식(테두리·배경색 등)이 시트 아래쪽
+        // 수만~수십만 행까지 적용된 경우가 흔하다. 그러면 sheet_to_json이 그 "사용된 범위" 전체를
+        // 빈 행 배열로 채워 반환해, 아래에서 grid를 순회할 때(map/filter) 실제로는 빈 대량의 행까지
+        // 매번 문자열 변환하느라 느려진다. blankrows: false로 완전히 빈 행은 애초에 제외한다.
+        const grid = XLSX.utils.sheet_to_json(ws, {
+          header: 1,
+          defval: '',
+          raw: false,
+          blankrows: false,
+        }) as (string | number)[][]
         if (!grid.length) {
           skipped.push(`${f.name} (빈 파일)`)
           continue
