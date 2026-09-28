@@ -377,11 +377,13 @@ export default function Contracts() {
   // 예비계약 자동확정: 같은 보험사+증권번호로 이미 확정 계약이 들어와 있는 예비계약을 사람 개입
   // 없이 정리한다. 예비계약이 새로 등록될 때(아래 세 함수)와 보험사 확정 파일을 올릴 때(BulkImport.tsx)
   // 양쪽에서 호출해서 "확정 계약이 먼저 들어온 경우"와 "예비계약이 먼저 들어온 경우"를 모두 커버한다.
+  // 실패하면 -1을 돌려준다. 저장 직후 자동 호출하는 곳에서는 무시하지만, 수동 실행 버튼에서는
+  // 실패를 "0건"으로 뭉개지 않고 그대로 알려야 한다(권한 오류가 "없습니다"로 보이던 문제).
   async function runAutoConfirm(): Promise<number> {
     const { data, error } = await supabase.rpc('auto_confirm_preliminary_contracts')
     if (error) {
       console.error('예비계약 자동확정 실패:', error)
-      return 0
+      return -1
     }
     return (data as number) ?? 0
   }
@@ -390,7 +392,13 @@ export default function Contracts() {
     setAutoConfirmBusy(true)
     const count = await runAutoConfirm()
     setAutoConfirmBusy(false)
-    setAutoConfirmMsg(count > 0 ? `${count}건 자동 확정 처리했습니다.` : '자동 확정할 예비계약이 없습니다.')
+    setAutoConfirmMsg(
+      count < 0
+        ? '자동 확정 실행에 실패했습니다. 잠시 후 다시 시도하거나 본사에 문의해주세요.'
+        : count > 0
+          ? `${count}건 자동 확정 처리했습니다.`
+          : '자동 확정할 예비계약이 없습니다.',
+    )
     if (count > 0) load()
   }
 
@@ -841,14 +849,15 @@ export default function Contracts() {
     for (const c of contracts) {
       if (c.is_preliminary) continue
       if (c.policy_no?.trim()) {
-        // 자동확정(auto_confirm_preliminary_contracts)이 증권번호+계약일+보험료로 매칭하는 것과
-        // 기준을 맞춘다. 종합보험처럼 같은 증권번호 안에 재물/배상 등 섹션별로 보험료가 다른
+        // 자동확정(auto_confirm_preliminary_contracts)이 증권번호+보험료(+보험사 앞 2글자)로 매칭하는 것과
+        // 기준을 맞춘다. 계약일은 비교하지 않는다 — 예비계약은 계약일을 월초로 넣는 경우가 많아
+        // 확정 계약의 실제 계약일과 달라 매칭이 안 되던 문제가 있었다. 종합보험처럼 같은 증권번호 안에 재물/배상 등 섹션별로 보험료가 다른
         // 확정 계약이 여러 건 있을 수 있어서, 증권번호만으로는 예비계약이 실제로는 다른 섹션
         // 건인데도 "매칭됨"으로 잘못 보여 자동확정 때 안 지워지거나, 반대로 상관없는 확정
         // 건에 매칭돼 지워지는 문제가 있었다. 보험사는 이 키에 넣지 않고, 아래에서 앞 2글자만
         // 비교한다 — "삼성"(예비계약 자유입력 시절 표기) vs "삼성화재"(확정 계약 정식 명칭)처럼
         // 표기만 다른 경우도 매칭되게 하기 위해서다.
-        const key = `${c.policy_no.trim()}|${c.receipt_date ?? ''}|${c.premium}`
+        const key = `${c.policy_no.trim()}|${Number(c.premium)}`
         if (!officialByPolicyNo.has(key)) officialByPolicyNo.set(key, [])
         officialByPolicyNo.get(key)!.push(c)
       }
@@ -875,7 +884,7 @@ export default function Contracts() {
       })
       .map((prelim) => {
         const candidates = prelim.policy_no?.trim()
-          ? (officialByPolicyNo.get(`${prelim.policy_no.trim()}|${prelim.receipt_date ?? ''}|${prelim.premium}`) ?? [])
+          ? (officialByPolicyNo.get(`${prelim.policy_no.trim()}|${Number(prelim.premium)}`) ?? [])
           : []
         // 보험사는 앞 2글자만 같으면 매칭으로 본다(표기 차이 허용, 아래 SQL 함수와 동일 기준).
         const prelimCompanyPrefix = prelim.company.trim().slice(0, 2)
@@ -976,7 +985,12 @@ export default function Contracts() {
 
   async function deleteContract(contractId: string) {
     if (!confirm('이 계약을 삭제할까요? 되돌릴 수 없습니다.')) return
-    const { error } = await supabase.from('contracts').delete().eq('id', contractId)
+    // RLS로 막힌 삭제는 에러 없이 0건 삭제로 끝나므로, 지워진 행을 돌려받아 실제로 지워졌는지 확인한다.
+    const { data, error } = await supabase.from('contracts').delete().eq('id', contractId).select('id')
+    if (!error && (data?.length ?? 0) === 0) {
+      alert('삭제 실패: 이 계약을 삭제할 권한이 없습니다.')
+      return
+    }
     if (error) {
       // 23503 = FK 위반. 이 계약을 원 계약(prior_contract_id)으로 참조하는 "계약변경"
       // 이력이 남아있으면 원 계약을 먼저 지울 수 없다(참조 무결성) — 원인을 그대로 노출하지

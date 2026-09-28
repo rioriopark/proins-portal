@@ -635,6 +635,13 @@ create policy "contracts_delete_scope" on contracts
     my_role() = 'hq_admin'
     or (my_role() = 'agent' and my_org() = 'hq')
     or (is_preliminary and agent_id = auth.uid())
+    -- 지점 관리자는 하위 조직 담당자의 예비계약(확정 전)만 정리할 수 있다.
+    or (
+      is_preliminary
+      and agent_id is not null
+      and my_role() in ('branch_admin', 'store_manager')
+      and exists (select 1 from profiles p where p.id = contracts.agent_id and is_org_descendant(my_org(), p.org_id))
+    )
   );
 
 -- pending_invites: hq_admin 은 전체, branch_admin/store_manager 는 자기 하위 조직만 초대 가능. 본인 이메일 초대장은 회원가입 전 자기 자신도 조회 가능(가입 화면 안내용은 생략, service 단에서만 사용)
