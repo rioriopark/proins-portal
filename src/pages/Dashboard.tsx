@@ -148,12 +148,15 @@ type PortalLink = {
   badge: string
   color: string
   logo?: string
+  // 로고 여백이 커서 작아 보이는 보험사만 높이를 키운다 (기본 h-8)
+  logoClass?: string
   forceEdge?: boolean
-  // 고객센터 / 인콜 모니터링 / 전산 헬프데스크 / 보험금 청구 팩스 (없으면 '-')
-  phones: { center: string; incall: string; help: string; claimFax: string }
+  // 고객센터 / 전산 헬프데스크 / 보험금 청구 팩스 (없으면 '-')
+  phones: { center: string; help: string; claimFax: string }
   // 판매상품 약관 공시 페이지
   termsUrl: string
-  // 보험금 청구서 양식(PDF). 직접 받을 수 있는 파일이 없는 보험사는 청구서류 안내 페이지로 연결한다.
+  // 보험약관 버튼과 같이 보험사 공식 홈페이지의 보험금 청구서 양식/필요서류 화면으로 연결한다.
+  // 파일 주소를 직접 걸면 양식 개정 시 링크가 깨지므로 화면 주소를 쓴다.
   claimUrl: string
 }
 
@@ -165,9 +168,9 @@ const PORTAL_LINKS: PortalLink[] = [
     badge: '삼성',
     color: 'bg-blue-600',
     logo: samsungLogo,
-    phones: { center: '1588-5114', incall: '1566-0553', help: '1899-5005', claimFax: '0505-162-0872' },
+    phones: { center: '1588-5114', help: '1899-5005', claimFax: '0505-162-0872' },
     termsUrl: 'https://www.samsungfire.com/vh/page/VH.HPIF0103.do',
-    claimUrl: 'https://www.samsungfire.com/download/claim/claim_new.pdf',
+    claimUrl: 'https://www.samsungfire.com/vh/page/VH.HPCLA001.do',
   },
   {
     name: 'DB손해보험',
@@ -176,9 +179,10 @@ const PORTAL_LINKS: PortalLink[] = [
     badge: 'DB',
     color: 'bg-sky-600',
     logo: dbLogo,
-    phones: { center: '1588-0100', incall: '1566-0757', help: '02-2262-1241', claimFax: '0505-181-4862' },
+    logoClass: 'h-10',
+    phones: { center: '1588-0100', help: '02-2262-1241', claimFax: '0505-181-4862' },
     termsUrl: 'https://www.idbins.com/FWMAIV1534.do',
-    claimUrl: 'https://www.idbins.com/pcweb/bizxpress/ct/dc/__etc/DB%EC%86%90%ED%95%B4%EB%B3%B4%ED%97%98-%5B%EC%9E%A5%EA%B8%B0%EB%B3%B4%EC%83%81%5D%EB%B3%B4%ED%97%98%EA%B8%88%EC%B2%AD%EA%B5%AC%EC%84%9C(%ED%91%9C%EC%A4%80)_7P%2020260729.pdf',
+    claimUrl: 'https://www.idbins.com/pc/bizxpress/ct/dc/FWCUSV1301.shtm',
   },
   {
     name: '현대해상보험',
@@ -187,9 +191,9 @@ const PORTAL_LINKS: PortalLink[] = [
     badge: '현대',
     color: 'bg-orange-500',
     logo: hyundaiLogo,
-    phones: { center: '1588-5656', incall: '1577-3223', help: '02-2628-4567', claimFax: '0507-774-6060' },
+    phones: { center: '1588-5656', help: '02-2628-4567', claimFax: '0507-774-6060' },
     termsUrl: 'https://www.hi.co.kr/serviceAction.do?view=bin/PA/03/HHPA03010M',
-    claimUrl: 'https://www.hi.co.kr/data/CL/amends_101.pdf',
+    claimUrl: 'https://www.hi.co.kr/bin/CL/CL/CLCL0047G.jsp',
   },
   {
     name: 'KB손해보험',
@@ -198,9 +202,9 @@ const PORTAL_LINKS: PortalLink[] = [
     badge: 'KB',
     color: 'bg-amber-500',
     logo: kbLogo,
-    phones: { center: '1544-0114', incall: '1544-0019', help: '1544-8119', claimFax: '0505-136-6500' },
+    phones: { center: '1544-0114', help: '1544-8119', claimFax: '0505-136-6500' },
     termsUrl: 'https://www.kbinsure.co.kr/CG802030001.ec',
-    claimUrl: 'https://www.kbinsure.co.kr/images/claim_svc/reqdoc_genal.pdf',
+    claimUrl: 'https://www.kbinsure.co.kr/CG604010303.ec',
   },
   {
     name: '메리츠화재보험',
@@ -209,9 +213,9 @@ const PORTAL_LINKS: PortalLink[] = [
     badge: '메리츠',
     color: 'bg-teal-600',
     logo: meritzLogo,
-    phones: { center: '1566-7711', incall: '1577-7711', help: '02-3786-2777', claimFax: '0505-021-3400' },
+    phones: { center: '1566-7711', help: '02-3786-2777', claimFax: '0505-021-3400' },
     termsUrl: 'https://www.meritzfire.com/disclosure/product-announcement/product-list.do#!/',
-    claimUrl: 'https://cmdown.meritzfire.com/manager/cm/document/supply.pdf',
+    claimUrl: 'https://www.meritzfire.com/compensation.do',
   },
   {
     name: '롯데손해보험',
@@ -220,7 +224,7 @@ const PORTAL_LINKS: PortalLink[] = [
     badge: '롯데',
     color: 'bg-red-600',
     logo: lotteLogo,
-    phones: { center: '1588-3344', incall: '1600-5182', help: '1599-8260', claimFax: '0507-333-9999' },
+    phones: { center: '1588-3344', help: '1599-8260', claimFax: '0507-333-9999' },
     termsUrl: 'https://www.lotteins.co.kr/web/C/D/H/cdh190.jsp',
     claimUrl: 'https://www.lotteins.co.kr/web/C/D/C/cdc_claim_0303.jsp',
   },
@@ -231,9 +235,10 @@ const PORTAL_LINKS: PortalLink[] = [
     badge: '한화',
     color: 'bg-rose-600',
     logo: hanwhaLogo,
-    phones: { center: '1566-8000', incall: '1670-1882', help: '02-316-0111', claimFax: '0502-779-1004' },
+    logoClass: 'h-12',
+    phones: { center: '1566-8000', help: '02-316-0111', claimFax: '0502-779-1004' },
     termsUrl: 'https://www.hwgeneralins.com/notice/ir/product-ing01.do',
-    claimUrl: 'https://www.hwgeneralins.com/upload/download/customer/insurance.pdf',
+    claimUrl: 'https://www.hwgeneralins.com/lounge/required-doc/list.do',
   },
   {
     name: '흥국화재보험',
@@ -242,9 +247,9 @@ const PORTAL_LINKS: PortalLink[] = [
     badge: '흥국',
     color: 'bg-pink-600',
     logo: heungkukLogo,
-    phones: { center: '1688-1688', incall: '1688-6997', help: '031-786-8088', claimFax: '0504-800-0700' },
+    phones: { center: '1688-1688', help: '031-786-8088', claimFax: '0504-800-0700' },
     termsUrl: 'https://www.heungkukfire.co.kr/FRW/announce/insGoodsGongsiSale.do',
-    claimUrl: 'https://www.heungkukfire.co.kr/common/downfile/insuranceApplication_common.pdf',
+    claimUrl: 'https://www.heungkukfire.co.kr/FRW/helpdesk/docInfoTemplate.do',
   },
   {
     name: '라이나손해보험',
@@ -253,9 +258,9 @@ const PORTAL_LINKS: PortalLink[] = [
     badge: '라이나',
     color: 'bg-indigo-600',
     logo: linaLogo,
-    phones: { center: '1566-5800', incall: '-', help: '02-2127-2308', claimFax: '02-2127-2308' },
+    phones: { center: '1566-5800', help: '02-2127-2308', claimFax: '02-2127-2308' },
     termsUrl: 'https://www.chubb.com/kr-kr/disclosure/product.html',
-    claimUrl: 'https://www.chubb.com/content/dam/chubb-sites/chubb-com/kr-kr/claims/individual-insurance/documents/pdf/claims-form-personal-insurance-june-2024.pdf',
+    claimUrl: 'https://www.chubb.com/kr-kr/claims-service/claims-documents-forms.html',
   },
   {
     name: 'AIG손해보험',
@@ -265,7 +270,7 @@ const PORTAL_LINKS: PortalLink[] = [
     color: 'bg-slate-700',
     forceEdge: true,
     logo: aigLogo,
-    phones: { center: '1544-2792', incall: '1600-4600', help: '02-2260-6855', claimFax: '02-2011-4607' },
+    phones: { center: '1544-2792', help: '02-2260-6855', claimFax: '02-2011-4607' },
     termsUrl: 'https://www.aig.co.kr/wo/dpwot001.html?menuId=MS702',
     claimUrl: 'https://www.aig.co.kr/wt/dpwtm025.html?menuId=MS216',
   },
@@ -273,9 +278,8 @@ const PORTAL_LINKS: PortalLink[] = [
 
 const PHONE_ROWS: { key: keyof PortalLink['phones']; label: string }[] = [
   { key: 'center', label: '고객센터' },
-  { key: 'incall', label: '인콜 모니터링' },
   { key: 'help', label: '전산 헬프' },
-  { key: 'claimFax', label: '금액 청구팩스' },
+  { key: 'claimFax', label: '보험금청구 팩스' },
 ]
 
 // Windows의 microsoft-edge: URI 프로토콜을 이용해 항상 Edge로 열리도록 강제한다.
@@ -298,7 +302,7 @@ function PortalLinksBar() {
               title={`${p.name} ${p.portal} 바로가기`.replace(/\s+/g, ' ')}
             >
               {p.logo ? (
-                <img src={p.logo} alt={p.name} className="h-8 max-w-full object-contain" />
+                <img src={p.logo} alt={p.name} className={`${p.logoClass ?? 'h-8'} max-w-full object-contain`} />
               ) : (
                 <div className={`h-8 w-14 rounded-xl ${p.color} text-white flex items-center justify-center text-xs font-bold`}>
                   {p.badge}
@@ -331,7 +335,7 @@ function PortalLinksBar() {
                 rel="noopener noreferrer"
                 className="rounded-lg bg-slate-700 py-1.5 text-center text-xs font-semibold text-white hover:bg-slate-600"
               >
-                약관확인
+                보험약관
               </a>
               <a
                 href={p.claimUrl}
