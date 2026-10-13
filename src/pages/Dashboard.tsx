@@ -140,7 +140,22 @@ function StatCard({ label, value, rate, color, icon }: StatCardProps) {
 }
 
 // 각 보험사가 자체 운영하는 GA/설계사용 업무포털 바로가기 (프로인스포탈 내부 페이지가 아님)
-const PORTAL_LINKS = [
+// 카드 로고를 누르면 업무포털로 이동하고, 아래에 자주 찾는 대표번호와 약관/청구서 버튼을 함께 보여준다.
+type PortalLink = {
+  name: string
+  portal: string
+  url: string
+  badge: string
+  color: string
+  logo?: string
+  forceEdge?: boolean
+  // 고객센터 / 인콜 모니터링 / 전산 헬프데스크 / 보험금 청구 팩스 (없으면 '-')
+  phones: { center: string; incall: string; help: string; claimFax: string }
+  // 판매상품 약관 공시 페이지
+  termsUrl: string
+}
+
+const PORTAL_LINKS: PortalLink[] = [
   {
     name: '삼성화재보험',
     portal: '드림포탈',
@@ -148,8 +163,19 @@ const PORTAL_LINKS = [
     badge: '삼성',
     color: 'bg-blue-600',
     logo: samsungLogo,
+    phones: { center: '1588-5114', incall: '1566-0553', help: '1899-5005', claimFax: '0505-162-0872' },
+    termsUrl: 'https://www.samsungfire.com/vh/page/VH.HPIF0103.do',
   },
-  { name: 'DB손해보험', portal: '영업포탈', url: 'https://www.mdbins.com', badge: 'DB', color: 'bg-sky-600', logo: dbLogo },
+  {
+    name: 'DB손해보험',
+    portal: '영업포탈',
+    url: 'https://www.mdbins.com',
+    badge: 'DB',
+    color: 'bg-sky-600',
+    logo: dbLogo,
+    phones: { center: '1588-0100', incall: '1566-0757', help: '02-2262-1241', claimFax: '0505-181-4862' },
+    termsUrl: 'https://www.idbins.com/FWMAIV1534.do',
+  },
   {
     name: '현대해상보험',
     portal: '영업포탈',
@@ -157,6 +183,8 @@ const PORTAL_LINKS = [
     badge: '현대',
     color: 'bg-orange-500',
     logo: hyundaiLogo,
+    phones: { center: '1588-5656', incall: '1577-3223', help: '02-2628-4567', claimFax: '0507-774-6060' },
+    termsUrl: 'https://www.hi.co.kr/serviceAction.do?view=bin/PA/03/HHPA03010M',
   },
   {
     name: 'KB손해보험',
@@ -165,6 +193,8 @@ const PORTAL_LINKS = [
     badge: 'KB',
     color: 'bg-amber-500',
     logo: kbLogo,
+    phones: { center: '1544-0114', incall: '1544-0019', help: '1544-8119', claimFax: '0505-136-6500' },
+    termsUrl: 'https://www.kbinsure.co.kr/CG802030001.ec',
   },
   {
     name: '메리츠화재보험',
@@ -173,6 +203,8 @@ const PORTAL_LINKS = [
     badge: '메리츠',
     color: 'bg-teal-600',
     logo: meritzLogo,
+    phones: { center: '1566-7711', incall: '1577-7711', help: '02-3786-2777', claimFax: '0505-021-3400' },
+    termsUrl: 'https://www.meritzfire.com/disclosure/product-announcement/product-list.do#!/',
   },
   {
     name: '롯데손해보험',
@@ -181,6 +213,8 @@ const PORTAL_LINKS = [
     badge: '롯데',
     color: 'bg-red-600',
     logo: lotteLogo,
+    phones: { center: '1588-3344', incall: '1600-5182', help: '1599-8260', claimFax: '0507-333-9999' },
+    termsUrl: 'https://www.lotteins.co.kr/web/C/D/H/cdh190.jsp',
   },
   {
     name: '한화손해보험',
@@ -189,6 +223,8 @@ const PORTAL_LINKS = [
     badge: '한화',
     color: 'bg-rose-600',
     logo: hanwhaLogo,
+    phones: { center: '1566-8000', incall: '1670-1882', help: '02-316-0111', claimFax: '0502-779-1004' },
+    termsUrl: 'https://www.hwgeneralins.com/notice/ir/product-ing01.do',
   },
   {
     name: '흥국화재보험',
@@ -197,6 +233,8 @@ const PORTAL_LINKS = [
     badge: '흥국',
     color: 'bg-pink-600',
     logo: heungkukLogo,
+    phones: { center: '1688-1688', incall: '1688-6997', help: '031-786-8088', claimFax: '0504-800-0700' },
+    termsUrl: 'https://www.heungkukfire.co.kr/FRW/announce/insGoodsGongsiSale.do',
   },
   {
     name: '라이나손해보험',
@@ -205,6 +243,8 @@ const PORTAL_LINKS = [
     badge: '라이나',
     color: 'bg-indigo-600',
     logo: linaLogo,
+    phones: { center: '1566-5800', incall: '-', help: '02-2127-2308', claimFax: '02-2127-2308' },
+    termsUrl: 'https://www.chubb.com/kr-kr/disclosure/product.html',
   },
   {
     name: 'AIG손해보험',
@@ -214,7 +254,16 @@ const PORTAL_LINKS = [
     color: 'bg-slate-700',
     forceEdge: true,
     logo: aigLogo,
+    phones: { center: '1544-2792', incall: '1600-4600', help: '02-2260-6855', claimFax: '02-2011-4607' },
+    termsUrl: 'https://www.aig.co.kr/wo/dpwot001.html?menuId=MS702',
   },
+]
+
+const PHONE_ROWS: { key: keyof PortalLink['phones']; label: string }[] = [
+  { key: 'center', label: '고객센터' },
+  { key: 'incall', label: '인콜 모니터링' },
+  { key: 'help', label: '전산 헬프' },
+  { key: 'claimFax', label: '금액 청구팩스' },
 ]
 
 // Windows의 microsoft-edge: URI 프로토콜을 이용해 항상 Edge로 열리도록 강제한다.
@@ -222,31 +271,129 @@ function portalHref(p: { url: string; forceEdge?: boolean }) {
   return p.forceEdge ? `microsoft-edge:${p.url}` : p.url
 }
 
+// 청구서 버튼: 보험금 청구 접수에 필요한 팩스/대표번호를 한 번에 보고 복사할 수 있게 한다.
+function ClaimModal({ insurer, onClose }: { insurer: PortalLink; onClose: () => void }) {
+  const [copied, setCopied] = useState<string | null>(null)
+  const copy = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(label)
+      setTimeout(() => setCopied(null), 1500)
+    } catch {
+      // 클립보드 권한이 없으면 번호를 직접 드래그해서 복사하도록 둔다.
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            {insurer.logo && <img src={insurer.logo} alt="" className="h-6 max-w-[80px] object-contain" />}
+            <p className="font-semibold text-slate-800">{insurer.name} 보험금 청구</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">
+            ×
+          </button>
+        </div>
+        <div className="space-y-2">
+          {[
+            { label: '금액 청구팩스', value: insurer.phones.claimFax },
+            { label: '고객센터', value: insurer.phones.center },
+          ].map((row) => (
+            <div key={row.label} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+              <span className="text-xs text-slate-500">{row.label}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-800 tabular-nums">{row.value}</span>
+                {row.value !== '-' && (
+                  <button
+                    onClick={() => copy(row.label, row.value)}
+                    className="text-[11px] px-2 py-0.5 rounded border border-slate-300 text-slate-600 hover:bg-white"
+                  >
+                    {copied === row.label ? '복사됨' : '복사'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-slate-500 leading-relaxed">
+          청구서·위임장 양식은 {insurer.name} 업무포털 또는 홈페이지 보험금 청구 메뉴에서 내려받을 수 있습니다.
+        </p>
+        <a
+          href={portalHref(insurer)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 block text-center rounded-lg bg-slate-800 text-white text-sm font-semibold py-2 hover:bg-slate-700"
+        >
+          업무포털 열기
+        </a>
+      </div>
+    </div>
+  )
+}
+
 function PortalLinksBar() {
+  const [claimFor, setClaimFor] = useState<PortalLink | null>(null)
   return (
     <div className="bg-white rounded-xl shadow p-4">
-      <p className="text-xs font-semibold text-slate-700 mb-2">보험사 업무포털 바로가기</p>
-      <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-10 gap-2">
+      <p className="text-xs font-semibold text-slate-700 mb-3">보험사 업무포털 바로가기</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3">
         {PORTAL_LINKS.map((p) => (
-          <a
-            key={p.name}
-            href={portalHref(p)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group flex flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-200 bg-white p-2 text-center shadow-sm group-hover:opacity-90 hover:shadow-md transition-shadow"
-            title={`${p.name} ${p.portal}`.trim()}
-          >
-            {p.logo ? (
-              <img src={p.logo} alt={p.name} className="h-9 max-w-full object-contain" />
-            ) : (
-              <div className={`h-9 w-14 rounded-xl ${p.color} text-white flex items-center justify-center text-xs font-bold`}>
-                {p.badge}
-              </div>
-            )}
-            <span className="text-xs text-slate-800 font-semibold leading-tight">{p.name}</span>
-          </a>
+          <div key={p.name} className="flex flex-col rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+            <a
+              href={portalHref(p)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-14 items-center justify-center rounded-xl bg-slate-50 px-2 hover:bg-slate-100 transition-colors"
+              title={`${p.name} ${p.portal} 바로가기`.replace(/\s+/g, ' ')}
+            >
+              {p.logo ? (
+                <img src={p.logo} alt={p.name} className="h-8 max-w-full object-contain" />
+              ) : (
+                <div className={`h-8 w-14 rounded-xl ${p.color} text-white flex items-center justify-center text-xs font-bold`}>
+                  {p.badge}
+                </div>
+              )}
+            </a>
+            <dl className="mt-2 space-y-0.5 px-0.5 sm:px-1 text-[10px] sm:text-[11px] leading-5">
+              {PHONE_ROWS.map(({ key, label }) => {
+                const value = p.phones[key]
+                return (
+                  <div key={key} className="flex justify-between gap-1">
+                    <dt className="min-w-0 truncate text-slate-500">{label}</dt>
+                    <dd className="shrink-0 font-semibold text-slate-800 tabular-nums whitespace-nowrap">
+                      {value === '-' ? (
+                        '-'
+                      ) : (
+                        <a href={`tel:${value.replace(/-/g, '')}`} className="hover:underline">
+                          {value}
+                        </a>
+                      )}
+                    </dd>
+                  </div>
+                )
+              })}
+            </dl>
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              <a
+                href={p.termsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg bg-slate-700 py-1.5 text-center text-xs font-semibold text-white hover:bg-slate-600"
+              >
+                약관확인
+              </a>
+              <button
+                onClick={() => setClaimFor(p)}
+                className="rounded-lg bg-slate-100 py-1.5 text-center text-xs font-semibold text-slate-700 hover:bg-slate-200"
+              >
+                청구서
+              </button>
+            </div>
+          </div>
         ))}
       </div>
+      {claimFor && <ClaimModal insurer={claimFor} onClose={() => setClaimFor(null)} />}
     </div>
   )
 }
