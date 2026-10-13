@@ -153,6 +153,8 @@ type PortalLink = {
   phones: { center: string; incall: string; help: string; claimFax: string }
   // 판매상품 약관 공시 페이지
   termsUrl: string
+  // 보험금 청구서 양식(PDF). 직접 받을 수 있는 파일이 없는 보험사는 청구서류 안내 페이지로 연결한다.
+  claimUrl: string
 }
 
 const PORTAL_LINKS: PortalLink[] = [
@@ -165,6 +167,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: samsungLogo,
     phones: { center: '1588-5114', incall: '1566-0553', help: '1899-5005', claimFax: '0505-162-0872' },
     termsUrl: 'https://www.samsungfire.com/vh/page/VH.HPIF0103.do',
+    claimUrl: 'https://www.samsungfire.com/download/claim/claim_new.pdf',
   },
   {
     name: 'DB손해보험',
@@ -175,6 +178,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: dbLogo,
     phones: { center: '1588-0100', incall: '1566-0757', help: '02-2262-1241', claimFax: '0505-181-4862' },
     termsUrl: 'https://www.idbins.com/FWMAIV1534.do',
+    claimUrl: 'https://www.idbins.com/pcweb/bizxpress/ct/dc/__etc/DB%EC%86%90%ED%95%B4%EB%B3%B4%ED%97%98-%5B%EC%9E%A5%EA%B8%B0%EB%B3%B4%EC%83%81%5D%EB%B3%B4%ED%97%98%EA%B8%88%EC%B2%AD%EA%B5%AC%EC%84%9C(%ED%91%9C%EC%A4%80)_7P%2020260729.pdf',
   },
   {
     name: '현대해상보험',
@@ -185,6 +189,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: hyundaiLogo,
     phones: { center: '1588-5656', incall: '1577-3223', help: '02-2628-4567', claimFax: '0507-774-6060' },
     termsUrl: 'https://www.hi.co.kr/serviceAction.do?view=bin/PA/03/HHPA03010M',
+    claimUrl: 'https://www.hi.co.kr/data/CL/amends_101.pdf',
   },
   {
     name: 'KB손해보험',
@@ -195,6 +200,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: kbLogo,
     phones: { center: '1544-0114', incall: '1544-0019', help: '1544-8119', claimFax: '0505-136-6500' },
     termsUrl: 'https://www.kbinsure.co.kr/CG802030001.ec',
+    claimUrl: 'https://www.kbinsure.co.kr/images/claim_svc/reqdoc_genal.pdf',
   },
   {
     name: '메리츠화재보험',
@@ -205,6 +211,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: meritzLogo,
     phones: { center: '1566-7711', incall: '1577-7711', help: '02-3786-2777', claimFax: '0505-021-3400' },
     termsUrl: 'https://www.meritzfire.com/disclosure/product-announcement/product-list.do#!/',
+    claimUrl: 'https://cmdown.meritzfire.com/manager/cm/document/supply.pdf',
   },
   {
     name: '롯데손해보험',
@@ -215,6 +222,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: lotteLogo,
     phones: { center: '1588-3344', incall: '1600-5182', help: '1599-8260', claimFax: '0507-333-9999' },
     termsUrl: 'https://www.lotteins.co.kr/web/C/D/H/cdh190.jsp',
+    claimUrl: 'https://www.lotteins.co.kr/web/C/D/C/cdc_claim_0303.jsp',
   },
   {
     name: '한화손해보험',
@@ -225,6 +233,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: hanwhaLogo,
     phones: { center: '1566-8000', incall: '1670-1882', help: '02-316-0111', claimFax: '0502-779-1004' },
     termsUrl: 'https://www.hwgeneralins.com/notice/ir/product-ing01.do',
+    claimUrl: 'https://www.hwgeneralins.com/upload/download/customer/insurance.pdf',
   },
   {
     name: '흥국화재보험',
@@ -235,6 +244,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: heungkukLogo,
     phones: { center: '1688-1688', incall: '1688-6997', help: '031-786-8088', claimFax: '0504-800-0700' },
     termsUrl: 'https://www.heungkukfire.co.kr/FRW/announce/insGoodsGongsiSale.do',
+    claimUrl: 'https://www.heungkukfire.co.kr/common/downfile/insuranceApplication_common.pdf',
   },
   {
     name: '라이나손해보험',
@@ -245,6 +255,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: linaLogo,
     phones: { center: '1566-5800', incall: '-', help: '02-2127-2308', claimFax: '02-2127-2308' },
     termsUrl: 'https://www.chubb.com/kr-kr/disclosure/product.html',
+    claimUrl: 'https://www.chubb.com/content/dam/chubb-sites/chubb-com/kr-kr/claims/individual-insurance/documents/pdf/claims-form-personal-insurance-june-2024.pdf',
   },
   {
     name: 'AIG손해보험',
@@ -256,6 +267,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: aigLogo,
     phones: { center: '1544-2792', incall: '1600-4600', help: '02-2260-6855', claimFax: '02-2011-4607' },
     termsUrl: 'https://www.aig.co.kr/wo/dpwot001.html?menuId=MS702',
+    claimUrl: 'https://www.aig.co.kr/wt/dpwtm025.html?menuId=MS216',
   },
 ]
 
@@ -271,69 +283,7 @@ function portalHref(p: { url: string; forceEdge?: boolean }) {
   return p.forceEdge ? `microsoft-edge:${p.url}` : p.url
 }
 
-// 청구서 버튼: 보험금 청구 접수에 필요한 팩스/대표번호를 한 번에 보고 복사할 수 있게 한다.
-function ClaimModal({ insurer, onClose }: { insurer: PortalLink; onClose: () => void }) {
-  const [copied, setCopied] = useState<string | null>(null)
-  const copy = async (label: string, value: string) => {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopied(label)
-      setTimeout(() => setCopied(null), 1500)
-    } catch {
-      // 클립보드 권한이 없으면 번호를 직접 드래그해서 복사하도록 둔다.
-    }
-  }
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            {insurer.logo && <img src={insurer.logo} alt="" className="h-6 max-w-[80px] object-contain" />}
-            <p className="font-semibold text-slate-800">{insurer.name} 보험금 청구</p>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">
-            ×
-          </button>
-        </div>
-        <div className="space-y-2">
-          {[
-            { label: '금액 청구팩스', value: insurer.phones.claimFax },
-            { label: '고객센터', value: insurer.phones.center },
-          ].map((row) => (
-            <div key={row.label} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-              <span className="text-xs text-slate-500">{row.label}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-slate-800 tabular-nums">{row.value}</span>
-                {row.value !== '-' && (
-                  <button
-                    onClick={() => copy(row.label, row.value)}
-                    className="text-[11px] px-2 py-0.5 rounded border border-slate-300 text-slate-600 hover:bg-white"
-                  >
-                    {copied === row.label ? '복사됨' : '복사'}
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-        <p className="mt-3 text-xs text-slate-500 leading-relaxed">
-          청구서·위임장 양식은 {insurer.name} 업무포털 또는 홈페이지 보험금 청구 메뉴에서 내려받을 수 있습니다.
-        </p>
-        <a
-          href={portalHref(insurer)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-3 block text-center rounded-lg bg-slate-800 text-white text-sm font-semibold py-2 hover:bg-slate-700"
-        >
-          업무포털 열기
-        </a>
-      </div>
-    </div>
-  )
-}
-
 function PortalLinksBar() {
-  const [claimFor, setClaimFor] = useState<PortalLink | null>(null)
   return (
     <div className="bg-white rounded-xl shadow p-4">
       <p className="text-xs font-semibold text-slate-700 mb-3">보험사 업무포털 바로가기</p>
@@ -383,17 +333,19 @@ function PortalLinksBar() {
               >
                 약관확인
               </a>
-              <button
-                onClick={() => setClaimFor(p)}
+              <a
+                href={p.claimUrl}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="rounded-lg bg-slate-100 py-1.5 text-center text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                title={`${p.name} 보험금 청구서 내려받기`}
               >
                 청구서
-              </button>
+              </a>
             </div>
           </div>
         ))}
       </div>
-      {claimFor && <ClaimModal insurer={claimFor} onClose={() => setClaimFor(null)} />}
     </div>
   )
 }
