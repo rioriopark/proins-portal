@@ -153,8 +153,8 @@ type PortalLink = {
   phones: { center: string; incall: string; help: string; claimFax: string }
   // 판매상품 약관 공시 페이지
   termsUrl: string
-  // 보험사 공식 홈페이지의 보험금 청구서 양식 다운로드 화면. 양식 목록 화면을 찾지 못한 곳은
-  // 공식 홈페이지에 올라온 청구서 PDF로, 파일도 없는 곳은 청구서류 안내 화면으로 연결한다.
+  // 약관확인과 같이 보험사 공식 홈페이지의 보험금 청구서 양식/필요서류 화면으로 연결한다.
+  // 파일 주소를 직접 걸면 양식 개정 시 링크가 깨지므로 화면 주소를 쓴다.
   claimUrl: string
 }
 
@@ -168,7 +168,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: samsungLogo,
     phones: { center: '1588-5114', incall: '1566-0553', help: '1899-5005', claimFax: '0505-162-0872' },
     termsUrl: 'https://www.samsungfire.com/vh/page/VH.HPIF0103.do',
-    claimUrl: 'https://www.samsungfire.com/download/claim/claim_new.pdf',
+    claimUrl: 'https://www.samsungfire.com/vh/page/VH.HPCLA001.do',
   },
   {
     name: 'DB손해보험',
@@ -190,7 +190,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: hyundaiLogo,
     phones: { center: '1588-5656', incall: '1577-3223', help: '02-2628-4567', claimFax: '0507-774-6060' },
     termsUrl: 'https://www.hi.co.kr/serviceAction.do?view=bin/PA/03/HHPA03010M',
-    claimUrl: 'https://www.hi.co.kr/data/CL/amends_101.pdf',
+    claimUrl: 'https://www.hi.co.kr/bin/CL/CL/CLCL0047G.jsp',
   },
   {
     name: 'KB손해보험',
@@ -212,7 +212,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: meritzLogo,
     phones: { center: '1566-7711', incall: '1577-7711', help: '02-3786-2777', claimFax: '0505-021-3400' },
     termsUrl: 'https://www.meritzfire.com/disclosure/product-announcement/product-list.do#!/',
-    claimUrl: 'https://cmdown.meritzfire.com/manager/cm/document/supply.pdf',
+    claimUrl: 'https://www.meritzfire.com/compensation.do',
   },
   {
     name: '롯데손해보험',
@@ -234,7 +234,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: hanwhaLogo,
     phones: { center: '1566-8000', incall: '1670-1882', help: '02-316-0111', claimFax: '0502-779-1004' },
     termsUrl: 'https://www.hwgeneralins.com/notice/ir/product-ing01.do',
-    claimUrl: 'https://www.hwgeneralins.com/upload/download/customer/insurance.pdf',
+    claimUrl: 'https://www.hwgeneralins.com/lounge/required-doc/list.do',
   },
   {
     name: '흥국화재보험',
