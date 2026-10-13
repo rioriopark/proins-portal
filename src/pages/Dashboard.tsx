@@ -153,7 +153,8 @@ type PortalLink = {
   phones: { center: string; incall: string; help: string; claimFax: string }
   // 판매상품 약관 공시 페이지
   termsUrl: string
-  // 보험금 청구서 양식(PDF). 직접 받을 수 있는 파일이 없는 보험사는 청구서류 안내 페이지로 연결한다.
+  // 보험사 공식 홈페이지의 보험금 청구서 양식 다운로드 화면. 양식 목록 화면을 찾지 못한 곳은
+  // 공식 홈페이지에 올라온 청구서 PDF로, 파일도 없는 곳은 청구서류 안내 화면으로 연결한다.
   claimUrl: string
 }
 
@@ -178,7 +179,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: dbLogo,
     phones: { center: '1588-0100', incall: '1566-0757', help: '02-2262-1241', claimFax: '0505-181-4862' },
     termsUrl: 'https://www.idbins.com/FWMAIV1534.do',
-    claimUrl: 'https://www.idbins.com/pcweb/bizxpress/ct/dc/__etc/DB%EC%86%90%ED%95%B4%EB%B3%B4%ED%97%98-%5B%EC%9E%A5%EA%B8%B0%EB%B3%B4%EC%83%81%5D%EB%B3%B4%ED%97%98%EA%B8%88%EC%B2%AD%EA%B5%AC%EC%84%9C(%ED%91%9C%EC%A4%80)_7P%2020260729.pdf',
+    claimUrl: 'https://www.idbins.com/pc/bizxpress/ct/dc/FWCUSV1301.shtm',
   },
   {
     name: '현대해상보험',
@@ -200,7 +201,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: kbLogo,
     phones: { center: '1544-0114', incall: '1544-0019', help: '1544-8119', claimFax: '0505-136-6500' },
     termsUrl: 'https://www.kbinsure.co.kr/CG802030001.ec',
-    claimUrl: 'https://www.kbinsure.co.kr/images/claim_svc/reqdoc_genal.pdf',
+    claimUrl: 'https://www.kbinsure.co.kr/CG604010303.ec',
   },
   {
     name: '메리츠화재보험',
@@ -244,7 +245,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: heungkukLogo,
     phones: { center: '1688-1688', incall: '1688-6997', help: '031-786-8088', claimFax: '0504-800-0700' },
     termsUrl: 'https://www.heungkukfire.co.kr/FRW/announce/insGoodsGongsiSale.do',
-    claimUrl: 'https://www.heungkukfire.co.kr/common/downfile/insuranceApplication_common.pdf',
+    claimUrl: 'https://www.heungkukfire.co.kr/FRW/helpdesk/docInfoTemplate.do',
   },
   {
     name: '라이나손해보험',
@@ -255,7 +256,7 @@ const PORTAL_LINKS: PortalLink[] = [
     logo: linaLogo,
     phones: { center: '1566-5800', incall: '-', help: '02-2127-2308', claimFax: '02-2127-2308' },
     termsUrl: 'https://www.chubb.com/kr-kr/disclosure/product.html',
-    claimUrl: 'https://www.chubb.com/content/dam/chubb-sites/chubb-com/kr-kr/claims/individual-insurance/documents/pdf/claims-form-personal-insurance-june-2024.pdf',
+    claimUrl: 'https://www.chubb.com/kr-kr/claims-service/claims-documents-forms.html',
   },
   {
     name: 'AIG손해보험',
