@@ -15,6 +15,62 @@
 
 create extension if not exists pgcrypto;
 
+-- 수수료명세서: 가상 직원의 이번 달 포함 최근 4개월 명세서를 계약 데이터와 직급별 지급률로 계산해 다시 채운다.
+-- 수수료명세서 화면의 "지급률 자동계산"과 같은 방식(건별수수료 × 장기/일반 지급률, 사업소득자는 세금·보험 포함)이다.
+create or replace function demo_fill_statements()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+begin
+  if exists (
+    select 1 from profiles
+    where email <> 'guest@proins.local' and email not like 'demo__@proins.local'
+  ) then
+    raise exception '데모 계정이 아닌 회원이 있습니다. 운영 DB로 보여 중단합니다.';
+  end if;
+
+  delete from statements;
+  insert into statements (agent_id, agent_email, month, recruit_first, recruit_installment, maintain, general, auto,
+    collection_fee, personal_incentive, taxable_income, income_tax, resident_tax, employment_ins, industrial_accident_ins)
+  select id, email, month, rf, 0, mt, gn, au, cf, pi,
+    case when biz then ti else 0 end,
+    case when biz then it else 0 end,
+    case when biz then floor(it * 0.1 / 10) * 10 else 0 end,
+    case when not biz or ti - trunc(ti * 0.25) < 850000 then 0
+      else floor(greatest(ti - trunc(ti * 0.25), 1330000) * 0.018 / 2 / 10) * 10 end,
+    case when biz then floor(2401300 * 0.007 / 2 / 10) * 10 else 0 end
+  from (
+    select *, rf + mt + gn + au + cf + pi as ti,
+      case when rf + mt + gn + au + cf + pi <= 33330 then 0 else floor((rf + mt + gn + au + cf + pi) * 0.03 / 10) * 10 end as it
+    from (
+      select p.id, p.email, mo.month, p.org_id <> 'hq' as biz,
+        -- 모집초회수수료는 장기 신규보험료의 7배, 개인시책은 5배로 잡는다
+        round(coalesce(sum(c.premium) filter (where c.category = '장기' and c.type = '신규'), 0) * 7) as rf,
+        round(coalesce(sum(c.commission) filter (where c.category = '장기' and c.type <> '신규'), 0) * p.rate_long) as mt,
+        round(coalesce(sum(c.commission) filter (where c.category = '일반'), 0) * p.rate_general) as gn,
+        round(coalesce(sum(c.commission) filter (where c.category = '자동차'), 0) * p.rate_general) as au,
+        round(coalesce(sum(c.premium) filter (where c.category = '장기' and c.type = '신규'), 0) * 5) as pi,
+        -- 수금수수료는 장기계약 보험료 합계의 1%. 화면처럼 위촉직 설계사(본사 외 agent)는 직급수수료 대상이 아니라 0
+        case when p.role = 'agent' and p.org_id <> 'hq' then 0
+          else round(coalesce(sum(c.premium) filter (where c.category = '장기'), 0) * 0.01) end as cf
+      from profiles p
+      cross join (
+        select to_char(date_trunc('month', current_date) - make_interval(months => n), 'YYYY-MM') as month,
+          to_char(date_trunc('month', current_date) - make_interval(months => n + 1), 'YYYY-MM') as prev_month
+        from generate_series(0, 3) n
+      ) mo
+      -- 화면과 같게 장기는 전월 실적(계약월) 기준, 일반·자동차는 해당 정산월 기준으로 모은다
+      left join contracts c on c.agent_id = p.id and not c.is_preliminary
+        and c.month = case when c.category = '장기' then mo.prev_month else mo.month end
+      where p.email like 'demo__@proins.local'
+      group by p.id, p.email, p.role, p.org_id, p.rate_long, p.rate_general, mo.month
+    ) a
+  ) b;
+end;
+$fn$;
+
 create or replace function reset_demo_data(p_guest_password text)
 returns text
 language plpgsql
@@ -25,7 +81,7 @@ declare
   v_guest_email constant text := 'guest@proins.local';
   v_guest_id uuid;
   v_names text[] := array['김민준','이서연','박지호','최수아','정도윤','강하은','조예준','윤지우'];
-  v_titles text[] := array['팀장','설계사','설계사','설계사','지점장','설계사','설계사','설계사'];
+  v_titles text[] := array['지점장(직영,인큐)','FC_엘리트','FC_프로','FC','본부장(직영사업단)','FC_리더','FC','FC_프로'];
   v_orgs text[] := array['hq','hq','hq','br-direct','br-seoul','br-seoul','st-direct-1','br-incubating'];
   v_roles text[] := array['agent','agent','agent','agent','branch_admin','agent','store_manager','agent'];
   v_companies text[] := array['삼성화재','DB손해보험','현대해상','KB손해보험','메리츠화재','한화손해보험','롯데손해보험','흥국화재'];
@@ -40,6 +96,9 @@ declare
   v_premium numeric;
   v_category text;
   v_receipt date;
+  v_j int;
+  v_k int;
+  v_line_premium numeric;
 begin
   if p_guest_password is null or length(p_guest_password) < 6 then
     raise exception '게스트 비밀번호는 6자 이상이어야 합니다.';
@@ -110,7 +169,13 @@ begin
       format('demo%s@proins.local', lpad(v_i::text, 2, '0')), '{}', '{}', now(), now(), '', '', '', '');
     insert into profiles (id, email, name, role, org_id, title, rate_long, rate_general, bank, account)
     values (v_id, format('demo%s@proins.local', lpad(v_i::text, 2, '0')), v_names[v_i], v_roles[v_i], v_orgs[v_i],
-      v_titles[v_i], 0.7 + (v_i % 3) * 0.1, 0.6, '체험은행', '000-0000-' || lpad(v_i::text, 4, '0'));
+      -- 지급률은 프로인스컴퍼니 수수료 지급규정 별표 1·2(2026년 1월 기준)의 장기보험/신계약, 일반·자동차 지급률
+      v_titles[v_i],
+      case v_titles[v_i] when 'FC' then 0.65 when 'FC_프로' then 0.70 when 'FC_엘리트' then 0.75 when 'FC_리더' then 0.78
+        when '지점장(직영,인큐)' then 0.80 when '지점장(직영,선임)' then 0.90 when '본부장(직영사업단)' then 0.95 end,
+      case v_titles[v_i] when 'FC' then 0.70 when 'FC_프로' then 0.80 when 'FC_엘리트' then 0.80 when 'FC_리더' then 0.80
+        when '지점장(직영,인큐)' then 0.85 when '지점장(직영,선임)' then 0.90 when '본부장(직영사업단)' then 0.95 end,
+      '체험은행', '000-0000-' || lpad(v_i::text, 4, '0'));
     insert into agent_profiles (profile_id, phone, address, email, registration_no)
     values (v_id, '010-0000-' || lpad(v_i::text, 4, '0'), '서울시 가상구 체험로 ' || v_i, format('demo%s@example.com', v_i),
       'DEMO-' || lpad(v_i::text, 6, '0'));
@@ -124,31 +189,38 @@ begin
         v_category := (array['장기','장기','장기','일반','자동차'])[1 + ((v_i * 7 + v_n * 3 + v_m) % 5)];
         v_premium := case v_category
           when '장기' then 30000 + ((v_i * 13 + v_n * 17 + v_m * 7) % 20) * 5000
-          when '일반' then 150000 + ((v_i + v_n + v_m) % 10) * 30000
-          else 600000 + ((v_i * 3 + v_n + v_m) % 12) * 50000 end;
+          -- 일반은 체험판에서 규모가 잘 보이도록 크게, 자동차:일반 보험료 비중은 1:9 정도로 맞춘다
+          when '일반' then 7500000 + ((v_i + v_n + v_m) % 12) * 500000
+          else 900000 + ((v_i * 3 + v_n + v_m) % 10) * 50000 end;
         v_receipt := (v_month || '-01')::date + ((v_i * 5 + v_n * 3) % 27);
-        insert into contracts (agent_id, agent_email, month, category, type, company, policy_no, product_name,
-          customer_name, insured_name, receipt_date, expiry_date, collection_status, count, premium, commission,
-          performance_commission, is_preliminary, duration_type)
-        values (
-          v_agent_ids[v_i], format('demo%s@proins.local', lpad(v_i::text, 2, '0')), v_month, v_category,
-          case when v_m > 0 and v_n = 1 and v_category = '장기' then '계속' else '신규' end,
-          v_companies[1 + ((v_i + v_n * 2 + v_m) % 8)],
-          format('DEMO-%s-%s-%s', replace(v_month, '-', ''), v_i, v_n),
-          case v_category when '장기' then v_long_products[1 + ((v_i + v_n + v_m) % 6)]
-            when '일반' then '화재보험' else '개인용 자동차보험' end,
-          v_customers[1 + ((v_i * 5 + v_n + v_m) % 12)],
-          v_customers[1 + ((v_i * 5 + v_n + v_m + 1) % 12)],
-          v_receipt,
-          case when v_category = '장기' then null else v_receipt + interval '1 year' end,
-          case when v_category = '장기' then
-            (array['정상','정상','정상','정상','정상','정상','유예','실효','해지'])[1 + ((v_i * 11 + v_n * 7 + v_m) % 9)]
-          end,
-          1, v_premium, round(v_premium * case v_category when '장기' then 3.2 else 0.12 end),
-          round(v_premium * case v_category when '장기' then 0.4 else 0 end),
-          false,
-          case v_category when '장기' then (array['5년','10년','20년','세만기'])[1 + ((v_i + v_n) % 4)] else '년간' end
-        );
+        -- 일반·자동차는 건당 평균 70만원 정도가 되도록 같은 금액을 여러 건으로 나눈다
+        v_k := case when v_category = '장기' then 1 else greatest(1, round(v_premium / 700000))::int end;
+        for v_j in 1..v_k loop
+          v_line_premium := case when v_k = 1 then v_premium
+            else round(v_premium / v_k * (0.85 + ((v_j * 3 + v_i) % 7) * 0.05), -3) end;
+          insert into contracts (agent_id, agent_email, month, category, type, company, policy_no, product_name,
+            customer_name, insured_name, receipt_date, expiry_date, collection_status, count, premium, commission,
+            performance_commission, is_preliminary, duration_type)
+          values (
+            v_agent_ids[v_i], format('demo%s@proins.local', lpad(v_i::text, 2, '0')), v_month, v_category,
+            case when v_m > 0 and v_n = 1 and v_category = '장기' then '계속' else '신규' end,
+            v_companies[1 + ((v_i + v_n * 2 + v_m) % 8)],
+            format('DEMO-%s-%s-%s', replace(v_month, '-', ''), v_i, v_n) || case when v_k > 1 then '-' || v_j else '' end,
+            case v_category when '장기' then v_long_products[1 + ((v_i + v_n + v_m) % 6)]
+              when '일반' then '화재보험' else '개인용 자동차보험' end,
+            v_customers[1 + ((v_i * 5 + v_n + v_m + v_j - 1) % 12)],
+            v_customers[1 + ((v_i * 5 + v_n + v_m + v_j) % 12)],
+            v_receipt,
+            case when v_category = '장기' then null else v_receipt + interval '1 year' end,
+            case when v_category = '장기' then
+              (array['정상','정상','정상','정상','정상','정상','유예','실효','해지'])[1 + ((v_i * 11 + v_n * 7 + v_m) % 9)]
+            end,
+            1, v_line_premium, round(v_line_premium * case v_category when '장기' then 3.2 else 0.12 end),
+            round(v_line_premium * case v_category when '장기' then 0.4 else 0 end),
+            false,
+            case v_category when '장기' then (array['5년','10년','20년','세만기'])[1 + ((v_i + v_n) % 4)] else '년간' end
+          );
+        end loop;
       end loop;
     end loop;
   end loop;
@@ -162,21 +234,8 @@ begin
       1, 50000 + v_i * 10000, 0, true);
   end loop;
 
-  -- ── 수수료명세서: 최근 3개월 ──
-  for v_m in 1..3 loop
-    v_month := to_char(date_trunc('month', current_date) - make_interval(months => v_m), 'YYYY-MM');
-    for v_i in 1..8 loop
-      insert into statements (agent_id, agent_email, month, recruit_first, recruit_installment, maintain, general, auto,
-        personal_incentive, taxable_income, income_tax, resident_tax, employment_ins, industrial_accident_ins)
-      select v_agent_ids[v_i], format('demo%s@proins.local', lpad(v_i::text, 2, '0')), v_month,
-        rf, ri, mt, gn, au, pi, rf + ri + mt + gn + au + pi,
-        round((rf + ri + mt + gn + au + pi) * 0.03), round((rf + ri + mt + gn + au + pi) * 0.003),
-        round((rf + ri + mt + gn + au + pi) * 0.008), round((rf + ri + mt + gn + au + pi) * 0.004)
-      from (select (800000 + v_i * 90000 + v_m * 30000)::numeric rf, (400000 + v_i * 40000)::numeric ri,
-        (150000 + v_i * 10000)::numeric mt, (60000 + v_i * 5000)::numeric gn, (90000 + v_m * 8000)::numeric au,
-        (case when v_i % 2 = 0 then 200000 else 0 end)::numeric pi) x;
-    end loop;
-  end loop;
+  -- ── 수수료명세서: 이번 달 포함 최근 4개월 (계약 × 직급별 지급률) ──
+  perform demo_fill_statements();
 
   -- ── 업무 연락처 (임직원은 agent_profiles 트리거가 자동으로 채움) ──
   insert into contacts (category, company, name, title, phone, office_phone, email, business, sort_order) values
@@ -232,7 +291,7 @@ begin
 
   insert into board_posts (title, content, author_id, author_name) values
     ('체험판 게시판입니다', '자유롭게 글을 써 보세요. 매일 초기화됩니다.', v_guest_id, '체험 게스트'),
-    ('이번 달 우수 설계사 축하드립니다', '김민준 팀장님 축하드립니다!', v_agent_ids[1], v_names[1]);
+    ('이번 달 우수 설계사 축하드립니다', '김민준 지점장님 축하드립니다!', v_agent_ids[1], v_names[1]);
 
   -- 일반성과 시상 대상자 예시 (수수료명세서의 일반성과 계산에 쓰임)
   update profiles set general_performance_rate = 0.3 where id = any(v_agent_ids[1:2]);
@@ -244,3 +303,5 @@ $fn$;
 -- 브라우저(anon/로그인 사용자)에서 RPC로 호출하지 못하게 막는다
 revoke all on function reset_demo_data(text) from public;
 revoke all on function reset_demo_data(text) from anon, authenticated;
+revoke all on function demo_fill_statements() from public;
+revoke all on function demo_fill_statements() from anon, authenticated;
