@@ -77,7 +77,7 @@ declare
   v_guest_email constant text := 'guest@proins.local';
   v_guest_id uuid;
   v_names text[] := array['김민준','이서연','박지호','최수아','정도윤','강하은','조예준','윤지우'];
-  v_titles text[] := array['팀장','설계사','설계사','설계사','지점장','설계사','설계사','설계사'];
+  v_titles text[] := array['지점장(직영,인큐)','FC_엘리트','FC_프로','FC','본부장(직영사업단)','FC_리더','FC','FC_프로'];
   v_orgs text[] := array['hq','hq','hq','br-direct','br-seoul','br-seoul','st-direct-1','br-incubating'];
   v_roles text[] := array['agent','agent','agent','agent','branch_admin','agent','store_manager','agent'];
   v_companies text[] := array['삼성화재','DB손해보험','현대해상','KB손해보험','메리츠화재','한화손해보험','롯데손해보험','흥국화재'];
@@ -165,10 +165,12 @@ begin
       format('demo%s@proins.local', lpad(v_i::text, 2, '0')), '{}', '{}', now(), now(), '', '', '', '');
     insert into profiles (id, email, name, role, org_id, title, rate_long, rate_general, bank, account)
     values (v_id, format('demo%s@proins.local', lpad(v_i::text, 2, '0')), v_names[v_i], v_roles[v_i], v_orgs[v_i],
-      -- 직급별 지급률(장기/일반): 설계사 70%/60%, 팀장 80%/65%, 지점장 90%/70%
+      -- 지급률은 프로인스컴퍼니 수수료 지급규정 별표 1·2(2026년 1월 기준)의 장기보험/신계약, 일반·자동차 지급률
       v_titles[v_i],
-      case v_titles[v_i] when '지점장' then 0.9 when '팀장' then 0.8 else 0.7 end,
-      case v_titles[v_i] when '지점장' then 0.7 when '팀장' then 0.65 else 0.6 end,
+      case v_titles[v_i] when 'FC' then 0.65 when 'FC_프로' then 0.70 when 'FC_엘리트' then 0.75 when 'FC_리더' then 0.78
+        when '지점장(직영,인큐)' then 0.80 when '지점장(직영,선임)' then 0.90 when '본부장(직영사업단)' then 0.95 end,
+      case v_titles[v_i] when 'FC' then 0.70 when 'FC_프로' then 0.80 when 'FC_엘리트' then 0.80 when 'FC_리더' then 0.80
+        when '지점장(직영,인큐)' then 0.85 when '지점장(직영,선임)' then 0.90 when '본부장(직영사업단)' then 0.95 end,
       '체험은행', '000-0000-' || lpad(v_i::text, 4, '0'));
     insert into agent_profiles (profile_id, phone, address, email, registration_no)
     values (v_id, '010-0000-' || lpad(v_i::text, 4, '0'), '서울시 가상구 체험로 ' || v_i, format('demo%s@example.com', v_i),
@@ -183,9 +185,9 @@ begin
         v_category := (array['장기','장기','장기','일반','자동차'])[1 + ((v_i * 7 + v_n * 3 + v_m) % 5)];
         v_premium := case v_category
           when '장기' then 30000 + ((v_i * 13 + v_n * 17 + v_m * 7) % 20) * 5000
-          -- 일반·자동차는 체험판에서 규모가 잘 보이도록 실제 단가의 10배 수준으로 넣는다
-          when '일반' then 1500000 + ((v_i + v_n + v_m) % 10) * 300000
-          else 6000000 + ((v_i * 3 + v_n + v_m) % 12) * 500000 end;
+          -- 일반은 체험판에서 규모가 잘 보이도록 크게, 자동차:일반 보험료 비중은 1:9 정도로 맞춘다
+          when '일반' then 7500000 + ((v_i + v_n + v_m) % 12) * 500000
+          else 900000 + ((v_i * 3 + v_n + v_m) % 10) * 50000 end;
         v_receipt := (v_month || '-01')::date + ((v_i * 5 + v_n * 3) % 27);
         -- 일반·자동차는 건당 평균 70만원 정도가 되도록 같은 금액을 여러 건으로 나눈다
         v_k := case when v_category = '장기' then 1 else greatest(1, round(v_premium / 700000))::int end;
@@ -285,7 +287,7 @@ begin
 
   insert into board_posts (title, content, author_id, author_name) values
     ('체험판 게시판입니다', '자유롭게 글을 써 보세요. 매일 초기화됩니다.', v_guest_id, '체험 게스트'),
-    ('이번 달 우수 설계사 축하드립니다', '김민준 팀장님 축하드립니다!', v_agent_ids[1], v_names[1]);
+    ('이번 달 우수 설계사 축하드립니다', '김민준 지점장님 축하드립니다!', v_agent_ids[1], v_names[1]);
 
   -- 일반성과 시상 대상자 예시 (수수료명세서의 일반성과 계산에 쓰임)
   update profiles set general_performance_rate = 0.3 where id = any(v_agent_ids[1:2]);
