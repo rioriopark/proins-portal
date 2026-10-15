@@ -124,8 +124,9 @@ begin
         v_category := (array['장기','장기','장기','일반','자동차'])[1 + ((v_i * 7 + v_n * 3 + v_m) % 5)];
         v_premium := case v_category
           when '장기' then 30000 + ((v_i * 13 + v_n * 17 + v_m * 7) % 20) * 5000
-          when '일반' then 150000 + ((v_i + v_n + v_m) % 10) * 30000
-          else 600000 + ((v_i * 3 + v_n + v_m) % 12) * 50000 end;
+          -- 일반·자동차는 체험판에서 규모가 잘 보이도록 실제 단가의 10배 수준으로 넣는다
+          when '일반' then 1500000 + ((v_i + v_n + v_m) % 10) * 300000
+          else 6000000 + ((v_i * 3 + v_n + v_m) % 12) * 500000 end;
         v_receipt := (v_month || '-01')::date + ((v_i * 5 + v_n * 3) % 27);
         insert into contracts (agent_id, agent_email, month, category, type, company, policy_no, product_name,
           customer_name, insured_name, receipt_date, expiry_date, collection_status, count, premium, commission,
