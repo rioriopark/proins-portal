@@ -99,6 +99,7 @@ declare
   v_j int;
   v_k int;
   v_line_premium numeric;
+  v_total numeric;
 begin
   if p_guest_password is null or length(p_guest_password) < 6 then
     raise exception '게스트 비밀번호는 6자 이상이어야 합니다.';
@@ -187,11 +188,9 @@ begin
     for v_i in 1..8 loop
       for v_n in 1..(2 + ((v_i + v_m) % 4)) loop
         v_category := (array['장기','장기','장기','일반','자동차'])[1 + ((v_i * 7 + v_n * 3 + v_m) % 5)];
-        v_premium := case v_category
-          when '장기' then 30000 + ((v_i * 13 + v_n * 17 + v_m * 7) % 20) * 5000
-          -- 일반은 체험판에서 규모가 잘 보이도록 크게, 자동차:일반 보험료 비중은 1:9 정도로 맞춘다
-          when '일반' then 7500000 + ((v_i + v_n + v_m) % 12) * 500000
-          else 900000 + ((v_i * 3 + v_n + v_m) % 10) * 50000 end;
+        -- 일반·자동차는 아래에서 담당자 직급별 월 실적으로 따로 만든다
+        continue when v_category <> '장기';
+        v_premium := 30000 + ((v_i * 13 + v_n * 17 + v_m * 7) % 20) * 5000;
         v_receipt := (v_month || '-01')::date + ((v_i * 5 + v_n * 3) % 27);
         -- 일반·자동차는 건당 평균 70만원 정도가 되도록 같은 금액을 여러 건으로 나눈다
         v_k := case when v_category = '장기' then 1 else greatest(1, round(v_premium / 700000))::int end;
@@ -219,6 +218,39 @@ begin
             round(v_line_premium * case v_category when '장기' then 0.4 else 0 end),
             false,
             case v_category when '장기' then (array['5년','10년','20년','세만기'])[1 + ((v_i + v_n) % 4)] else '년간' end
+          );
+        end loop;
+      end loop;
+    end loop;
+  end loop;
+
+  -- ── 일반·자동차: 담당자 직급별 월 일반보험 실적(FC 1천만원 ~ 본부장 1억원), 자동차는 일반의 1/9 ──
+  -- 계약 1건은 평균 70만원 안팎이 되도록 월 실적을 여러 건으로 나눈다
+  for v_m in 0..13 loop
+    v_month := to_char(date_trunc('month', current_date) - make_interval(months => v_m), 'YYYY-MM');
+    for v_i in 1..8 loop
+      foreach v_category in array array['일반', '자동차'] loop
+        v_total := (case v_titles[v_i] when 'FC' then 10000000 when 'FC_프로' then 20000000
+            when 'FC_엘리트' then 30000000 when 'FC_리더' then 40000000 when '지점장(직영,인큐)' then 60000000
+            when '지점장(직영,선임)' then 80000000 when '본부장(직영사업단)' then 100000000 else 10000000 end)
+          * (0.85 + ((v_i * 3 + v_m) % 7) * 0.05)
+          * case v_category when '일반' then 1 else 1.0 / 9 end;
+        v_k := greatest(1, round(v_total / 700000))::int;
+        for v_j in 1..v_k loop
+          v_line_premium := round(v_total / v_k * (0.85 + ((v_j * 3 + v_i) % 7) * 0.05), -3);
+          v_receipt := (v_month || '-01')::date + ((v_i * 5 + v_j * 3) % 27);
+          insert into contracts (agent_id, agent_email, month, category, type, company, policy_no, product_name,
+            customer_name, insured_name, receipt_date, expiry_date, count, premium, commission,
+            performance_commission, is_preliminary, duration_type)
+          values (
+            v_agent_ids[v_i], format('demo%s@proins.local', lpad(v_i::text, 2, '0')), v_month, v_category, '신규',
+            v_companies[1 + ((v_i + v_j * 2 + v_m) % 8)],
+            format('DEMO-%s-%s-%s-%s', case v_category when '일반' then 'G' else 'A' end, replace(v_month, '-', ''), v_i, v_j),
+            case v_category when '일반' then '화재보험' else '개인용 자동차보험' end,
+            v_customers[1 + ((v_i * 5 + v_j + v_m - 1) % 12)],
+            v_customers[1 + ((v_i * 5 + v_j + v_m) % 12)],
+            v_receipt, v_receipt + interval '1 year',
+            1, v_line_premium, round(v_line_premium * 0.12), 0, false, '년간'
           );
         end loop;
       end loop;
