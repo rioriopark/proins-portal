@@ -26,6 +26,17 @@ create table profiles (
   created_at timestamptz default now()
 );
 
+-- ── 내 프로필 조회 헬퍼 (RLS 정책에서 재사용) ─────────────
+-- 아래 테이블들의 RLS 정책이 이 함수를 쓰므로 profiles 바로 다음에 정의한다.
+-- security definer 필수: profiles 자신의 RLS 정책 안에서 profiles 를 다시 조회하므로,
+-- 일반 함수로 두면 "infinite recursion detected in policy for relation profiles" 에러가 남.
+create or replace function my_role() returns text
+  language sql stable security definer set search_path = public
+  as $$ select role from profiles where id = auth.uid() $$;
+create or replace function my_org() returns text
+  language sql stable security definer set search_path = public
+  as $$ select org_id from profiles where id = auth.uid() $$;
+
 -- ── 계약 ──────────────────────────────────────────────────
 create table contracts (
   id uuid primary key default gen_random_uuid(),
@@ -397,16 +408,6 @@ returns boolean language sql stable as $$
   )
   select exists(select 1 from chain where id = root_id);
 $$;
-
--- ── 내 프로필 조회 헬퍼 (RLS 정책에서 재사용) ─────────────
--- security definer 필수: profiles 자신의 RLS 정책 안에서 profiles 를 다시 조회하므로,
--- 일반 함수로 두면 "infinite recursion detected in policy for relation profiles" 에러가 남.
-create or replace function my_role() returns text
-  language sql stable security definer set search_path = public
-  as $$ select role from profiles where id = auth.uid() $$;
-create or replace function my_org() returns text
-  language sql stable security definer set search_path = public
-  as $$ select org_id from profiles where id = auth.uid() $$;
 
 -- ── 갱신관리: 갱신여부만 본인 계약 건에 한해 바꿀 수 있는 함수 ──
 -- contracts 전체 update 권한을 모든 담당자에게 열지 않고, renewal_status

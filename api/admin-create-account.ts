@@ -13,6 +13,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
+  // 체험용 데모 배포에서는 게스트가 다른 방문자의 체험을 망가뜨리거나 비용이 드는 기능을 막는다 (docs/DEMO.md)
+  if (process.env.DEMO_MODE === 'true') {
+    return res.status(403).json({ error: '체험판에서는 사용할 수 없는 기능입니다.' })
+  }
 
   const token = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '')
   const { id, name, role, org_id, title, rate_long, rate_general, bank, account } = req.body ?? {}

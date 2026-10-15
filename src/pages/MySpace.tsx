@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
+import { DEMO_BLOCKED_MESSAGE, DEMO_MODE } from '../lib/demo'
 import { useAuth } from '../lib/auth'
 import { safeStorageFileName } from '../lib/id'
 import type {
@@ -364,6 +365,8 @@ export default function MySpace() {
 
   async function changePassword() {
     setPwError('')
+    // 게스트 계정은 여러 방문자가 함께 쓰므로 비밀번호를 바꾸면 다음 방문자가 들어올 수 없다
+    if (DEMO_MODE) return setPwError(DEMO_BLOCKED_MESSAGE)
     if (newPassword.length < 6) return setPwError('비밀번호는 6자 이상이어야 합니다.')
     if (newPassword !== confirmPassword) return setPwError('비밀번호가 일치하지 않습니다.')
     setPwSaving(true)
