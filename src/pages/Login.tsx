@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { toAuthEmail } from '../lib/id'
+import { DEMO_GUEST_ID, DEMO_GUEST_PASSWORD, DEMO_MODE } from '../lib/demo'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -10,17 +11,21 @@ export default function Login() {
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
+  async function signIn(id: string, pw: string) {
     setError('')
     setBusy(true)
-    const { error } = await supabase.auth.signInWithPassword({ email: toAuthEmail(email), password })
+    const { error } = await supabase.auth.signInWithPassword({ email: toAuthEmail(id), password: pw })
     setBusy(false)
     if (error) {
       setError('이메일 또는 비밀번호가 올바르지 않습니다.')
       return
     }
     navigate('/')
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    signIn(email, password)
   }
 
   return (
@@ -54,6 +59,16 @@ export default function Login() {
         >
           {busy ? '로그인 중…' : '로그인'}
         </button>
+        {DEMO_MODE && DEMO_GUEST_ID && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => signIn(DEMO_GUEST_ID, DEMO_GUEST_PASSWORD)}
+            className="w-full border border-red-600 text-red-600 rounded-md py-2 text-sm font-medium disabled:opacity-50"
+          >
+            게스트로 체험하기
+          </button>
+        )}
         <p className="text-center text-xs text-slate-400">
           초대받은 아이디이신가요? <Link to="/signup" className="text-slate-700 underline">회원가입</Link>
         </p>
