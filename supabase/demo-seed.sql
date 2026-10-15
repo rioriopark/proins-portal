@@ -5,6 +5,7 @@
 -- 실수로 운영 DB에서 실행해도 데모 계정이 아닌 회원이 하나라도 있으면 아무것도 지우지 않고 멈춘다.
 --
 -- 사용법 (데모 Supabase 프로젝트의 SQL Editor):
+--   0) supabase/schema.sql → supabase/demo-schema-patch.sql 을 차례로 먼저 실행해 둔다.
 --   1) 이 파일 전체를 한 번 실행해 reset_demo_data 함수를 만든다.
 --   2) select reset_demo_data('게스트비밀번호');   -- 처음 채우기 / 수동 초기화
 --   3) (선택) 매일 새벽 자동 초기화 — Database > Extensions 에서 pg_cron 을 켠 뒤:
@@ -128,7 +129,7 @@ begin
         v_receipt := (v_month || '-01')::date + ((v_i * 5 + v_n * 3) % 27);
         insert into contracts (agent_id, agent_email, month, category, type, company, policy_no, product_name,
           customer_name, insured_name, receipt_date, expiry_date, collection_status, count, premium, commission,
-          performance_commission, is_preliminary)
+          performance_commission, is_preliminary, duration_type)
         values (
           v_agent_ids[v_i], format('demo%s@proins.local', lpad(v_i::text, 2, '0')), v_month, v_category,
           case when v_m > 0 and v_n = 1 and v_category = '장기' then '계속' else '신규' end,
@@ -145,7 +146,8 @@ begin
           end,
           1, v_premium, round(v_premium * case v_category when '장기' then 3.2 else 0.12 end),
           round(v_premium * case v_category when '장기' then 0.4 else 0 end),
-          false
+          false,
+          case v_category when '장기' then (array['5년','10년','20년','세만기'])[1 + ((v_i + v_n) % 4)] else '년간' end
         );
       end loop;
     end loop;
@@ -204,38 +206,36 @@ begin
     ('체험판 안내', '이 포털은 체험용입니다. 모든 고객·계약 정보는 가상 데이터입니다.', current_date - 1, current_date + 365),
     ('이달 마감 일정', '이번 달 계약 마감은 말일 18시입니다.', current_date - 1, current_date + 30);
 
-  insert into insurer_accounts (company, login_id, password, memo, updated_by) values
-    ('삼성화재', 'demo-code-001', 'demo-password', '체험용 가상 계정', v_guest_id),
-    ('DB손해보험', 'demo-code-002', 'demo-password', '체험용 가상 계정', v_guest_id);
   insert into site_accounts (site_name, login_id, password, sort_order, updated_by) values
     ('보험협회 교육시스템', 'demo-id', 'demo-password', 1, v_guest_id);
 
-  -- ── 레포의 schema.sql 에 없고 운영 DB에서만 만든 테이블들: 없거나 컬럼이 달라도 전체를 멈추지 않는다 ──
-  begin
-    delete from board_posts;
-    insert into board_posts (title, content, author_id, author_name) values
-      ('체험판 게시판입니다', '자유롭게 글을 써 보세요. 매일 초기화됩니다.', v_guest_id, '체험 게스트'),
-      ('이번 달 우수 설계사 축하드립니다', '김민준 팀장님 축하드립니다!', v_agent_ids[1], v_names[1]);
-  exception when others then
-    raise notice 'board_posts 건너뜀: %', sqlerrm;
-  end;
+  -- ── 보험사 / 대표코드 / 개인코드 / 공용 사이트 계정 / 게시판 (demo-schema-patch.sql 테이블) ──
+  delete from agent_insurer_codes;
+  delete from shared_site_accounts;
+  delete from board_posts;
+  delete from insurers;
+  insert into insurers (name, sort_order, business_guarantee_expiry, advance_guarantee_expiry)
+  select v_companies[i], i, current_date + 30 * i, current_date + 45 * i
+  from generate_series(1, array_length(v_companies, 1)) i;
 
-  begin
-    if not exists (select 1 from insurers) then
-      insert into insurers (name, sort_order)
-      select v_companies[i], i from generate_series(1, array_length(v_companies, 1)) i;
-    end if;
-  exception when others then
-    raise notice 'insurers 건너뜀: %', sqlerrm;
-  end;
+  insert into insurer_accounts (insurer_id, company, login_id, password, memo, updated_by)
+  select id, name, 'demo-code-' || lpad(sort_order::text, 3, '0'), 'demo-password', '체험용 가상 계정', v_guest_id
+  from insurers where sort_order <= 4;
 
-  begin
-    delete from shared_site_accounts;
-    insert into shared_site_accounts (site, login_id, password, updated_by)
-    values ('보험사 공용 포털(가상)', 'demo-id', 'demo-password', v_guest_id);
-  exception when others then
-    raise notice 'shared_site_accounts 건너뜀: %', sqlerrm;
-  end;
+  insert into agent_insurer_codes (profile_id, insurer_id, code, code_auth)
+  select a.id, i.id, 'D' || lpad((a.n * 100 + i.sort_order)::text, 6, '0'), 'demo'
+  from unnest(v_agent_ids) with ordinality a(id, n)
+  cross join insurers i where i.sort_order <= 3;
+
+  insert into shared_site_accounts (site, login_id, password, updated_by)
+  values ('보험사 공용 포털(가상)', 'demo-id', 'demo-password', v_guest_id);
+
+  insert into board_posts (title, content, author_id, author_name) values
+    ('체험판 게시판입니다', '자유롭게 글을 써 보세요. 매일 초기화됩니다.', v_guest_id, '체험 게스트'),
+    ('이번 달 우수 설계사 축하드립니다', '김민준 팀장님 축하드립니다!', v_agent_ids[1], v_names[1]);
+
+  -- 일반성과 시상 대상자 예시 (수수료명세서의 일반성과 계산에 쓰임)
+  update profiles set general_performance_rate = 0.3 where id = any(v_agent_ids[1:2]);
 
   return format('데모 데이터 초기화 완료: 계약 %s건, 직원 %s명', (select count(*) from contracts), array_length(v_agent_ids, 1));
 end;
