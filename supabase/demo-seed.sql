@@ -257,13 +257,34 @@ begin
     end loop;
   end loop;
 
-  -- 이번 달 예비계약(보험사 확정 전 설계사가 직접 등록한 건) 몇 건
-  for v_i in 1..4 loop
+  -- 이번 달 예비계약(보험사 확정 전 설계사가 직접 등록한 건): 담당자마다 장기 2건, 자동차 1건,
+  -- 일반은 직급별 월 일반실적의 15% 정도를 70만원 안팎으로 나눠 넣어 대시보드 예상수수료가 실적 규모에 맞게 보이도록 한다
+  for v_i in 1..8 loop
+    for v_j in 1..2 loop
+      insert into contracts (agent_id, agent_email, month, category, type, company, policy_no, product_name,
+        customer_name, count, premium, commission, is_preliminary)
+      values (v_agent_ids[v_i], format('demo%s@proins.local', lpad(v_i::text, 2, '0')), to_char(current_date, 'YYYY-MM'),
+        '장기', '신규', v_companies[1 + ((v_i + v_j) % 8)], format('PRE-DEMO-L-%s-%s', v_i, v_j),
+        v_long_products[1 + ((v_i + v_j) % 6)], v_customers[1 + ((v_i + v_j + 4) % 12)],
+        1, 50000 + ((v_i * 3 + v_j * 5) % 10) * 10000, 0, true);
+    end loop;
     insert into contracts (agent_id, agent_email, month, category, type, company, policy_no, product_name,
       customer_name, count, premium, commission, is_preliminary)
     values (v_agent_ids[v_i], format('demo%s@proins.local', lpad(v_i::text, 2, '0')), to_char(current_date, 'YYYY-MM'),
-      '장기', '신규', v_companies[v_i], format('PRE-DEMO-%s', v_i), v_long_products[v_i], v_customers[v_i + 4],
-      1, 50000 + v_i * 10000, 0, true);
+      '자동차', '신규', v_companies[1 + (v_i % 8)], format('PRE-DEMO-A-%s', v_i), '개인용 자동차보험',
+      v_customers[1 + ((v_i + 7) % 12)], 1, 600000 + (v_i % 5) * 50000, 0, true);
+    v_total := (case v_titles[v_i] when 'FC' then 10000000 when 'FC_프로' then 20000000
+        when 'FC_엘리트' then 30000000 when 'FC_리더' then 40000000 when '지점장(직영,인큐)' then 60000000
+        when '지점장(직영,선임)' then 80000000 when '본부장(직영사업단)' then 100000000 else 10000000 end) * 0.15;
+    v_k := greatest(1, round(v_total / 700000))::int;
+    for v_j in 1..v_k loop
+      insert into contracts (agent_id, agent_email, month, category, type, company, policy_no, product_name,
+        customer_name, count, premium, commission, is_preliminary)
+      values (v_agent_ids[v_i], format('demo%s@proins.local', lpad(v_i::text, 2, '0')), to_char(current_date, 'YYYY-MM'),
+        '일반', '신규', v_companies[1 + ((v_i + v_j * 2) % 8)], format('PRE-DEMO-G-%s-%s', v_i, v_j), '화재보험',
+        v_customers[1 + ((v_i * 5 + v_j) % 12)], 1,
+        round(v_total / v_k * (0.85 + ((v_j * 3 + v_i) % 7) * 0.05), -3), 0, true);
+    end loop;
   end loop;
 
   -- ── 수수료명세서: 이번 달 포함 최근 4개월 (계약 × 직급별 지급률) ──
