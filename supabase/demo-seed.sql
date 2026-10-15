@@ -33,8 +33,8 @@ begin
 
   delete from statements;
   insert into statements (agent_id, agent_email, month, recruit_first, recruit_installment, maintain, general, auto,
-    personal_incentive, taxable_income, income_tax, resident_tax, employment_ins, industrial_accident_ins)
-  select id, email, month, rf, 0, mt, gn, au, pi,
+    collection_fee, personal_incentive, taxable_income, income_tax, resident_tax, employment_ins, industrial_accident_ins)
+  select id, email, month, rf, 0, mt, gn, au, cf, pi,
     case when biz then ti else 0 end,
     case when biz then it else 0 end,
     case when biz then floor(it * 0.1 / 10) * 10 else 0 end,
@@ -42,8 +42,8 @@ begin
       else floor(greatest(ti - trunc(ti * 0.25), 1330000) * 0.018 / 2 / 10) * 10 end,
     case when biz then floor(2401300 * 0.007 / 2 / 10) * 10 else 0 end
   from (
-    select *, rf + mt + gn + au + pi as ti,
-      case when rf + mt + gn + au + pi <= 33330 then 0 else floor((rf + mt + gn + au + pi) * 0.03 / 10) * 10 end as it
+    select *, rf + mt + gn + au + cf + pi as ti,
+      case when rf + mt + gn + au + cf + pi <= 33330 then 0 else floor((rf + mt + gn + au + cf + pi) * 0.03 / 10) * 10 end as it
     from (
       select p.id, p.email, mo.month, p.org_id <> 'hq' as biz,
         -- 모집초회수수료는 장기 신규보험료의 7배, 개인시책은 5배로 잡는다
@@ -51,7 +51,10 @@ begin
         round(coalesce(sum(c.commission) filter (where c.category = '장기' and c.type <> '신규'), 0) * p.rate_long) as mt,
         round(coalesce(sum(c.commission) filter (where c.category = '일반'), 0) * p.rate_general) as gn,
         round(coalesce(sum(c.commission) filter (where c.category = '자동차'), 0) * p.rate_general) as au,
-        round(coalesce(sum(c.premium) filter (where c.category = '장기' and c.type = '신규'), 0) * 5) as pi
+        round(coalesce(sum(c.premium) filter (where c.category = '장기' and c.type = '신규'), 0) * 5) as pi,
+        -- 수금수수료는 장기계약 보험료 합계의 1%. 화면처럼 위촉직 설계사(본사 외 agent)는 직급수수료 대상이 아니라 0
+        case when p.role = 'agent' and p.org_id <> 'hq' then 0
+          else round(coalesce(sum(c.premium) filter (where c.category = '장기'), 0) * 0.01) end as cf
       from profiles p
       cross join (
         select to_char(date_trunc('month', current_date) - make_interval(months => n), 'YYYY-MM') as month,
@@ -62,7 +65,7 @@ begin
       left join contracts c on c.agent_id = p.id and not c.is_preliminary
         and c.month = case when c.category = '장기' then mo.prev_month else mo.month end
       where p.email like 'demo__@proins.local'
-      group by p.id, p.email, p.org_id, p.rate_long, p.rate_general, mo.month
+      group by p.id, p.email, p.role, p.org_id, p.rate_long, p.rate_general, mo.month
     ) a
   ) b;
 end;
