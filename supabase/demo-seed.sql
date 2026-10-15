@@ -1,0 +1,246 @@
+-- 외부인 체험용 데모 DB 가상 데이터 (docs/DEMO.md 참고)
+--
+-- !! 운영 DB에서 절대 실행하지 말 것 !!
+-- 데모 DB의 계약·명세서·연락처 등을 모두 지우고 가상 데이터로 다시 채운다.
+-- 실수로 운영 DB에서 실행해도 데모 계정이 아닌 회원이 하나라도 있으면 아무것도 지우지 않고 멈춘다.
+--
+-- 사용법 (데모 Supabase 프로젝트의 SQL Editor):
+--   1) 이 파일 전체를 한 번 실행해 reset_demo_data 함수를 만든다.
+--   2) select reset_demo_data('게스트비밀번호');   -- 처음 채우기 / 수동 초기화
+--   3) (선택) 매일 새벽 자동 초기화 — Database > Extensions 에서 pg_cron 을 켠 뒤:
+--      select cron.schedule('reset-demo', '0 19 * * *', $$select reset_demo_data('게스트비밀번호')$$);  -- 한국시간 04시
+--
+-- 게스트 로그인 아이디는 guest (내부 이메일 guest@proins.local), 가상 직원은 demo01~demo08@proins.local.
+
+create extension if not exists pgcrypto;
+
+create or replace function reset_demo_data(p_guest_password text)
+returns text
+language plpgsql
+security definer
+set search_path = public, extensions
+as $fn$
+declare
+  v_guest_email constant text := 'guest@proins.local';
+  v_guest_id uuid;
+  v_names text[] := array['김민준','이서연','박지호','최수아','정도윤','강하은','조예준','윤지우'];
+  v_titles text[] := array['팀장','설계사','설계사','설계사','지점장','설계사','설계사','설계사'];
+  v_orgs text[] := array['hq','hq','hq','br-direct','br-seoul','br-seoul','st-direct-1','br-incubating'];
+  v_roles text[] := array['agent','agent','agent','agent','branch_admin','agent','store_manager','agent'];
+  v_companies text[] := array['삼성화재','DB손해보험','현대해상','KB손해보험','메리츠화재','한화손해보험','롯데손해보험','흥국화재'];
+  v_long_products text[] := array['무배당 건강보험','무배당 종합보험','어린이보험','암보험','간병인보험','운전자보험'];
+  v_customers text[] := array['김OO','이OO','박OO','최OO','정OO','강OO','조OO','윤OO','장OO','임OO','한OO','오OO'];
+  v_agent_ids uuid[] := '{}';
+  v_id uuid;
+  v_month text;
+  v_i int;
+  v_m int;
+  v_n int;
+  v_premium numeric;
+  v_category text;
+  v_receipt date;
+begin
+  if p_guest_password is null or length(p_guest_password) < 6 then
+    raise exception '게스트 비밀번호는 6자 이상이어야 합니다.';
+  end if;
+
+  -- ── 안전장치: 데모 계정이 아닌 회원이 있으면 운영 DB로 보고 중단 ──
+  if exists (
+    select 1 from profiles
+    where email <> v_guest_email and email not like 'demo__@proins.local'
+  ) then
+    raise exception '데모 계정이 아닌 회원이 있습니다. 운영 DB로 보여 초기화를 중단합니다.';
+  end if;
+
+  -- ── 기존 데모 데이터 비우기 ──
+  delete from contracts;
+  delete from statements;
+  delete from contacts;
+  delete from incentives;
+  delete from education_events;
+  delete from banners;
+  delete from pending_invites;
+  delete from insurer_accounts;
+  delete from site_accounts;
+  delete from auth.users where email like 'demo__@proins.local';  -- profiles 등은 cascade로 함께 삭제
+
+  insert into organizations (id, name, type, parent_id) values
+    ('hq', '프로인스컴퍼니 본사', 'HQ', null),
+    ('br-direct', '본사직영', 'CENTER', 'hq'),
+    ('st-direct-1', '본사직영 1지점', 'STORE', 'br-direct'),
+    ('br-seoul', '서울비즈니스센터', 'CENTER', 'hq'),
+    ('br-incubating', '인큐베이팅지점', 'CENTER', 'hq')
+  on conflict (id) do update set name = excluded.name, type = excluded.type, parent_id = excluded.parent_id;
+
+  -- ── 게스트 계정 (본사관리자 권한, 비밀번호는 매번 다시 설정) ──
+  select id into v_guest_id from auth.users where email = v_guest_email;
+  if v_guest_id is null then
+    v_guest_id := gen_random_uuid();
+    insert into auth.users (
+      instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+      confirmation_token, email_change, email_change_token_new, recovery_token
+    ) values (
+      '00000000-0000-0000-0000-000000000000', v_guest_id, 'authenticated', 'authenticated', v_guest_email,
+      crypt(p_guest_password, gen_salt('bf')), now(),
+      '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''
+    );
+    insert into auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+    values (gen_random_uuid(), v_guest_id, v_guest_id::text,
+      jsonb_build_object('sub', v_guest_id::text, 'email', v_guest_email, 'email_verified', true),
+      'email', now(), now(), now());
+  else
+    update auth.users set encrypted_password = crypt(p_guest_password, gen_salt('bf')), updated_at = now()
+    where id = v_guest_id;
+  end if;
+
+  insert into profiles (id, email, name, role, org_id, title, rate_long, rate_general, bank, account)
+  values (v_guest_id, v_guest_email, '체험 게스트', 'hq_admin', 'hq', '본사관리자(체험)', 1.0, 1.0, '', '')
+  on conflict (id) do update set name = excluded.name, role = excluded.role, org_id = excluded.org_id, title = excluded.title;
+  delete from menu_permissions where profile_id = v_guest_id;
+
+  -- ── 가상 직원 8명 (로그인 불가: 비밀번호 없음) ──
+  for v_i in 1..8 loop
+    v_id := gen_random_uuid();
+    v_agent_ids := v_agent_ids || v_id;
+    insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+      confirmation_token, email_change, email_change_token_new, recovery_token)
+    values ('00000000-0000-0000-0000-000000000000', v_id, 'authenticated', 'authenticated',
+      format('demo%s@proins.local', lpad(v_i::text, 2, '0')), '{}', '{}', now(), now(), '', '', '', '');
+    insert into profiles (id, email, name, role, org_id, title, rate_long, rate_general, bank, account)
+    values (v_id, format('demo%s@proins.local', lpad(v_i::text, 2, '0')), v_names[v_i], v_roles[v_i], v_orgs[v_i],
+      v_titles[v_i], 0.7 + (v_i % 3) * 0.1, 0.6, '체험은행', '000-0000-' || lpad(v_i::text, 4, '0'));
+    insert into agent_profiles (profile_id, phone, address, email, registration_no)
+    values (v_id, '010-0000-' || lpad(v_i::text, 4, '0'), '서울시 가상구 체험로 ' || v_i, format('demo%s@example.com', v_i),
+      'DEMO-' || lpad(v_i::text, 6, '0'));
+  end loop;
+
+  -- ── 계약: 최근 14개월, 담당자별로 매달 몇 건씩 ──
+  for v_m in 0..13 loop
+    v_month := to_char(date_trunc('month', current_date) - make_interval(months => v_m), 'YYYY-MM');
+    for v_i in 1..8 loop
+      for v_n in 1..(2 + ((v_i + v_m) % 4)) loop
+        v_category := (array['장기','장기','장기','일반','자동차'])[1 + ((v_i * 7 + v_n * 3 + v_m) % 5)];
+        v_premium := case v_category
+          when '장기' then 30000 + ((v_i * 13 + v_n * 17 + v_m * 7) % 20) * 5000
+          when '일반' then 150000 + ((v_i + v_n + v_m) % 10) * 30000
+          else 600000 + ((v_i * 3 + v_n + v_m) % 12) * 50000 end;
+        v_receipt := (v_month || '-01')::date + ((v_i * 5 + v_n * 3) % 27);
+        insert into contracts (agent_id, agent_email, month, category, type, company, policy_no, product_name,
+          customer_name, insured_name, receipt_date, expiry_date, collection_status, count, premium, commission,
+          performance_commission, is_preliminary)
+        values (
+          v_agent_ids[v_i], format('demo%s@proins.local', lpad(v_i::text, 2, '0')), v_month, v_category,
+          case when v_m > 0 and v_n = 1 and v_category = '장기' then '계속' else '신규' end,
+          v_companies[1 + ((v_i + v_n * 2 + v_m) % 8)],
+          format('DEMO-%s-%s-%s', replace(v_month, '-', ''), v_i, v_n),
+          case v_category when '장기' then v_long_products[1 + ((v_i + v_n + v_m) % 6)]
+            when '일반' then '화재보험' else '개인용 자동차보험' end,
+          v_customers[1 + ((v_i * 5 + v_n + v_m) % 12)],
+          v_customers[1 + ((v_i * 5 + v_n + v_m + 1) % 12)],
+          v_receipt,
+          case when v_category = '장기' then null else v_receipt + interval '1 year' end,
+          case when v_category = '장기' then
+            (array['정상','정상','정상','정상','정상','정상','유예','실효','해지'])[1 + ((v_i * 11 + v_n * 7 + v_m) % 9)]
+          end,
+          1, v_premium, round(v_premium * case v_category when '장기' then 3.2 else 0.12 end),
+          round(v_premium * case v_category when '장기' then 0.4 else 0 end),
+          false
+        );
+      end loop;
+    end loop;
+  end loop;
+
+  -- 이번 달 예비계약(보험사 확정 전 설계사가 직접 등록한 건) 몇 건
+  for v_i in 1..4 loop
+    insert into contracts (agent_id, agent_email, month, category, type, company, policy_no, product_name,
+      customer_name, count, premium, commission, is_preliminary)
+    values (v_agent_ids[v_i], format('demo%s@proins.local', lpad(v_i::text, 2, '0')), to_char(current_date, 'YYYY-MM'),
+      '장기', '신규', v_companies[v_i], format('PRE-DEMO-%s', v_i), v_long_products[v_i], v_customers[v_i + 4],
+      1, 50000 + v_i * 10000, 0, true);
+  end loop;
+
+  -- ── 수수료명세서: 최근 3개월 ──
+  for v_m in 1..3 loop
+    v_month := to_char(date_trunc('month', current_date) - make_interval(months => v_m), 'YYYY-MM');
+    for v_i in 1..8 loop
+      insert into statements (agent_id, agent_email, month, recruit_first, recruit_installment, maintain, general, auto,
+        personal_incentive, taxable_income, income_tax, resident_tax, employment_ins, industrial_accident_ins)
+      select v_agent_ids[v_i], format('demo%s@proins.local', lpad(v_i::text, 2, '0')), v_month,
+        rf, ri, mt, gn, au, pi, rf + ri + mt + gn + au + pi,
+        round((rf + ri + mt + gn + au + pi) * 0.03), round((rf + ri + mt + gn + au + pi) * 0.003),
+        round((rf + ri + mt + gn + au + pi) * 0.008), round((rf + ri + mt + gn + au + pi) * 0.004)
+      from (select (800000 + v_i * 90000 + v_m * 30000)::numeric rf, (400000 + v_i * 40000)::numeric ri,
+        (150000 + v_i * 10000)::numeric mt, (60000 + v_i * 5000)::numeric gn, (90000 + v_m * 8000)::numeric au,
+        (case when v_i % 2 = 0 then 200000 else 0 end)::numeric pi) x;
+    end loop;
+  end loop;
+
+  -- ── 업무 연락처 (임직원은 agent_profiles 트리거가 자동으로 채움) ──
+  insert into contacts (category, company, name, title, phone, office_phone, email, business, sort_order) values
+    ('보험사담당자', '삼성화재', '홍길동', '대리', '010-1111-0001', '02-0000-0001', 'samsung@example.com', '장기 언더라이팅', 101),
+    ('보험사담당자', 'DB손해보험', '김철수', '과장', '010-1111-0002', '02-0000-0002', 'db@example.com', '자동차 인수', 102),
+    ('보험사담당자', '현대해상', '이영희', '차장', '010-1111-0003', '02-0000-0003', 'hyundai@example.com', '시책 문의', 103),
+    ('보험사담당자', 'KB손해보험', '박민수', '대리', '010-1111-0004', '02-0000-0004', 'kb@example.com', '장기 지급', 104),
+    ('업무지원', '프로인스컴퍼니', '정지원', '매니저', '010-2222-0001', '02-0000-1001', 'support@example.com', '전산·계약 등록', 201),
+    ('업무지원', '프로인스컴퍼니', '한수빈', '매니저', '010-2222-0002', '02-0000-1002', 'edu@example.com', '교육·위촉', 202);
+
+  -- ── 시상안 / 교육일정 / 공지 ──
+  insert into incentives (company, month, title, period, target, content, created_by) values
+    ('삼성화재', to_char(current_date, 'YYYY-MM'), '삼성화재 이달의 건강보험 특별시상', to_char(current_date, 'YYYY.MM') || '.01 ~ 말일',
+      '장기 인보험', E'월납 10만원 이상: 보험료의 100%\n월납 20만원 이상: 보험료의 150%', v_guest_id),
+    ('DB손해보험', to_char(current_date, 'YYYY-MM'), 'DB손해보험 조기가동 시상', to_char(current_date, 'YYYY.MM') || '.01 ~ 10',
+      '인보험(펫, 단체 제외)', E'10일 이내 3건 이상: 30만원\n5건 이상: 60만원', v_guest_id),
+    ('현대해상', to_char(current_date - interval '1 month', 'YYYY-MM'), '현대해상 어린이보험 시상', '전월 1일 ~ 말일',
+      '어린이보험', '건당 2만원 추가 지급', v_guest_id);
+
+  insert into education_events (title, event_date, event_time) values
+    ('신입 설계사 기본교육', current_date + 3, '10:00'),
+    ('장기보험 상품 설명회', current_date + 7, '14:00'),
+    ('자동차보험 갱신 실무', current_date + 14, '15:00'),
+    ('완전판매 모니터링 교육', current_date - 5, '10:00');
+
+  insert into banners (title, content, start_date, end_date) values
+    ('체험판 안내', '이 포털은 체험용입니다. 모든 고객·계약 정보는 가상 데이터입니다.', current_date - 1, current_date + 365),
+    ('이달 마감 일정', '이번 달 계약 마감은 말일 18시입니다.', current_date - 1, current_date + 30);
+
+  insert into insurer_accounts (company, login_id, password, memo, updated_by) values
+    ('삼성화재', 'demo-code-001', 'demo-password', '체험용 가상 계정', v_guest_id),
+    ('DB손해보험', 'demo-code-002', 'demo-password', '체험용 가상 계정', v_guest_id);
+  insert into site_accounts (site_name, login_id, password, sort_order, updated_by) values
+    ('보험협회 교육시스템', 'demo-id', 'demo-password', 1, v_guest_id);
+
+  -- ── 레포의 schema.sql 에 없고 운영 DB에서만 만든 테이블들: 없거나 컬럼이 달라도 전체를 멈추지 않는다 ──
+  begin
+    delete from board_posts;
+    insert into board_posts (title, content, author_id, author_name) values
+      ('체험판 게시판입니다', '자유롭게 글을 써 보세요. 매일 초기화됩니다.', v_guest_id, '체험 게스트'),
+      ('이번 달 우수 설계사 축하드립니다', '김민준 팀장님 축하드립니다!', v_agent_ids[1], v_names[1]);
+  exception when others then
+    raise notice 'board_posts 건너뜀: %', sqlerrm;
+  end;
+
+  begin
+    if not exists (select 1 from insurers) then
+      insert into insurers (name, sort_order)
+      select v_companies[i], i from generate_series(1, array_length(v_companies, 1)) i;
+    end if;
+  exception when others then
+    raise notice 'insurers 건너뜀: %', sqlerrm;
+  end;
+
+  begin
+    delete from shared_site_accounts;
+    insert into shared_site_accounts (site, login_id, password, updated_by)
+    values ('보험사 공용 포털(가상)', 'demo-id', 'demo-password', v_guest_id);
+  exception when others then
+    raise notice 'shared_site_accounts 건너뜀: %', sqlerrm;
+  end;
+
+  return format('데모 데이터 초기화 완료: 계약 %s건, 직원 %s명', (select count(*) from contracts), array_length(v_agent_ids, 1));
+end;
+$fn$;
+
+-- 브라우저(anon/로그인 사용자)에서 RPC로 호출하지 못하게 막는다
+revoke all on function reset_demo_data(text) from public;
+revoke all on function reset_demo_data(text) from anon, authenticated;

@@ -19,9 +19,13 @@
    빠져 있으므로 운영에서 덤프하는 것이 안전하다.
    `supabase db dump --db-url <운영 DB URL> --schema public -f demo-schema.sql` (데이터 제외, 스키마만)
    덤프한 파일을 데모 프로젝트 SQL Editor에서 실행한다. Storage 버킷(`agent-contracts`, `incentive-files`)도 만든다.
-3. 가상 직원·계약·명세서 데이터를 넣는다.
-4. Authentication > Users > Add user 로 게스트 계정을 만들고(Auto confirm), `profiles`에
-   `role = 'hq_admin'`, `org_id = 'hq'`, 이름 "게스트" 로 행을 넣는다.
+3. `supabase/demo-seed.sql` 전체를 데모 프로젝트 SQL Editor에서 한 번 실행한 뒤, 아래 한 줄로 가상 데이터를 채운다.
+   `select reset_demo_data('게스트비밀번호');`
+   - 게스트 계정(아이디 `guest`, 본사관리자 권한)과 가상 직원 8명, 최근 14개월 계약 약 400건,
+     수수료명세서, 연락처, 시상안, 교육일정, 공지, 게시판 글이 만들어진다.
+   - 데모 계정이 아닌 회원이 하나라도 있으면(=운영 DB) 아무것도 지우지 않고 멈춘다.
+   - 매일 자동 초기화: Database > Extensions 에서 `pg_cron`을 켠 뒤
+     `select cron.schedule('reset-demo', '0 19 * * *', $$select reset_demo_data('게스트비밀번호')$$);` (한국시간 04시)
 
 ## 2. 데모용 Vercel 프로젝트
 
@@ -32,7 +36,7 @@
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | 데모 Supabase 값 |
 | `SUPABASE_SERVICE_ROLE_KEY` | 데모 Supabase 값 |
 | `VITE_DEMO_MODE` / `DEMO_MODE` | `true` |
-| `VITE_DEMO_GUEST_ID` / `VITE_DEMO_GUEST_PASSWORD` | 게스트 계정 아이디/비밀번호 |
+| `VITE_DEMO_GUEST_ID` / `VITE_DEMO_GUEST_PASSWORD` | `guest` / 3번에서 정한 게스트 비밀번호 |
 
 **운영 Vercel 프로젝트에는 `DEMO_MODE` 계열 변수를 절대 넣지 않는다.**
 
@@ -43,4 +47,4 @@
 - 계정 생성·삭제·비밀번호 초기화 API, 시상안 AI 자동 입력 API가 서버에서 막힌다.
 - 나의공간의 비밀번호 변경이 막힌다 (여러 방문자가 같은 게스트 계정을 쓰므로).
 
-방문자가 데이터를 고치거나 지울 수 있으므로, 3번의 가상 데이터 SQL을 다시 실행해 주기적으로 초기화한다.
+방문자가 데이터를 고치거나 지울 수 있으므로 `reset_demo_data`로 주기적으로 초기화한다 (위 pg_cron 설정).
