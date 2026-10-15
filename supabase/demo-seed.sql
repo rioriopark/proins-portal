@@ -46,11 +46,12 @@ begin
       case when rf + mt + gn + au + pi <= 33330 then 0 else floor((rf + mt + gn + au + pi) * 0.03 / 10) * 10 end as it
     from (
       select p.id, p.email, mo.month, p.org_id <> 'hq' as biz,
-        round(coalesce(sum(c.commission) filter (where c.category = '장기' and c.type = '신규'), 0) * p.rate_long) as rf,
+        -- 모집초회수수료는 장기 신규보험료의 7배, 개인시책은 5배로 잡는다
+        round(coalesce(sum(c.premium) filter (where c.category = '장기' and c.type = '신규'), 0) * 7) as rf,
         round(coalesce(sum(c.commission) filter (where c.category = '장기' and c.type <> '신규'), 0) * p.rate_long) as mt,
         round(coalesce(sum(c.commission) filter (where c.category = '일반'), 0) * p.rate_general) as gn,
         round(coalesce(sum(c.commission) filter (where c.category = '자동차'), 0) * p.rate_general) as au,
-        (case when right(split_part(p.email, '@', 1), 1)::int % 2 = 0 then 200000 else 0 end)::numeric as pi
+        round(coalesce(sum(c.premium) filter (where c.category = '장기' and c.type = '신규'), 0) * 5) as pi
       from profiles p
       cross join (
         select to_char(date_trunc('month', current_date) - make_interval(months => n), 'YYYY-MM') as month,
