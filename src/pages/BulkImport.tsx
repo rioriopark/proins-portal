@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { toAuthEmail } from '../lib/id'
 import type { Contract, Profile } from '../lib/types'
+import MonthlyUploadStatus from '../components/MonthlyUploadStatus'
 
 interface AgentInsurerCodeWithName {
   profile_id: string
@@ -376,6 +377,47 @@ function guessMapping(headers: string[], body: string[][]): Record<FieldKey, num
   return result
 }
 
+// 한 번 확인하고 등록한 열 매핑을 보험사·종목별로 저장해 두었다가(insurer_column_mappings),
+// 다음 달 같은 보험사 파일을 올리면 다시 확인하지 않아도 되게 그대로 적용한다. 보험사가 열 순서를
+// 바꾸거나 열을 추가해도 맞도록 열 위치가 아니라 열 이름으로 저장하고, null은 "사용 안 함"으로 고른 항목이다.
+type SavedMapping = Partial<Record<FieldKey, string | null>>
+
+function savedMappingKey(insurer: string, category: string): string {
+  return `${insurer}|${category}`
+}
+
+function toSavedMapping(headers: string[], mapping: Record<FieldKey, number>): SavedMapping {
+  const result: SavedMapping = {}
+  // 화면에서 고를 수 없는 숨김 항목(지급월/구분/건수)은 저장하지 않고 매번 자동 추정에 맡긴다.
+  for (const f of FIELD_META.filter((m) => !m.hidden)) {
+    const idx = mapping[f.key]
+    result[f.key] = idx >= 0 && idx < headers.length ? normalizeHeader(headers[idx]) : null
+  }
+  return result
+}
+
+// 저장된 열 이름이 이번 파일에 없으면(보험사가 열 이름을 바꾼 경우) 그 항목만 자동 추정값을 쓴다.
+function applySavedMapping(headers: string[], guessed: Record<FieldKey, number>, saved: SavedMapping): Record<FieldKey, number> {
+  const result = { ...guessed }
+  const normalized = headers.map(normalizeHeader)
+  for (const f of FIELD_META) {
+    if (!(f.key in saved)) continue
+    const name = saved[f.key]
+    if (name === null) {
+      result[f.key] = -1
+      continue
+    }
+    const idx = normalized.indexOf(name ?? '')
+    if (idx >= 0) result[f.key] = idx
+  }
+  return result
+}
+
+function findSavedMapping(saved: Record<string, SavedMapping>, insurer: string, category: string): SavedMapping | undefined {
+  if (!insurer) return undefined
+  return saved[savedMappingKey(insurer, category)] ?? saved[savedMappingKey(insurer, '')]
+}
+
 // 납입회차 0회는 일반보험 신규건, 1회는 장기계약 신규건을 뜻한다 (삼성화재 파일 기준).
 function samsungInstallmentNo(headers: string[], row: string[]): string {
   const idx = headers.findIndex((h) => normalizeHeader(h).includes('납입회차'))
@@ -544,6 +586,8 @@ interface FileGroup {
   fileMonth: string
   // 종목(장기/일반/자동차) 열이 없는 파일에서, 파일명에서 미리 추정해둔 값으로 대신 채운다.
   fileCategory: string
+  // 지난번에 저장해둔 이 보험사의 열 매핑을 적용했는지 (화면 안내용)
+  savedMappingApplied: boolean
 }
 
 export default function BulkImport() {
@@ -712,6 +756,50 @@ export default function BulkImport() {
   const [skippedFiles, setSkippedFiles] = useState<string[]>([])
   const [manualAssign, setManualAssign] = useState<Record<string, string>>({})
   const [fileBusy, setFileBusy] = useState(false)
+  const [savedMappings, setSavedMappings] = useState<Record<string, SavedMapping>>({})
+  const [statusRefreshKey, setStatusRefreshKey] = useState(0)
+
+  // 테이블이 아직 없는 DB(supabase/insurer-column-mappings.sql 미실행)에서도 업로드 자체는 되도록 조회 실패는 무시한다.
+  async function loadSavedMappings(): Promise<Record<string, SavedMapping>> {
+    const { data, error } = await supabase.from('insurer_column_mappings').select('insurer, file_category, mapping')
+    if (error) {
+      console.warn('저장된 열 매핑 조회 실패:', error)
+      return savedMappings
+    }
+    const map: Record<string, SavedMapping> = {}
+    for (const r of (data ?? []) as { insurer: string; file_category: string; mapping: SavedMapping }[]) {
+      map[savedMappingKey(r.insurer, r.file_category)] = r.mapping
+    }
+    setSavedMappings(map)
+    return map
+  }
+
+  async function saveMappings(groups: FileGroup[]) {
+    const rows = groups
+      .filter((g) => g.insurer)
+      .map((g) => ({
+        insurer: g.insurer,
+        file_category: g.fileCategory,
+        mapping: toSavedMapping(g.headers, g.mapping),
+        updated_by: profile?.id ?? null,
+        updated_at: new Date().toISOString(),
+      }))
+    // 같은 보험사·종목 파일을 여러 개 올렸으면 마지막 파일 기준으로 한 번만 저장한다.
+    const unique = Array.from(new Map(rows.map((r) => [savedMappingKey(r.insurer, r.file_category), r])).values())
+    if (!unique.length) return
+    const { error } = await supabase.from('insurer_column_mappings').upsert(unique, { onConflict: 'insurer,file_category' })
+    if (error) console.warn('열 매핑 저장 실패:', error)
+  }
+
+  function withSavedMapping(g: FileGroup, insurer: string): Partial<FileGroup> {
+    const guessed = guessMapping(g.headers, g.dataRows)
+    const saved = findSavedMapping(savedMappings, insurer, g.fileCategory)
+    return {
+      insurer,
+      mapping: saved ? applySavedMapping(g.headers, guessed, saved) : guessed,
+      savedMappingApplied: !!saved,
+    }
+  }
 
   // 여러 보험사 파일을 한 번에 선택해도 파일마다 헤더/열 구성이 다르므로 파일별로 따로 처리한다.
   // 보험사는 파일명에서 우선 추정하고, 못 찾으면 업로드 후 직접 선택하게 한다.
@@ -722,7 +810,7 @@ export default function BulkImport() {
     await ensureProfiles()
     setFileBusy(true)
     try {
-      const XLSX = await import('xlsx')
+      const [XLSX, saved] = await Promise.all([import('xlsx'), loadSavedMappings()])
       const groups: FileGroup[] = []
       const skipped: string[] = []
       for (const f of files) {
@@ -754,16 +842,21 @@ export default function BulkImport() {
           continue
         }
         const { headers: hdrs, body } = splitCombinedAgentColumn(rawHdrs, rawBody)
+        const insurer = guessInsurerFromFileName(f.name)
+        const fileCategory = guessCategoryFromFileName(f.name)
+        const guessed = guessMapping(hdrs, body)
+        const savedMapping = findSavedMapping(saved, insurer, fileCategory)
         groups.push({
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           fileName: f.name,
-          insurer: guessInsurerFromFileName(f.name),
+          insurer,
           headers: hdrs,
           dataRows: body,
           rowMonths: Array(body.length).fill(guessMonthFromFileName(f.name) || guessFileMonth(grid, headerIdx)),
-          mapping: guessMapping(hdrs, body),
+          mapping: savedMapping ? applySavedMapping(hdrs, guessed, savedMapping) : guessed,
           fileMonth: guessMonthFromFileName(f.name),
-          fileCategory: guessCategoryFromFileName(f.name),
+          fileCategory,
+          savedMappingApplied: !!savedMapping,
         })
       }
       setFileGroups(groups)
@@ -970,6 +1063,10 @@ export default function BulkImport() {
       }
     }
     const autoConfirmed = inserted > 0 ? await runAutoConfirm() : 0
+    if (inserted > 0) {
+      await saveMappings(fileGroups)
+      setStatusRefreshKey((k) => k + 1)
+    }
     setBusy(false)
     setResult({ inserted, failed, errorMessage, autoConfirmed })
     if (failed === 0) {
@@ -1101,6 +1198,8 @@ export default function BulkImport() {
 
       {mode === 'file' && (
         <>
+          <MonthlyUploadStatus insurers={INSURERS} refreshKey={statusRefreshKey} />
+
           <p className="text-sm text-slate-500">
             보험사 업무포털에서 계약내용을 엑셀(xlsx/xls/csv)로 내려받아 그대로 업로드하세요. 서로 다른 보험사 파일도 한 번에 여러
             개 선택할 수 있습니다. 보험사는 파일명에서 자동으로 추정하고, 열 이름도 파일마다 자동으로 추정한 뒤 확인할 수
@@ -1135,7 +1234,7 @@ export default function BulkImport() {
                         <span className="block text-xs font-medium text-slate-500 mb-1">보험사</span>
                         <select
                           value={g.insurer}
-                          onChange={(e) => updateGroup(g.id, { insurer: e.target.value })}
+                          onChange={(e) => updateGroup(g.id, withSavedMapping(g, e.target.value))}
                           className="border border-slate-300 rounded-md px-3 py-2 text-sm min-w-40"
                         >
                           <option value="">선택하세요</option>
@@ -1159,7 +1258,15 @@ export default function BulkImport() {
                   )}
 
                   <div className="border-t border-slate-100 pt-3 space-y-2">
-                    <p className="text-xs font-semibold text-slate-500">열 매핑 확인 (자동 추정됨 · 필요시 변경)</p>
+                    <p className="text-xs font-semibold text-slate-500">
+                      {g.savedMappingApplied ? (
+                        <>
+                          열 매핑 확인 <span className="text-emerald-600">(지난번 등록한 매핑을 그대로 적용함)</span>
+                        </>
+                      ) : (
+                        '열 매핑 확인 (자동 추정됨 · 필요시 변경 · 등록하면 다음 달부터 이 매핑을 자동 적용)'
+                      )}
+                    </p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {FIELD_META.filter((f) => !f.hidden).map((f) => (
                         <label key={f.key} className="text-xs">
