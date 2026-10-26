@@ -15,7 +15,7 @@
 ## 1. 데모용 Supabase 프로젝트
 
 1. Supabase에서 새 프로젝트를 만든다 (무료 플랜으로 충분).
-2. 데모 프로젝트 SQL Editor에서 `supabase/schema.sql` → `supabase/demo-schema-patch.sql` 순서로 실행한다.
+2. 데모 프로젝트 SQL Editor에서 `supabase/schema.sql` → `supabase/demo-schema-patch.sql` → `supabase/insurer-column-mappings.sql` 순서로 실행한다.
    patch 파일은 schema.sql 이후 운영 DB에만 추가된 게시판·보험사·개인코드 테이블과 컬럼을 앱 코드 기준으로
    다시 만든 것이라, 운영 DB에 접속하지 않고도 체험판 구조를 만들 수 있다. (운영 DB에는 실행하지 말 것)
 3. `supabase/demo-seed.sql` 전체를 데모 프로젝트 SQL Editor에서 한 번 실행한 뒤, 아래 한 줄로 가상 데이터를 채운다.
