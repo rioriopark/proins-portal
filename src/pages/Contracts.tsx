@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Fragment, useDeferredValue, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Contract, ContractCategory, ContractType, CoInsurerShare, Insurer, Organization, Profile } from '../lib/types'
@@ -707,7 +707,13 @@ export default function Contracts() {
     [contracts],
   )
 
-  const keyword = search.trim().toLowerCase()
+  // 계약이 수천 건이라 한 글자 칠 때마다 목록 전체를 다시 그리면 입력이 버벅인다. 검색어 반영을 지연시켜
+  // 입력창은 바로 반응하고, 목록 갱신은 입력이 잠깐 멈췄을 때 따라오게 한다.
+  const deferredSearch = useDeferredValue(search)
+  const keyword = deferredSearch.trim().toLowerCase()
+  // 숨김 규칙 해제는 특정 계약을 찾는 검색(두 글자 이상)에만 적용한다. 한 글자(한글 자모 입력 중 포함)로
+  // 해제하면 수수료 0원·지난 장기신규까지 수천 건이 한꺼번에 걸려 화면이 멈춘다.
+  const searchingSpecific = keyword.length >= 2
 
   const filtered = useMemo(
     () =>
@@ -716,7 +722,7 @@ export default function Contracts() {
         if (c.is_preliminary) return false
         // 아래 두 숨김 규칙은 평소 목록을 간결하게 하기 위한 것이라, 계약찾기로 특정 계약(증권번호·고객명 등)을
         // 직접 찾을 때는 적용하지 않는다 — 수수료가 아직 0원인 신규 장기계약도 검색하면 나와야 한다.
-        if (!keyword) {
+        if (!searchingSpecific) {
           // 수수료 0원 건(계속 상태 등, 수수료가 아직 발생하지 않은 트래킹용 행)은 목록에서 숨긴다.
           if (c.commission === 0) return false
           // 장기 신규건은 당월(지급월 기준) 계약만 보여준다. 일반/자동차는 단발성 계약이라 월 제한 없이 전부 보여준다.
@@ -732,7 +738,7 @@ export default function Contracts() {
         }
         return true
       }),
-    [contracts, categoryFilter, typeFilter, monthFilter, keyword, agentInfo],
+    [contracts, categoryFilter, typeFilter, monthFilter, keyword, searchingSpecific, agentInfo],
   )
 
   const orgsById = useMemo(() => new Map(orgs.map((o) => [o.id, o])), [orgs])
@@ -808,8 +814,10 @@ export default function Contracts() {
     )
   }, [filtered, agentInfo, orgsById])
 
+  // 검색 결과를 자동으로 펼치되, 결과가 너무 많으면(짧은 검색어 등) 전부 펼쳐 수천 행을 그리지 않는다.
+  const AUTO_EXPAND_MAX_ROWS = 300
   useEffect(() => {
-    if (!keyword) return
+    if (!keyword || filtered.length > AUTO_EXPAND_MAX_ROWS) return
     setOpenAgents((prev) => {
       const next = new Set(prev)
       groups.forEach((g) => next.add(g.key))
@@ -821,7 +829,7 @@ export default function Contracts() {
       return next
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyword, groups])
+  }, [keyword, groups, filtered.length])
 
   function toggleAgent(key: string) {
     setOpenAgents((prev) => {
