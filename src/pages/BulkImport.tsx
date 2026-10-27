@@ -228,6 +228,35 @@ function normalizeHeader(h: string): string {
     .replace(/\s/g, '')
 }
 
+// 한셀(HCell)에서 편집해 저장한 xlsx는 서식(cellXfs)의 각 항목을 한셀 전용 확장(mc:AlternateContent의 Choice)과
+// 표준 항목(Fallback)으로 두 번 적어서, xlsx 라이브러리가 둘 다 세면서 서식 번호가 밀려 보험료가 "4854/06" 같은
+// 날짜로 읽힌다. 또 공유 문자열에 <hs:size/> 같은 한셀 전용 글꼴 태그가 있으면 시트 전체를 읽지 못해 "빈 파일"이 된다.
+// 한셀 파일이면 업로드 전에 표준 항목만 남기고 한셀 전용 태그를 지운 사본으로 읽는다. 한셀 파일이 아니면 null.
+function cleanHancellXlsx(XLSX: typeof import('xlsx'), bytes: Uint8Array): Uint8Array | null {
+  const cfb = XLSX.CFB.read(bytes, { type: 'array' })
+  const paths: string[] = cfb.FullPaths
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  const workbookIdx = paths.findIndex((p) => p.endsWith('/xl/workbook.xml'))
+  const workbook = workbookIdx >= 0 ? cfb.FileIndex[workbookIdx]?.content : null
+  if (!workbook || !decoder.decode(workbook).includes('schemas.haansoft.com')) return null
+  paths.forEach((p, i) => {
+    const entry = cfb.FileIndex[i]
+    if (!p.endsWith('.xml') || !entry?.content) return
+    const text = decoder.decode(entry.content)
+    if (!text.includes('schemas.haansoft.com')) return
+    const cleaned = text
+      // 블록마다 표준 항목(Fallback)만 남긴다. Fallback이 없는 블록은 한셀 전용 정보뿐이라 통째로 지운다.
+      .replace(/<mc:AlternateContent\b[^>]*>([\s\S]*?)<\/mc:AlternateContent>/g, (_, inner: string) => {
+        const fallback = inner.match(/<mc:Fallback>([\s\S]*?)<\/mc:Fallback>/)
+        return fallback ? fallback[1] : ''
+      })
+      .replace(/<hs:[^>]*\/>/g, '')
+    entry.content = encoder.encode(cleaned)
+  })
+  return new Uint8Array(XLSX.CFB.write(cfb, { fileType: 'zip', type: 'array' }))
+}
+
 // 일부 보험사(예: 롯데손해보험)는 실제로는 EUC-KR(CP949)로 인코딩된 탭 구분 텍스트를
 // .xlsx 확장자로 내보낸다. 이런 파일은 zip(PK)도 구버전 OLE(xls)도 아니라서 xlsx 라이브러리가
 // 텍스트로 간주해 UTF-8로 읽어버리는데, 그러면 한글이 전부 깨진다("증권번호" → "Áõ±Ç¹øÈ£").
@@ -236,7 +265,8 @@ function readWorkbook(XLSX: typeof import('xlsx'), buf: ArrayBuffer) {
   const bytes = new Uint8Array(buf)
   const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b
   const isOle = bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0
-  if (isZip || isOle) return XLSX.read(buf, { type: 'array' })
+  if (isZip) return XLSX.read(cleanHancellXlsx(XLSX, bytes) ?? buf, { type: 'array' })
+  if (isOle) return XLSX.read(buf, { type: 'array' })
   const text = new TextDecoder('euc-kr').decode(buf)
   return XLSX.read(text, { type: 'string' })
 }
@@ -426,6 +456,8 @@ function guessMapping(headers: string[], body: string[][]): Record<FieldKey, num
       const h = normalizeHeader(headers[i])
       // "상품코드"가 "상품명"보다 앞에 있는 파일(예: DB손해보험)에서 상품명 자리에 코드 숫자가 들어가지 않게 한다.
       if (f.key === 'productName' && h.includes('코드')) continue
+      // "수수료%"·"수수료율" 같은 비율 열이 금액 열보다 앞에 있는 파일(예: 라이나손보)에서 비율을 금액으로 읽지 않게 한다.
+      if (['premium', 'commission', 'performanceCommission'].includes(f.key) && /%|율/.test(h)) continue
       if (f.keywords.some((k) => h.includes(normalizeHeader(k)))) {
         found = i
         break
