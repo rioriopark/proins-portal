@@ -306,6 +306,9 @@ export default function Statement() {
         .filter((c) => c.month === month && c.commission !== 0)
         .slice()
         .sort((a, b) => {
+          // 보험료가 음수인 건(해약 등)은 종목·보험사와 관계없이 맨 아래로 모은다.
+          const byNegative = Number(a.premium < 0) - Number(b.premium < 0)
+          if (byNegative !== 0) return byNegative
           const byCategory = CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category)
           if (byCategory !== 0) return byCategory
           const byCompany = (a.company ?? '').localeCompare(b.company ?? '', 'ko')
