@@ -36,7 +36,7 @@ const INSURERS = [
 // INSURERS 목록의 값 하나만으로 매칭하면 놓치는 경우가 많아 각 보험사별 별칭도 함께 확인한다.
 const INSURER_FILENAME_ALIASES: Record<string, string[]> = {
   삼성화재: ['삼성화재'],
-  DB손보: ['DB손보', 'DB손해보험'],
+  DB손보: ['DB손보', 'DB손해보험', 'DB'],
   현대해상: ['현대해상'],
   KB손보: ['KB손보', 'KB손해보험'],
   메리츠화재: ['메리츠화재'],
@@ -47,10 +47,12 @@ const INSURER_FILENAME_ALIASES: Record<string, string[]> = {
   AIG손해보험: ['AIG손해보험', 'AIG'],
 }
 
+// 파일명을 직접 붙이면서 영문 약칭을 소문자로 쓰는 경우가 있어(예: "db 09월분 장기.xlsx") 대소문자는 구분하지 않는다.
 function guessInsurerFromFileName(fileName: string): string {
+  const name = fileName.toLowerCase()
   for (const insurer of INSURERS) {
     const aliases = INSURER_FILENAME_ALIASES[insurer] ?? [insurer]
-    if (aliases.some((a) => fileName.includes(a))) return insurer
+    if (aliases.some((a) => name.includes(a.toLowerCase()))) return insurer
   }
   return ''
 }
@@ -62,9 +64,17 @@ function guessCategoryFromFileName(fileName: string): string {
   return ''
 }
 
+// 연도 없이 "09월분"처럼 월만 적힌 파일명은 가장 최근의 그 달(올해, 아직 안 온 달이면 작년)로 본다.
 function guessMonthFromFileName(fileName: string): string {
   const m = fileName.match(/(20\d{2})\D{0,2}(\d{1,2})(?!\d)/)
-  return m ? `${m[1]}-${m[2].padStart(2, '0')}` : ''
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}`
+  const monthOnly = fileName.match(/(?<!\d)(\d{1,2})\s*월/)
+  if (!monthOnly) return ''
+  const month = Number(monthOnly[1])
+  if (month < 1 || month > 12) return ''
+  const now = new Date()
+  const year = month > now.getMonth() + 1 ? now.getFullYear() - 1 : now.getFullYear()
+  return `${year}-${String(month).padStart(2, '0')}`
 }
 
 interface ParsedRow {
@@ -153,7 +163,7 @@ const FIELD_META: { key: FieldKey; label: string; required: boolean; hidden?: bo
     key: 'expiryDate',
     label: '보험종기',
     required: false,
-    keywords: ['보험종기', '보험만기일자', '만기일자', '만기일', '증권만기일', '만료일', '종기'],
+    keywords: ['보험종기', '보험만기일자', '만기일자', '만기일', '증권만기일', '만료일', '종기', '보험종료일자'],
   },
   { key: 'premium', label: '보험료', required: true, keywords: ['보험료', '납입보험료', '월보험료', '초회보험료'] },
   {
@@ -291,6 +301,54 @@ function pickBestColumn(headers: string[], body: string[][], predicate: (h: stri
 // 일부 보험사(예: 한화손해보험)는 "사용인코드/사용인명"처럼 담당자 코드와 이름을 한 열에
 // "코드/이름" 형식으로 합쳐서 낸다. 그대로 두면 사용인코드 매핑에 이름까지 섞여 담당자 매칭이 실패하므로,
 // 업로드 시 숫자(코드)와 한글 등 나머지(이름)를 분리해 이름 전용 열을 새로 만들어준다.
+// 일부 보험사(예: DB손해보험)는 헤더가 두 줄이다. 윗줄의 "비례수수료"가 셀 병합으로 여러 열에 걸쳐 있고,
+// 아랫줄에 "기본(초회)/계약관리/유지관리/수금관리/저축성유지" 같은 세부 항목이 있다. 그대로 두면 윗줄 이름이
+// 첫 세부 열(기본(초회))에만 붙어서, 실제 수수료가 다른 세부 열에 들어있으면 수수료가 전부 0원으로 등록된다.
+// 아랫줄이 세부 항목 행이면 헤더를 합치고, 숫자 열 묶음은 원래 이름(예: "비례수수료")으로 합계 열을 만들어
+// 자동 매핑이 그 합계를 고르게 한다. 세부 열은 "비례수수료(계약관리)"처럼 이름을 붙여 남겨둔다.
+function mergeSubHeaderRow(headers: string[], body: string[][]): { headers: string[]; body: string[][] } {
+  const sub = body[0]
+  if (!sub) return { headers, body }
+  const isNumeric = (v: string) => /^-?[\d,.\s]+$/.test(v) && /\d/.test(v)
+  if (sub.some((v) => isNumeric(v))) return { headers, body }
+  const n = headers.length
+  const spans: { start: number; end: number }[] = []
+  for (let i = 0; i < n - 1; i++) {
+    if (!headers[i] || headers[i + 1] || !sub[i] || !sub[i + 1]) continue
+    let end = i + 1
+    while (end + 1 < n && !headers[end + 1] && sub[end + 1]) end++
+    spans.push({ start: i, end })
+    i = end
+  }
+  if (!spans.length) return { headers, body }
+
+  const rows = body.slice(1)
+  const newHeaders: string[] = []
+  const columns: ((row: string[]) => string)[] = []
+  for (let i = 0; i < n; i++) {
+    const span = spans.find((s) => s.start === i)
+    if (!span) {
+      const col = i
+      newHeaders.push(headers[i] || sub[i])
+      columns.push((row) => row[col] ?? '')
+      continue
+    }
+    const parent = headers[i]
+    const cols = Array.from({ length: span.end - span.start + 1 }, (_, k) => span.start + k)
+    const numericGroup = rows.every((row) => cols.every((c) => !row[c] || isNumeric(row[c])))
+    if (numericGroup) {
+      newHeaders.push(parent)
+      columns.push((row) => String(cols.reduce((acc, c) => acc + toNumber(row[c] ?? ''), 0)))
+    }
+    for (const c of cols) {
+      newHeaders.push(`${parent}(${sub[c]})`)
+      columns.push((row) => row[c] ?? '')
+    }
+    i = span.end
+  }
+  return { headers: newHeaders, body: rows.map((row) => columns.map((get) => get(row))) }
+}
+
 function splitCombinedAgentColumn(headers: string[], body: string[][]): { headers: string[]; body: string[][] } {
   const idx = headers.findIndex((h) => {
     const n = normalizeHeader(h)
@@ -366,6 +424,8 @@ function guessMapping(headers: string[], body: string[][]): Record<FieldKey, num
     for (let i = 0; i < headers.length; i++) {
       if (used.has(i)) continue
       const h = normalizeHeader(headers[i])
+      // "상품코드"가 "상품명"보다 앞에 있는 파일(예: DB손해보험)에서 상품명 자리에 코드 숫자가 들어가지 않게 한다.
+      if (f.key === 'productName' && h.includes('코드')) continue
       if (f.keywords.some((k) => h.includes(normalizeHeader(k)))) {
         found = i
         break
@@ -841,7 +901,8 @@ export default function BulkImport() {
           skipped.push(`${f.name} (내용 없음)`)
           continue
         }
-        const { headers: hdrs, body } = splitCombinedAgentColumn(rawHdrs, rawBody)
+        const merged = mergeSubHeaderRow(rawHdrs, rawBody)
+        const { headers: hdrs, body } = splitCombinedAgentColumn(merged.headers, merged.body)
         const insurer = guessInsurerFromFileName(f.name)
         const fileCategory = guessCategoryFromFileName(f.name)
         const guessed = guessMapping(hdrs, body)
