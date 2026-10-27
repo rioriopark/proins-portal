@@ -947,7 +947,8 @@ export default function BulkImport() {
           dataRows: body,
           rowMonths: Array(body.length).fill(guessMonthFromFileName(f.name) || guessFileMonth(grid, headerIdx)),
           mapping: savedMapping ? applySavedMapping(hdrs, guessed, savedMapping) : guessed,
-          fileMonth: guessMonthFromFileName(f.name),
+          // 지급월 입력칸에는 자동 인식값을 미리 채워두고, 사용자가 바꾸면 그 값이 우선한다(아래 fileRows 참고).
+          fileMonth: guessMonthFromFileName(f.name) || guessFileMonth(grid, headerIdx),
           fileCategory,
           savedMappingApplied: !!savedMapping,
         })
@@ -1005,7 +1006,9 @@ export default function BulkImport() {
         const rawCategory = get(row, 'category')
         const rawType = get(row, 'type')
         const rawMonth = get(row, 'month')
-        const month = rawMonth ? normalizeMonth(rawMonth) : g.rowMonths[i] || g.fileMonth
+        // 파일에 지급월 열이 없으면 화면의 지급월 입력값을 쓴다. 예전엔 파일명/안내행에서 인식한 값이 입력값보다
+        // 우선해서, "09월분" 파일을 지급월 10월로 바꿔 올려도 9월로 저장되는 문제가 있었다.
+        const month = rawMonth ? normalizeMonth(rawMonth) : g.fileMonth || g.rowMonths[i]
         const category = rawCategory
           ? normalizeCategory(rawCategory)
           : inferCategoryFallback(g.insurer, g.headers, row) || g.fileCategory
@@ -1391,7 +1394,7 @@ export default function BulkImport() {
                     {g.mapping.month < 0 && (
                       <label className="block text-xs pt-1">
                         <span className="block text-slate-500 mb-1">
-                          지급월 (열이 없으면 안내문에서 자동 인식하며, 실패했을 때만 이 값을 적용합니다)
+                          지급월 (파일명·안내문에서 자동 인식한 값 · 다르면 여기서 바꾸면 이 값으로 등록됩니다)
                         </span>
                         <input
                           type="month"
