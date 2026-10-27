@@ -714,10 +714,14 @@ export default function Contracts() {
       contracts.filter((c) => {
         // 예비계약(확정 전)은 계약 리스트에 안 보이고 "예비계약 확인"에서만 관리한다.
         if (c.is_preliminary) return false
-        // 수수료 0원 건(계속 상태 등, 수수료가 아직 발생하지 않은 트래킹용 행)은 목록에서 숨긴다.
-        if (c.commission === 0) return false
-        // 장기 신규건은 당월(지급월 기준) 계약만 보여준다. 일반/자동차는 단발성 계약이라 월 제한 없이 전부 보여준다.
-        if (c.category === '장기' && c.type === '신규' && c.month !== today().slice(0, 7)) return false
+        // 아래 두 숨김 규칙은 평소 목록을 간결하게 하기 위한 것이라, 계약찾기로 특정 계약(증권번호·고객명 등)을
+        // 직접 찾을 때는 적용하지 않는다 — 수수료가 아직 0원인 신규 장기계약도 검색하면 나와야 한다.
+        if (!keyword) {
+          // 수수료 0원 건(계속 상태 등, 수수료가 아직 발생하지 않은 트래킹용 행)은 목록에서 숨긴다.
+          if (c.commission === 0) return false
+          // 장기 신규건은 당월(지급월 기준) 계약만 보여준다. 일반/자동차는 단발성 계약이라 월 제한 없이 전부 보여준다.
+          if (c.category === '장기' && c.type === '신규' && c.month !== today().slice(0, 7)) return false
+        }
         if (categoryFilter !== '전체' && c.category !== categoryFilter) return false
         if (typeFilter !== '전체' && c.type !== typeFilter) return false
         if (monthFilter !== '전체' && contractMonth(c) !== monthFilter) return false
