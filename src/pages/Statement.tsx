@@ -308,7 +308,9 @@ export default function Statement() {
         .sort((a, b) => {
           const byCategory = CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category)
           if (byCategory !== 0) return byCategory
-          return (b.receipt_date ?? '').localeCompare(a.receipt_date ?? '')
+          const byCompany = (a.company ?? '').localeCompare(b.company ?? '', 'ko')
+          if (byCompany !== 0) return byCompany
+          return (a.receipt_date ?? '').localeCompare(b.receipt_date ?? '')
         }),
     [contracts, month],
   )
