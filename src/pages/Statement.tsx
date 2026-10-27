@@ -310,7 +310,7 @@ export default function Statement() {
           if (byCategory !== 0) return byCategory
           const byCompany = (a.company ?? '').localeCompare(b.company ?? '', 'ko')
           if (byCompany !== 0) return byCompany
-          return (a.receipt_date ?? '').localeCompare(b.receipt_date ?? '')
+          return b.premium - a.premium
         }),
     [contracts, month],
   )
