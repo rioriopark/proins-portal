@@ -318,6 +318,36 @@ export default function Statement() {
     [contracts, month],
   )
 
+  // "적용된 계약 내역"을 화면과 같은 열·정렬로 엑셀 내려받기. 수수료는 화면처럼 지급률/성과비율 적용 후 금액.
+  async function handleDownloadContractList() {
+    if (!target) return
+    const XLSX = await import('xlsx')
+    const header = ['보험사', '증권번호', '상품명', '계약자명', '종목', '구분', '보험시기', '보험료', '수수료(지급률 적용)']
+    if (canSeeGeneralPerformance) header.push('성과수수료(비율 적용)')
+    const rows = contractListRows.map((c) => {
+      const row: (string | number)[] = [
+        c.company,
+        c.policy_no ?? '',
+        c.product_name || '',
+        c.customer_name,
+        c.category,
+        c.type,
+        c.receipt_date ?? '',
+        c.premium,
+        Math.round(c.commission * (c.category === '장기' ? target.rate_long : target.rate_general)),
+      ]
+      if (canSeeGeneralPerformance) {
+        row.push(Math.round(c.performance_commission * (target.general_performance_rate || 0)))
+      }
+      return row
+    })
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
+    ws['!cols'] = header.map((h) => ({ wch: h === '상품명' ? 40 : 16 }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '적용된 계약 내역')
+    XLSX.writeFile(wb, `적용된계약내역_${target.name}_${month}.xlsx`)
+  }
+
   // 수수료 0원 건(계속 확정 전 등, 아직 실적으로 잡히지 않는 트래킹용 행)은 계약관리 화면과
   // 동일하게 업적현황 집계에서도 제외한다.
   // 일반/자동차는 보험사 파일마다 원본 "구분" 값이 제각각(대부분 비어있음)이라 그대로는 의미
@@ -679,17 +709,27 @@ export default function Statement() {
           </div>
 
           <div>
-            <button
-              type="button"
-              onClick={() => setContractListOpen((v) => !v)}
-              className="w-full flex items-center gap-1.5 bg-slate-100 px-3 py-2 text-left hover:bg-slate-200 rounded-t-md"
-            >
-              <span className="inline-block w-3 text-slate-400">{contractListOpen ? '▾' : '▸'}</span>
-              <span className="font-semibold text-sm text-slate-700">적용된 계약 내역</span>
-              <span className="text-xs text-slate-400">
-                ({contractListRows.length}건, {month} 정산년월 기준)
-              </span>
-            </button>
+            <div className="flex items-center bg-slate-100 rounded-t-md">
+              <button
+                type="button"
+                onClick={() => setContractListOpen((v) => !v)}
+                className="flex-1 flex items-center gap-1.5 px-3 py-2 text-left hover:bg-slate-200 rounded-tl-md"
+              >
+                <span className="inline-block w-3 text-slate-400">{contractListOpen ? '▾' : '▸'}</span>
+                <span className="font-semibold text-sm text-slate-700">적용된 계약 내역</span>
+                <span className="text-xs text-slate-400">
+                  ({contractListRows.length}건, {month} 정산년월 기준)
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadContractList}
+                disabled={contractListRows.length === 0}
+                className="mx-2 text-xs border border-slate-300 bg-white rounded px-2 py-1 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              >
+                엑셀 다운로드
+              </button>
+            </div>
             {contractListOpen && (
               <div className="overflow-x-auto border border-t-0 border-slate-100 rounded-b-md">
                 <table className="w-full text-sm">
