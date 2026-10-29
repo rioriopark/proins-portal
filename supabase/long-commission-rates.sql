@@ -17,11 +17,12 @@ create table if not exists long_commission_rates (
   primary key (insurer, product_type, band, installment, effective_month)
 );
 
--- 수수료 규정이라 위촉설계사(agent)는 조회 불가, 관리자급만 조회. 등록·수정은 본사 소속만.
+-- 로그인한 회원은 모두 조회 (FC는 화면에서 본인 장기 지급률을 곱해 본다). 등록·수정은 본사 소속만.
 alter table long_commission_rates enable row level security;
 drop policy if exists "long_commission_rates_select_admin" on long_commission_rates;
-create policy "long_commission_rates_select_admin" on long_commission_rates
-  for select using (my_role() <> 'agent');
+drop policy if exists "long_commission_rates_select_member" on long_commission_rates;
+create policy "long_commission_rates_select_member" on long_commission_rates
+  for select using (my_role() is not null);
 drop policy if exists "long_commission_rates_write_hq" on long_commission_rates;
 create policy "long_commission_rates_write_hq" on long_commission_rates
   for all using (my_org() = 'hq') with check (my_org() = 'hq');

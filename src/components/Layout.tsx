@@ -44,7 +44,7 @@ const NAV: NavEntry[] = [
     items: [
       { to: '/statement', label: '수수료명세서', visible: (p) => p.role !== 'agent' || p.org_id !== 'hq' },
       { to: '/wage-statement', label: '임금명세서', visible: (p) => p.org_id === 'hq' },
-      { to: '/long-rates', label: '장기 지급률표', adminOnly: true },
+      { to: '/long-rates', label: '장기 지급률표' },
     ],
   },
   {
