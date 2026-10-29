@@ -144,7 +144,7 @@ export default function LongRates() {
         </p>
       </div>
 
-      {!isAgent && <div className="flex gap-1 border-b border-slate-200">
+      <div className="flex gap-1 border-b border-slate-200">
         {([['rates', '회차별 지급률'], ['modification', '상품별 수정률']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`px-4 py-2 text-sm -mb-px border-b-2 ${tab === key
@@ -153,11 +153,13 @@ export default function LongRates() {
             {label}
           </button>
         ))}
-      </div>}
+      </div>
 
-      {tab === 'modification' && !isAgent && (
+      {tab === 'modification' && (
         <div className="space-y-6">
-          <CommissionReference />
+          {isAgent
+            ? <CommissionReference fixedRatio={gradeRatio} fixedLabel={profile.title} />
+            : <CommissionReference />}
           <details className="group">
             <summary className="cursor-pointer text-sm font-semibold text-slate-700 select-none">
               삼성화재 상품별 상세 수정률 (2024-04 공지)
