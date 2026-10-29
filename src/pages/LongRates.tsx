@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, fetchAllRows } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
 import type { LongCommissionRate, PayoutGrade } from '../lib/types'
 import ModificationRates from '../components/ModificationRates'
 import CommissionReference from '../components/CommissionReference'
@@ -40,7 +41,11 @@ export default function LongRates() {
   const [tab, setTab] = useState<'rates' | 'modification'>('rates')
   const [showAll, setShowAll] = useState(false)
   const [grades, setGrades] = useState<PayoutGrade[]>([])
-  const [gradeRatio, setGradeRatio] = useState(1)
+  const [selectedRatio, setSelectedRatio] = useState(1)
+  const { profile } = useAuth()
+  // 위촉설계사(FC)는 직급을 고를 수 없고, 조직관리에 등록된 본인 장기 지급률로만 본다
+  const isAgent = profile?.role === 'agent'
+  const gradeRatio = isAgent ? profile.rate_long ?? 1 : selectedRatio
 
   useEffect(() => {
     async function load() {
@@ -49,14 +54,14 @@ export default function LongRates() {
         fetchAllRows<LongCommissionRate>((from, to) =>
           supabase.from('long_commission_rates').select('*').range(from, to)
         ),
-        supabase.from('payout_grades').select('*').order('sort_order'),
+        isAgent ? Promise.resolve({ data: [] as PayoutGrade[] }) : supabase.from('payout_grades').select('*').order('sort_order'),
       ])
       setRates(data)
       setGrades(g ?? [])
       setLoading(false)
     }
     load()
-  }, [])
+  }, [isAgent])
 
   const months = useMemo(() => [...new Set(rates.map((r) => r.effective_month))].sort().reverse(), [rates])
   const activeMonth = month || months[0] || ''
@@ -112,17 +117,16 @@ export default function LongRates() {
         ...years.map(scale), scale(round1(years.reduce((s, v) => s + v, 0)))]
     })
     const ws = XLSX.utils.aoa_to_sheet([header, ...body])
-    const compare = XLSX.utils.aoa_to_sheet([
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '회차별 지급률')
+    if (grades.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
       ['보험사', '유형', '구간', '100%', ...grades.map((g) => `${g.name} (${pctLabel(g.ratio)})`)],
       ...visible.map((r) => {
         const total = totalOf(r)
         return [r.insurer, r.productType, r.band, total, ...grades.map((g) => round1(total * g.ratio))]
       }),
-    ])
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '회차별 지급률')
-    XLSX.utils.book_append_sheet(wb, compare, '직급별 총계')
-    const suffix = gradeName ? `_${gradeName}` : ''
+    ]), '직급별 총계')
+    const suffix = isAgent ? `_${profile.name}` : gradeName ? `_${gradeName}` : ''
     XLSX.writeFile(wb, `장기_회차별지급률_${activeMonth}${suffix}.xlsx`)
   }
 
@@ -133,12 +137,14 @@ export default function LongRates() {
       <div>
         <h1 className="text-xl font-bold text-slate-800">장기 지급률표</h1>
         <p className="text-sm text-slate-500 mt-1">
-          보험사 장기보험 회차별 지급률입니다. 모든 값은 월납환산 수정보험료(수정P) 대비 %이고, 빈칸은 미지급 회차입니다.
-          직급을 고르면 직급 지급비율을 곱한 값으로, 수정P를 입력하면 회차별 예상 수수료(원)로 바뀝니다.
+          보험사 장기보험 회차별 지급률입니다. 모든 값은 월납환산 수정보험료(수정P) 대비 %이고, 빈칸은 미지급 회차입니다.{' '}
+          {isAgent
+            ? <>본인 장기 지급률({pctLabel(gradeRatio)})을 곱한 값이며, 수정P를 입력하면 회차별 예상 수수료(원)로 바뀝니다.</>
+            : <>직급을 고르면 직급 지급비율을 곱한 값으로, 수정P를 입력하면 회차별 예상 수수료(원)로 바뀝니다.</>}
         </p>
       </div>
 
-      <div className="flex gap-1 border-b border-slate-200">
+      {!isAgent && <div className="flex gap-1 border-b border-slate-200">
         {([['rates', '회차별 지급률'], ['modification', '상품별 수정률']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`px-4 py-2 text-sm -mb-px border-b-2 ${tab === key
@@ -147,9 +153,9 @@ export default function LongRates() {
             {label}
           </button>
         ))}
-      </div>
+      </div>}
 
-      {tab === 'modification' && (
+      {tab === 'modification' && !isAgent && (
         <div className="space-y-6">
           <CommissionReference />
           <details className="group">
@@ -176,11 +182,17 @@ export default function LongRates() {
             <option value="all">전체 보험사</option>
             {insurers.map((i) => <option key={i} value={i}>{i}</option>)}
           </select>
-          <select value={gradeRatio} onChange={(e) => setGradeRatio(Number(e.target.value))}
-            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
-            <option value={1}>지급비율 100%</option>
-            {grades.map((g) => <option key={g.name} value={g.ratio}>{g.name} ({pctLabel(g.ratio)})</option>)}
-          </select>
+          {isAgent ? (
+            <span className="text-sm text-slate-600 whitespace-nowrap">
+              {profile.title || '내'} 지급률 <b className="text-rose-700">{pctLabel(gradeRatio)}</b>
+            </span>
+          ) : (
+            <select value={selectedRatio} onChange={(e) => setSelectedRatio(Number(e.target.value))}
+              className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+              <option value={1}>지급비율 100%</option>
+              {grades.map((g) => <option key={g.name} value={g.ratio}>{g.name} ({pctLabel(g.ratio)})</option>)}
+            </select>
+          )}
           <label className="flex items-center gap-2 text-sm text-slate-600 whitespace-nowrap">
             월납환산 수정P
             <input value={premiumInput} inputMode="numeric" placeholder="예: 100,000"
