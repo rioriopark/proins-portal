@@ -35,12 +35,14 @@ create table if not exists representative_products (
   primary key (insurer, category, effective_month)
 );
 
--- 수수료 규정이라 위촉설계사(agent)는 조회 불가, 관리자급만 조회. 등록·수정은 본사 소속만.
+-- 보험사 기준 지급률·대표상품은 로그인 회원 모두 조회(FC는 화면에서 본인 장기 지급률을 곱해 본다).
+-- 직급 지급비율(payout_grades)은 관리자급만 조회. 등록·수정은 본사 소속만.
 alter table insurer_base_rates enable row level security;
 alter table payout_grades enable row level security;
 alter table representative_products enable row level security;
 drop policy if exists "insurer_base_rates_select_admin" on insurer_base_rates;
-create policy "insurer_base_rates_select_admin" on insurer_base_rates for select using (my_role() <> 'agent');
+drop policy if exists "insurer_base_rates_select_member" on insurer_base_rates;
+create policy "insurer_base_rates_select_member" on insurer_base_rates for select using (my_role() is not null);
 drop policy if exists "insurer_base_rates_write_hq" on insurer_base_rates;
 create policy "insurer_base_rates_write_hq" on insurer_base_rates
   for all using (my_org() = 'hq') with check (my_org() = 'hq');
@@ -50,7 +52,8 @@ drop policy if exists "payout_grades_write_hq" on payout_grades;
 create policy "payout_grades_write_hq" on payout_grades
   for all using (my_org() = 'hq') with check (my_org() = 'hq');
 drop policy if exists "representative_products_select_admin" on representative_products;
-create policy "representative_products_select_admin" on representative_products for select using (my_role() <> 'agent');
+drop policy if exists "representative_products_select_member" on representative_products;
+create policy "representative_products_select_member" on representative_products for select using (my_role() is not null);
 drop policy if exists "representative_products_write_hq" on representative_products;
 create policy "representative_products_write_hq" on representative_products
   for all using (my_org() = 'hq') with check (my_org() = 'hq');

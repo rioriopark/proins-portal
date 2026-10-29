@@ -19,11 +19,12 @@ create table if not exists modification_rates (
   primary key (insurer, product, segment, term, effective_month)
 );
 
--- 장기 지급률표와 같은 범위: 관리자급만 조회, 본사 소속만 등록·수정
+-- 장기 지급률표와 같은 범위: 로그인 회원 모두 조회, 본사 소속만 등록·수정
 alter table modification_rates enable row level security;
 drop policy if exists "modification_rates_select_admin" on modification_rates;
-create policy "modification_rates_select_admin" on modification_rates
-  for select using (my_role() <> 'agent');
+drop policy if exists "modification_rates_select_member" on modification_rates;
+create policy "modification_rates_select_member" on modification_rates
+  for select using (my_role() is not null);
 drop policy if exists "modification_rates_write_hq" on modification_rates;
 create policy "modification_rates_write_hq" on modification_rates
   for all using (my_org() = 'hq') with check (my_org() = 'hq');

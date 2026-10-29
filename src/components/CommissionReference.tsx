@@ -12,12 +12,14 @@ function won(n: number): string {
   return Math.round(n).toLocaleString('ko-KR')
 }
 
-export default function CommissionReference() {
+// fixedRatio 를 주면(FC) 직급 선택 없이 그 비율로만 계산하고 직급 목록은 불러오지 않는다
+export default function CommissionReference({ fixedRatio, fixedLabel }: { fixedRatio?: number; fixedLabel?: string }) {
   const [products, setProducts] = useState<RepresentativeProduct[]>([])
   const [baseRates, setBaseRates] = useState<InsurerBaseRate[]>([])
   const [grades, setGrades] = useState<PayoutGrade[]>([])
   const [loading, setLoading] = useState(true)
-  const [gradeRatio, setGradeRatio] = useState(1)
+  const [selectedRatio, setSelectedRatio] = useState(1)
+  const gradeRatio = fixedRatio ?? selectedRatio
   const [premiumInput, setPremiumInput] = useState('100,000')
 
   useEffect(() => {
@@ -26,7 +28,9 @@ export default function CommissionReference() {
       const [{ data: p }, { data: b }, { data: g }] = await Promise.all([
         supabase.from('representative_products').select('*').order('sort_order'),
         supabase.from('insurer_base_rates').select('*'),
-        supabase.from('payout_grades').select('*').order('sort_order'),
+        fixedRatio != null
+          ? Promise.resolve({ data: [] as PayoutGrade[] })
+          : supabase.from('payout_grades').select('*').order('sort_order'),
       ])
       setProducts(p ?? [])
       setBaseRates(b ?? [])
@@ -34,7 +38,7 @@ export default function CommissionReference() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [fixedRatio])
 
   // 보험사별 가장 최근 기준월만 쓴다
   const { latestProducts, baseByInsurer, month } = useMemo(() => {
@@ -71,17 +75,23 @@ export default function CommissionReference() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-500">
-        보험사·종목별 대표상품의 평균 수정률과 영수P 대비 지급률입니다. 지급률 = 수정률 × 보험사 기준 지급률 × 직급 지급비율.
+        보험사·종목별 대표상품의 평균 수정률과 영수P 대비 지급률입니다. 지급률 = 수정률 × 보험사 기준 지급률 × {fixedRatio != null ? '본인 장기 지급률' : '직급 지급비율'}.
         대표상품 평균 기준의 참고용 예시이며, 실제 가입설계에 따라 수정률은 달라질 수 있습니다.
         연금·저축보험의 유지보수 수수료는 포함하지 않았습니다.{month && <> ({month} 기준)</>}
       </p>
 
       <div className="flex flex-wrap items-center gap-3">
-        <select value={gradeRatio} onChange={(e) => setGradeRatio(Number(e.target.value))}
-          className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
-          <option value={1}>지급비율 100%</option>
-          {grades.map((g) => <option key={g.name} value={g.ratio}>{g.name} ({pct(g.ratio)})</option>)}
-        </select>
+        {fixedRatio != null ? (
+          <span className="text-sm text-slate-600 whitespace-nowrap">
+            {fixedLabel || '내'} 지급률 <b className="text-rose-700">{pct(fixedRatio)}</b>
+          </span>
+        ) : (
+          <select value={selectedRatio} onChange={(e) => setSelectedRatio(Number(e.target.value))}
+            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+            <option value={1}>지급비율 100%</option>
+            {grades.map((g) => <option key={g.name} value={g.ratio}>{g.name} ({pct(g.ratio)})</option>)}
+          </select>
+        )}
         <label className="flex items-center gap-2 text-sm text-slate-600 whitespace-nowrap">
           월납 영수P
           <input value={premiumInput} inputMode="numeric"
