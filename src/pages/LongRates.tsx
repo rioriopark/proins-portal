@@ -15,6 +15,9 @@ interface RateRow {
 
 const YEARS = ['초년도', '2차년도', '3차년도']
 
+// 기본으로 보여줄 보험사별 대표 유형 (보험사|유형). 나머지는 '전체 유형 보기'를 켰을 때만 보인다
+const FEATURED_TYPES = new Set(['메리츠화재|M1', '삼성화재|S10', 'DB손보|D1', 'KB손보|K3'])
+
 function round1(n: number): number {
   return Math.round(n * 10) / 10
 }
@@ -30,6 +33,7 @@ export default function LongRates() {
   const [insurer, setInsurer] = useState('all')
   const [premiumInput, setPremiumInput] = useState('')
   const [tab, setTab] = useState<'rates' | 'modification'>('rates')
+  const [showAll, setShowAll] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -64,7 +68,9 @@ export default function LongRates() {
   }, [rates, activeMonth])
 
   const insurers = useMemo(() => [...new Set(rows.map((r) => r.insurer))], [rows])
-  const visible = useMemo(() => (insurer === 'all' ? rows : rows.filter((r) => r.insurer === insurer)), [rows, insurer])
+  const visible = useMemo(() => rows.filter((r) =>
+    (insurer === 'all' || r.insurer === insurer)
+    && (showAll || FEATURED_TYPES.has(`${r.insurer}|${r.productType}`))), [rows, insurer, showAll])
 
   // 3차년도까지 지급하는 유형이 있을 때만 25~36회 열을 보여준다
   const lastInstallment = useMemo(() => {
@@ -143,6 +149,10 @@ export default function LongRates() {
               }}
               className="border border-slate-300 rounded-md px-2 py-1.5 text-sm w-32 text-right" />
             원
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-slate-600 whitespace-nowrap">
+            <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
+            전체 유형 보기
           </label>
           <button onClick={downloadExcel} disabled={visible.length === 0}
             className="ml-auto border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white hover:bg-slate-50 disabled:opacity-40">
