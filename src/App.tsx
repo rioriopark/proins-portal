@@ -10,6 +10,7 @@ import Renewals from './pages/Renewals'
 import Collections from './pages/Collections'
 import BulkImport from './pages/BulkImport'
 import Statement from './pages/Statement'
+import LongRates from './pages/LongRates'
 import WagePayslip from './pages/WagePayslip'
 import Incentives from './pages/Incentives'
 import Board from './pages/Board'
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="bulk-import" element={<BulkImport />} />
         <Route path="statement" element={<Statement />} />
         <Route path="wage-statement" element={<WagePayslip />} />
+        <Route path="long-rates" element={<LongRates />} />
         <Route path="incentives" element={<Incentives />} />
         <Route path="board" element={<Board />} />
         <Route path="notices" element={<Notices />} />

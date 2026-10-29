@@ -44,6 +44,7 @@ const NAV: NavEntry[] = [
     items: [
       { to: '/statement', label: '수수료명세서', visible: (p) => p.role !== 'agent' || p.org_id !== 'hq' },
       { to: '/wage-statement', label: '임금명세서', visible: (p) => p.org_id === 'hq' },
+      { to: '/long-rates', label: '장기 지급률표', adminOnly: true },
     ],
   },
   {
@@ -178,7 +179,7 @@ export default function Layout() {
           </button>
         </div>
       </aside>
-      <main className="flex-1 p-8 bg-slate-50 min-h-screen">
+      <main className="flex-1 min-w-0 p-8 bg-slate-50 min-h-screen">
         {DEMO_MODE && (
           <div className="mb-6 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
             체험용 데모입니다. 화면의 고객·계약·직원 정보는 모두 가상 데이터이며 주기적으로 초기화됩니다.
