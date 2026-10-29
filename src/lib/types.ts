@@ -352,3 +352,28 @@ export interface ModificationRate {
   term_order: number
   effective_month: string
 }
+
+// 손보사 대표상품 수정률표 (supabase/commission-reference.sql — 값은 대외비라 별도 SQL로 적재)
+export interface InsurerBaseRate {
+  insurer: string
+  first_rate: number
+  renewal_rate: number
+  effective_month: string
+}
+
+export interface PayoutGrade {
+  name: string
+  ratio: number
+  sort_order: number
+}
+
+export interface RepresentativeProduct {
+  insurer: string
+  category: string
+  basis: string
+  product: string
+  kind: string
+  mod_rate: number
+  sort_order: number
+  effective_month: string
+}
