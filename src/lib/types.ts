@@ -324,3 +324,15 @@ export interface Statement {
   loan: number
   updated_at: string
 }
+
+// 장기보험 회차별 지급률 마스터 (supabase/long-commission-rates.sql)
+// rate_pct 는 월납환산 수정보험료 대비 % — 예상 수수료 = 수정P × rate_pct / 100
+export interface LongCommissionRate {
+  insurer: string
+  product_type: string
+  band: string
+  band_order: number
+  installment: number
+  rate_pct: number
+  effective_month: string
+}
