@@ -26,6 +26,11 @@
    - 매일 자동 초기화: Database > Extensions 에서 `pg_cron`을 켠 뒤
      `select cron.schedule('reset-demo', '0 19 * * *', $$select reset_demo_data('게스트비밀번호')$$);` (한국시간 04시)
 
+4. 장기 지급률표 메뉴용 데이터: `supabase/long-commission-rates.sql` → `supabase/modification-rates.sql` →
+   `supabase/demo-commission-reference.sql` 순서로 데모 SQL Editor에서 실행한다.
+   마지막 파일은 대표상품 수정률·직급 지급비율의 **가상 샘플**이다. 운영 DB용 대외비 실데이터 SQL은 데모에 넣지 않는다.
+   이 테이블들은 `reset_demo_data`가 지우지 않으므로 한 번만 실행하면 된다.
+
 ## 2. 데모용 Vercel 프로젝트
 
 같은 GitHub 레포를 새 Vercel 프로젝트로 한 번 더 import 하고 환경변수를 넣는다.
