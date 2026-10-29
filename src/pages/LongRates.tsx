@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase, fetchAllRows } from '../lib/supabase'
 import type { LongCommissionRate } from '../lib/types'
 import ModificationRates from '../components/ModificationRates'
+import CommissionReference from '../components/CommissionReference'
 
 // 한 줄 = 보험사·유형·구간 하나. rates[회차-1] = 수정P 대비 %, 미지급 회차는 null
 interface RateRow {
@@ -125,7 +126,19 @@ export default function LongRates() {
         ))}
       </div>
 
-      {tab === 'modification' && <ModificationRates />}
+      {tab === 'modification' && (
+        <div className="space-y-6">
+          <CommissionReference />
+          <details className="group">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-700 select-none">
+              삼성화재 상품별 상세 수정률 (2024-04 공지)
+            </summary>
+            <div className="mt-3">
+              <ModificationRates />
+            </div>
+          </details>
+        </div>
+      )}
 
       {tab === 'rates' && <>
         <div className="flex flex-wrap items-center gap-3">
