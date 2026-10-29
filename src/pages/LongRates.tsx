@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, fetchAllRows } from '../lib/supabase'
-import type { LongCommissionRate } from '../lib/types'
+import type { LongCommissionRate, PayoutGrade } from '../lib/types'
 import ModificationRates from '../components/ModificationRates'
 import CommissionReference from '../components/CommissionReference'
 
@@ -23,6 +23,10 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10
 }
 
+function pctLabel(ratio: number): string {
+  return `${Math.round(ratio * 1000) / 10}%`
+}
+
 function yearSum(rates: (number | null)[], year: number): number {
   return round1(rates.slice(year * 12, year * 12 + 12).reduce<number>((s, r) => s + (r ?? 0), 0))
 }
@@ -35,14 +39,20 @@ export default function LongRates() {
   const [premiumInput, setPremiumInput] = useState('')
   const [tab, setTab] = useState<'rates' | 'modification'>('rates')
   const [showAll, setShowAll] = useState(false)
+  const [grades, setGrades] = useState<PayoutGrade[]>([])
+  const [gradeRatio, setGradeRatio] = useState(1)
 
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const data = await fetchAllRows<LongCommissionRate>((from, to) =>
-        supabase.from('long_commission_rates').select('*').range(from, to)
-      )
+      const [data, { data: g }] = await Promise.all([
+        fetchAllRows<LongCommissionRate>((from, to) =>
+          supabase.from('long_commission_rates').select('*').range(from, to)
+        ),
+        supabase.from('payout_grades').select('*').order('sort_order'),
+      ])
       setRates(data)
+      setGrades(g ?? [])
       setLoading(false)
     }
     load()
@@ -81,26 +91,39 @@ export default function LongRates() {
   const installments = Array.from({ length: lastInstallment }, (_, i) => i + 1)
   const yearCount = lastInstallment / 12
 
-  // 수정P를 넣으면 % 대신 예상 수수료(원)로 보여준다
+  // 직급 지급비율을 곱하고, 수정P를 넣으면 % 대신 예상 수수료(원)로 보여준다
   const premium = Number(premiumInput.replace(/,/g, '')) || 0
-  const display = (pct: number | null) => {
+  const display = (pct: number | null, ratio = gradeRatio) => {
     if (pct == null) return ''
-    if (premium > 0) return Math.round((premium * pct) / 100).toLocaleString('ko-KR')
-    return String(round1(pct))
+    if (premium > 0) return Math.round((premium * pct * ratio) / 100).toLocaleString('ko-KR')
+    return String(round1(pct * ratio))
   }
+  const gradeName = grades.find((g) => g.ratio === gradeRatio)?.name
+  const totalOf = (r: RateRow) =>
+    round1(Array.from({ length: yearCount }, (_, y) => yearSum(r.rates, y)).reduce((s, v) => s + v, 0))
 
   async function downloadExcel() {
     const XLSX = await import('xlsx')
+    const scale = (v: number | null) => (v == null ? '' : round1(v * gradeRatio))
     const header = ['보험사', '유형', '구간', ...installments.map((i) => `${i}회`), ...YEARS.slice(0, yearCount), '총계']
     const body = visible.map((r) => {
       const years = Array.from({ length: yearCount }, (_, y) => yearSum(r.rates, y))
-      return [r.insurer, r.productType, r.band, ...installments.map((i) => r.rates[i - 1] ?? ''), ...years,
-        round1(years.reduce((s, v) => s + v, 0))]
+      return [r.insurer, r.productType, r.band, ...installments.map((i) => scale(r.rates[i - 1] ?? null)),
+        ...years.map(scale), scale(round1(years.reduce((s, v) => s + v, 0)))]
     })
     const ws = XLSX.utils.aoa_to_sheet([header, ...body])
+    const compare = XLSX.utils.aoa_to_sheet([
+      ['보험사', '유형', '구간', '100%', ...grades.map((g) => `${g.name} (${pctLabel(g.ratio)})`)],
+      ...visible.map((r) => {
+        const total = totalOf(r)
+        return [r.insurer, r.productType, r.band, total, ...grades.map((g) => round1(total * g.ratio))]
+      }),
+    ])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '회차별 지급률')
-    XLSX.writeFile(wb, `장기_회차별지급률_${activeMonth}.xlsx`)
+    XLSX.utils.book_append_sheet(wb, compare, '직급별 총계')
+    const suffix = gradeName ? `_${gradeName}` : ''
+    XLSX.writeFile(wb, `장기_회차별지급률_${activeMonth}${suffix}.xlsx`)
   }
 
   const cell = 'px-2 py-1.5 text-right tabular-nums whitespace-nowrap'
@@ -111,7 +134,7 @@ export default function LongRates() {
         <h1 className="text-xl font-bold text-slate-800">장기 지급률표</h1>
         <p className="text-sm text-slate-500 mt-1">
           보험사 장기보험 회차별 지급률입니다. 모든 값은 월납환산 수정보험료(수정P) 대비 %이고, 빈칸은 미지급 회차입니다.
-          수정P를 입력하면 회차별 예상 수수료(원)로 바뀝니다.
+          직급을 고르면 직급 지급비율을 곱한 값으로, 수정P를 입력하면 회차별 예상 수수료(원)로 바뀝니다.
         </p>
       </div>
 
@@ -152,6 +175,11 @@ export default function LongRates() {
             className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
             <option value="all">전체 보험사</option>
             {insurers.map((i) => <option key={i} value={i}>{i}</option>)}
+          </select>
+          <select value={gradeRatio} onChange={(e) => setGradeRatio(Number(e.target.value))}
+            className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+            <option value={1}>지급비율 100%</option>
+            {grades.map((g) => <option key={g.name} value={g.ratio}>{g.name} ({pctLabel(g.ratio)})</option>)}
           </select>
           <label className="flex items-center gap-2 text-sm text-slate-600 whitespace-nowrap">
             월납환산 수정P
@@ -194,7 +222,7 @@ export default function LongRates() {
               <tbody>
                 {visible.map((r, idx) => {
                   const years = Array.from({ length: yearCount }, (_, y) => yearSum(r.rates, y))
-                  const total = round1(years.reduce((s, v) => s + v, 0))
+                  const total = totalOf(r)
                   const firstOfInsurer = idx === 0 || visible[idx - 1].insurer !== r.insurer
                   return (
                     <tr key={r.key} className={firstOfInsurer ? 'border-t-2 border-slate-200' : 'border-t border-slate-50'}>
@@ -211,6 +239,54 @@ export default function LongRates() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {visible.length > 0 && grades.length > 0 && (
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-slate-700">
+              직급별 총 지급률{premium > 0 && ' (예상 수수료, 원)'}
+            </h2>
+            <div className="bg-white rounded-xl shadow overflow-x-auto w-fit max-w-full">
+              <table className="text-sm">
+                <thead className="text-slate-500 text-xs bg-slate-100">
+                  <tr>
+                    <th className="text-left px-3 py-2 sticky left-0 bg-slate-100 whitespace-nowrap">보험사 · 유형 · 구간</th>
+                    <th className={`text-right px-3 py-2 whitespace-nowrap ${gradeRatio === 1 ? 'bg-amber-100' : ''}`}>100%</th>
+                    {grades.map((g) => (
+                      <th key={g.name}
+                        className={`text-right px-3 py-2 whitespace-nowrap ${g.ratio === gradeRatio ? 'bg-amber-100' : ''}`}>
+                        {g.name}<span className="block font-normal">{pctLabel(g.ratio)}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((r, idx) => {
+                    const total = totalOf(r)
+                    const firstOfInsurer = idx === 0 || visible[idx - 1].insurer !== r.insurer
+                    return (
+                      <tr key={r.key} className={firstOfInsurer ? 'border-t-2 border-slate-200' : 'border-t border-slate-50'}>
+                        <td className="px-3 py-1.5 sticky left-0 bg-white whitespace-nowrap">
+                          <span className="text-slate-500">{r.insurer}</span>{' '}
+                          <span className="font-semibold text-slate-800">{r.productType}</span>
+                          {r.band && <span className="text-slate-500"> · {r.band}</span>}
+                        </td>
+                        <td className={`${cell} px-3 ${gradeRatio === 1 ? 'bg-amber-50 font-semibold text-rose-700' : ''}`}>
+                          {display(total, 1)}
+                        </td>
+                        {grades.map((g) => (
+                          <td key={g.name}
+                            className={`${cell} px-3 ${g.ratio === gradeRatio ? 'bg-amber-50 font-semibold text-rose-700' : ''}`}>
+                            {display(total, g.ratio)}
+                          </td>
+                        ))}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </>}
