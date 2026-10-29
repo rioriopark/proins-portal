@@ -336,3 +336,19 @@ export interface LongCommissionRate {
   rate_pct: number
   effective_month: string
 }
+
+// 상품별 수정률 참고표 (supabase/modification-rates.sql)
+// 영수P × rate_pct / 100 = 수정P. 보험사 공지상 단순 참고용이며 수수료 지급 근거가 아님
+export interface ModificationRate {
+  insurer: string
+  line: string
+  category: string
+  product: string
+  segment: string
+  term: string
+  rate_pct: number
+  note: string
+  sort_order: number
+  term_order: number
+  effective_month: string
+}
