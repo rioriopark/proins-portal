@@ -306,13 +306,16 @@ export default function Statement() {
         .filter((c) => c.month === month && c.commission !== 0)
         .slice()
         .sort((a, b) => {
-          // 보험료가 음수인 건(해약 등)은 종목·보험사와 관계없이 맨 아래로 모은다.
-          const byNegative = Number(a.premium < 0) - Number(b.premium < 0)
+          // 보험료나 수수료가 음수인 환수 건은 종목·보험사와 관계없이 맨 아래로 모은다.
+          const isRefund = (c: Contract) => c.premium < 0 || c.commission < 0
+          const byNegative = Number(isRefund(a)) - Number(isRefund(b))
           if (byNegative !== 0) return byNegative
           const byCategory = CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category)
           if (byCategory !== 0) return byCategory
           const byCompany = (a.company ?? '').localeCompare(b.company ?? '', 'ko')
           if (byCompany !== 0) return byCompany
+          const byCustomer = (a.customer_name ?? '').localeCompare(b.customer_name ?? '', 'ko')
+          if (byCustomer !== 0) return byCustomer
           return b.premium - a.premium
         }),
     [contracts, month],
