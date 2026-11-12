@@ -223,12 +223,19 @@ export interface EducationEvent {
   updated_at: string
 }
 
+export interface BoardAttachment {
+  path: string // board-files 버킷 안의 저장 경로
+  name: string // 원본 파일명
+  size: number
+}
+
 export interface BoardPost {
   id: string
   title: string
   content: string
   author_id: string | null
   author_name: string
+  attachments?: BoardAttachment[] | null
   created_at: string
   updated_at: string
 }
