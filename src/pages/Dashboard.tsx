@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Link } from 'react-router-dom'
 import { supabase, fetchAllRows } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
-import type { Banner, Contract, EducationEvent, Incentive, Insurer, Organization, Profile } from '../lib/types'
+import type { Banner, Contract, ContractType, EducationEvent, Incentive, Insurer, Organization, Profile } from '../lib/types'
 import { topLevelOrgId } from '../lib/agentSort'
+import { effectiveContractType } from '../lib/contractType'
 import dbLogo from '../assets/insurer-logos/db.png'
 import hyundaiLogo from '../assets/insurer-logos/hyundai.svg'
 import kbLogo from '../assets/insurer-logos/kb.png'
@@ -383,8 +384,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     // 예비계약(확정 전, is_preliminary)은 아직 실제 계약이 아니므로 대시보드 집계에서 제외한다.
+    // 신규/계속/환수 집계는 모두 구분(type) 값으로 나누므로, 보험사 원본 표기("신계약")나 빈 구분을
+    // 수수료명세서 업적현황과 같은 기준(effectiveContractType)으로 맞춰 둔다. 이 화면은 구분을
+    // 저장하지 않으므로 읽어온 값만 바꾼다.
     fetchAllRows<Contract>((from, to) => supabase.from('contracts').select('*').eq('is_preliminary', false).range(from, to)).then(
-      setContracts,
+      (rows) => setContracts(rows.map((c) => ({ ...c, type: effectiveContractType(c) as ContractType }))),
     )
     supabase
       .from('banners')
