@@ -26,6 +26,7 @@ interface Invite {
   rate_long: number
   rate_general: number
   general_performance_rate: number
+  sort_order?: number | null
 }
 
 interface Person {
@@ -40,6 +41,14 @@ interface Person {
   rate_long: number
   rate_general: number
   general_performance_rate: number
+  sort_order: number | null
+}
+
+// 조직도 표시 순서: sort_order가 지정된 항목이 먼저(작은 값이 위), 없으면 기존 기준(fallback)으로.
+function compareSortOrder(a: number | null | undefined, b: number | null | undefined): number {
+  const av = a ?? Number.POSITIVE_INFINITY
+  const bv = b ?? Number.POSITIVE_INFINITY
+  return av === bv ? 0 : av < bv ? -1 : 1
 }
 
 export default function Orgs() {
@@ -106,6 +115,7 @@ export default function Orgs() {
         rate_long: m.rate_long,
         rate_general: m.rate_general,
         general_performance_rate: m.general_performance_rate,
+        sort_order: m.sort_order ?? null,
       })),
       ...invites.map((i) => ({
         key: `i:${i.email}`,
@@ -118,6 +128,7 @@ export default function Orgs() {
         rate_long: i.rate_long,
         rate_general: i.rate_general,
         general_performance_rate: i.general_performance_rate,
+        sort_order: i.sort_order ?? null,
       })),
     ],
     [members, invites],
@@ -129,6 +140,9 @@ export default function Orgs() {
       const list = map.get(o.parent_id) ?? []
       list.push(o)
       map.set(o.parent_id, list)
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => compareSortOrder(a.sort_order, b.sort_order) || a.id.localeCompare(b.id))
     }
     return map
   }, [orgs])
@@ -142,9 +156,11 @@ export default function Orgs() {
       list.push(p)
       map.set(p.org_id, list)
     }
-    // 조직별 담당자 목록은 사번 순으로 보여준다.
+    // 조직별 담당자 목록은 조직도에서 지정한 순서가 우선이고, 지정하지 않은 사람은 사번 순으로 그 뒤에 보여준다.
     for (const list of map.values()) {
-      list.sort((a, b) => compareAgentCode(agentCode(a.email), agentCode(b.email)))
+      list.sort(
+        (a, b) => compareSortOrder(a.sort_order, b.sort_order) || compareAgentCode(agentCode(a.email), agentCode(b.email)),
+      )
     }
     return map
   }, [people])
@@ -162,6 +178,84 @@ export default function Orgs() {
       setOrgForm({ id: '', name: '', type: 'STORE', parent_id: '' })
       load()
     }
+  }
+
+  // 조직 자신과 그 하위 조직 ID 전체(상위 조직을 바꿀 때 순환 참조를 막는 데 쓴다).
+  function descendantIds(id: string): Set<string> {
+    const result = new Set<string>([id])
+    const stack = [id]
+    while (stack.length) {
+      const cur = stack.pop()!
+      for (const k of childrenOf.get(cur) ?? []) {
+        if (!result.has(k.id)) {
+          result.add(k.id)
+          stack.push(k.id)
+        }
+      }
+    }
+    return result
+  }
+
+  // 조직을 다른 상위 조직 아래로 옮긴다. 옮겨간 곳에서는 맨 아래에 붙인다.
+  async function moveOrg(org: Organization, newParentId: string | null) {
+    if ((org.parent_id ?? null) === newParentId) return
+    if (newParentId && descendantIds(org.id).has(newParentId)) {
+      alert('자기 자신이나 하위 조직 아래로는 옮길 수 없습니다.')
+      return
+    }
+    const newParentName = newParentId ? orgsById.get(newParentId)?.name ?? newParentId : '(최상위)'
+    if (!confirm(`'${org.name}' 조직을 '${newParentName}' 아래로 옮길까요? 하위 조직과 소속 직원도 함께 옮겨집니다.`)) return
+    const siblings = childrenOf.get(newParentId) ?? []
+    const maxOrder = siblings.reduce((m, s, i) => Math.max(m, s.sort_order ?? (i + 1) * 10), 0)
+    const { error } = await supabase
+      .from('organizations')
+      .update({ parent_id: newParentId, sort_order: maxOrder + 10 })
+      .eq('id', org.id)
+    if (error) alert('조직 이동 실패: ' + error.message)
+    else load()
+  }
+
+  // 같은 목록 안에서 index 위치의 항목을 한 칸 위(-1)/아래(+1)로 옮기고, 목록 전체에 10 단위 순서를 다시 매긴다.
+  function reorder<T>(list: T[], index: number, dir: -1 | 1): T[] | null {
+    const target = index + dir
+    if (target < 0 || target >= list.length) return null
+    const next = [...list]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    return next
+  }
+
+  async function moveOrgOrder(org: Organization, dir: -1 | 1) {
+    const siblings = childrenOf.get(org.parent_id ?? null) ?? []
+    const next = reorder(siblings, siblings.indexOf(org), dir)
+    if (!next) return
+    const results = await Promise.all(
+      next
+        .map((o, i) => ({ o, order: (i + 1) * 10 }))
+        .filter(({ o, order }) => o.sort_order !== order)
+        .map(({ o, order }) => supabase.from('organizations').update({ sort_order: order }).eq('id', o.id)),
+    )
+    const failed = results.find((r) => r.error)
+    if (failed?.error) alert('순서 변경 실패: ' + failed.error.message)
+    load()
+  }
+
+  async function movePersonOrder(p: Person, dir: -1 | 1) {
+    const staff = peopleOf.get(p.org_id) ?? []
+    const next = reorder(staff, staff.findIndex((x) => x.key === p.key), dir)
+    if (!next) return
+    const results = await Promise.all(
+      next
+        .map((x, i) => ({ x, order: (i + 1) * 10 }))
+        .filter(({ x, order }) => x.sort_order !== order)
+        .map(({ x, order }) =>
+          x.kind === 'profile'
+            ? supabase.from('profiles').update({ sort_order: order }).eq('id', x.id!)
+            : supabase.from('pending_invites').update({ sort_order: order }).eq('email', x.email),
+        ),
+    )
+    const failed = results.find((r) => r.error)
+    if (failed?.error) alert('순서 변경 실패: ' + failed.error.message)
+    load()
   }
 
   async function deleteOrg(id: string) {
@@ -318,7 +412,9 @@ export default function Orgs() {
   ) {
     const table = p.kind === 'profile' ? 'profiles' : 'pending_invites'
     const match = p.kind === 'profile' ? { id: p.id! } : { email: p.email }
-    const { error } = await supabase.from(table).update(patch).match(match)
+    // 다른 조직으로 옮기면 이전 조직에서 정한 순서는 의미가 없으므로 비워서, 새 조직에서는 사번 순 자리로 들어가게 한다.
+    const fullPatch = patch.org_id && patch.org_id !== p.org_id ? { ...patch, sort_order: null } : patch
+    const { error } = await supabase.from(table).update(fullPatch).match(match)
     if (error) alert('수정 실패: ' + error.message)
     else load()
   }
@@ -377,6 +473,9 @@ export default function Orgs() {
     const kids = childrenOf.get(org.id) ?? []
     const staff = peopleOf.get(org.id) ?? []
     const open = openOrgs.has(org.id)
+    const siblings = childrenOf.get(org.parent_id ?? null) ?? []
+    const orgIndex = siblings.indexOf(org)
+    const blockedParents = isHq ? descendantIds(org.id) : new Set<string>()
     return (
       <div key={org.id} style={{ marginLeft: depth * 20 }} className="mb-1">
         <div className="flex items-center gap-2 py-1.5">
@@ -387,15 +486,48 @@ export default function Orgs() {
           <span className="font-medium text-sm text-slate-700">{org.name}</span>
           <span className="text-xs text-slate-400">{staff.length}명</span>
           {isHq && (
-            <button onClick={() => deleteOrg(org.id)} className="text-xs text-red-400 hover:text-red-600 ml-1">
-              ✕
-            </button>
+            <>
+              <OrderButtons
+                canUp={orgIndex > 0}
+                canDown={orgIndex < siblings.length - 1}
+                onUp={() => moveOrgOrder(org, -1)}
+                onDown={() => moveOrgOrder(org, 1)}
+                label="조직"
+              />
+              <select
+                value={org.parent_id ?? ''}
+                onChange={(e) => moveOrg(org, e.target.value || null)}
+                title="상위 조직 변경"
+                className="border border-slate-200 rounded px-1.5 py-0.5 text-xs text-slate-500"
+              >
+                <option value="">상위: (최상위)</option>
+                {orgs
+                  .filter((o) => !blockedParents.has(o.id))
+                  .map((o) => (
+                    <option key={o.id} value={o.id}>
+                      상위: {o.name}
+                    </option>
+                  ))}
+              </select>
+              <button onClick={() => deleteOrg(org.id)} className="text-xs text-red-400 hover:text-red-600 ml-1">
+                ✕
+              </button>
+            </>
           )}
         </div>
         {open && (
           <div className="ml-6 border-l border-slate-100 pl-3 space-y-1">
-            {staff.map((p) => (
+            {staff.map((p, idx) => (
               <div key={p.key} className="flex flex-wrap items-center gap-2 text-xs py-1">
+                {isHq && (
+                  <OrderButtons
+                    canUp={idx > 0}
+                    canDown={idx < staff.length - 1}
+                    onUp={() => movePersonOrder(p, -1)}
+                    onDown={() => movePersonOrder(p, 1)}
+                    label="직원"
+                  />
+                )}
                 <span className="w-24 truncate">
                   {p.name} · {roleDisplayLabel(p.role, p.org_id)}
                 </span>
@@ -802,5 +934,31 @@ export default function Orgs() {
         </div>
       )}
     </div>
+  )
+}
+
+function OrderButtons({
+  canUp,
+  canDown,
+  onUp,
+  onDown,
+  label,
+}: {
+  canUp: boolean
+  canDown: boolean
+  onUp: () => void
+  onDown: () => void
+  label: string
+}) {
+  const cls = 'w-5 h-5 leading-none rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:hover:bg-transparent'
+  return (
+    <span className="inline-flex items-center">
+      <button type="button" disabled={!canUp} onClick={onUp} title={`${label} 위로`} className={cls}>
+        ▲
+      </button>
+      <button type="button" disabled={!canDown} onClick={onDown} title={`${label} 아래로`} className={cls}>
+        ▼
+      </button>
+    </span>
   )
 }
