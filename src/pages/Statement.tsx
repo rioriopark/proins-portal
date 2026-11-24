@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { GENERAL_PERFORMANCE_VIEW_KEY, type Contract, type ContractCategory, type ContractType, type Profile } from '../lib/types'
+import { effectiveContractType } from '../lib/contractType'
 
 function thisMonth() {
   const d = new Date()
@@ -355,11 +356,12 @@ export default function Statement() {
   // 동일하게 업적현황 집계에서도 제외한다.
   // 일반/자동차는 보험사 파일마다 원본 "구분" 값이 제각각(대부분 비어있음)이라 그대로는 의미
   // 있는 분류가 안 된다. 건별수수료가 음수인 건은 해약(수수료 환수)로 보고 별도 구분으로
-  // 묶는다(장기는 신규/계속/환수/부활 값이 이미 있으므로 그대로 둔다).
+  // 묶는다. 장기는 신규/계속/환수/부활로 나누되, 보험사마다 다른 표기("신계약")나 빈 값은
+  // effectiveContractType으로 표준값에 맞춰 분류한다(그래야 신규 행에 빠지지 않고 합계와 맞는다).
   function group(list: Contract[], categories: ContractCategory[]) {
     const byKey = new Map<string, { category: ContractCategory; type: string; count: number; premium: number }>()
     for (const c of list.filter((c) => categories.includes(c.category) && c.commission !== 0)) {
-      const type = c.category === '장기' ? c.type : c.commission < 0 ? '해약' : '일반'
+      const type = c.category === '장기' ? effectiveContractType(c) : c.commission < 0 ? '해약' : '일반'
       const key = `${c.category}__${type}`
       const cur = byKey.get(key) ?? { category: c.category, type, count: 0, premium: 0 }
       cur.count += c.count
@@ -404,14 +406,15 @@ export default function Statement() {
     for (const c of scopedContracts) {
       if (c.category !== '장기') continue
       const amount = c.commission * target.rate_long
-      if (c.type === '환수' || c.type === '부활') {
+      const type = effectiveContractType(c)
+      if (type === '환수' || type === '부활') {
         clawbackRevive += amount
         continue
       }
       const offset = c.receipt_date ? monthsBetween(c.receipt_date.slice(0, 7), c.month) : NaN
-      if ((c.type === '신규' || c.type === '비례공동') && !Number.isNaN(offset) && offset <= 1) {
+      if ((type === '신규' || type === '비례공동') && !Number.isNaN(offset) && offset <= 1) {
         recruitFirst += amount
-      } else if ((c.type === '신규' || c.type === '비례공동') && !Number.isNaN(offset) && offset >= 2) {
+      } else if ((type === '신규' || type === '비례공동') && !Number.isNaN(offset) && offset >= 2) {
         recruitInstallment += amount
       } else {
         maintainAmt += amount
