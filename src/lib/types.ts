@@ -29,6 +29,8 @@ export interface Organization {
   name: string
   type: OrgType
   parent_id: string | null
+  // 조직도에서 같은 상위 조직 아래 형제 조직끼리의 표시 순서(작을수록 위). 없으면 ID 순.
+  sort_order?: number | null
 }
 
 export interface Profile {
@@ -44,6 +46,8 @@ export interface Profile {
   general_performance_rate: number
   bank: string
   account: string
+  // 조직도에서 같은 조직 안 직원끼리의 표시 순서(작을수록 위). 없으면 사번 순.
+  sort_order?: number | null
 }
 
 export type ContractCategory = '장기' | '일반' | '자동차'
