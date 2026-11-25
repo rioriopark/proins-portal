@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
+import WageBulkImport from '../components/WageBulkImport'
 import type { Profile, WageCalcNote, WageCustomDeduction, WageStatement } from '../lib/types'
 
 function thisMonth() {
@@ -70,6 +71,8 @@ export default function WagePayslip() {
   const [target, setTarget] = useState<Profile | null>(profile)
   const [form, setForm] = useState<Fields>(ZERO)
   const [saving, setSaving] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   // 임금명세서는 본사(hq) 소속 임직원 전용이라 canHq()로 조직까지 확인한다(canEdit는
   // Fields 등 다른 곳에서 기존 이름을 그대로 참조해 이름은 유지).
@@ -100,7 +103,7 @@ export default function WagePayslip() {
       .then(({ data }) => setForm(data ? { ...ZERO, ...data } : ZERO))
     if (targetId === profile?.id) setTarget(profile)
     else setTarget(staff.find((a) => a.id === targetId) ?? null)
-  }, [targetId, month, staff, profile])
+  }, [targetId, month, staff, profile, reloadKey])
 
   const payTotal = PAY_SUM_FIELDS.reduce((s, k) => s + Number(form[k] || 0), 0)
   const customDeductionTotal = form.custom_deductions.reduce((s, r) => s + (Number(r.amount) || 0), 0)
@@ -182,6 +185,15 @@ export default function WagePayslip() {
         </div>
         <div className="flex gap-2 items-end">
           {canEdit && (
+            <button
+              type="button"
+              onClick={() => setBulkOpen((v) => !v)}
+              className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white hover:bg-slate-50"
+            >
+              PDF 일괄 등록
+            </button>
+          )}
+          {canEdit && (
             <select
               value={targetId}
               onChange={(e) => setTargetId(e.target.value)}
@@ -202,6 +214,17 @@ export default function WagePayslip() {
           />
         </div>
       </div>
+
+      {canEdit && bulkOpen && (
+        <WageBulkImport
+          staff={staff}
+          onClose={() => setBulkOpen(false)}
+          onSaved={(m) => {
+            setMonth(m)
+            setReloadKey((k) => k + 1)
+          }}
+        />
+      )}
 
       {target && (
         <div className="bg-white rounded-xl shadow p-6 space-y-5">
