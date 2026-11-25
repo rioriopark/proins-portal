@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase, fetchAllRows } from '../lib/supabase'
+import { buildShareMap, expandShares, fetchContractShares, type ShareMap } from '../lib/contractShares'
 import { useAuth } from '../lib/auth'
 import type { Banner, Contract, ContractType, EducationEvent, Incentive, Insurer, Organization, Profile } from '../lib/types'
 import { topLevelOrgId } from '../lib/agentSort'
@@ -364,6 +365,7 @@ export default function Dashboard() {
   const isFieldAgent = profile?.role === 'agent' && profile.org_id !== 'hq'
   const isHqStaff = profile?.role === 'agent' && profile.org_id === 'hq'
   const [contracts, setContracts] = useState<Contract[]>([])
+  const [shareMap, setShareMap] = useState<ShareMap>(new Map())
   const [banners, setBanners] = useState<Banner[]>([])
   const [agents, setAgents] = useState<Profile[]>([])
   const [orgs, setOrgs] = useState<Organization[]>([])
@@ -390,6 +392,7 @@ export default function Dashboard() {
     fetchAllRows<Contract>((from, to) => supabase.from('contracts').select('*').eq('is_preliminary', false).range(from, to)).then(
       (rows) => setContracts(rows.map((c) => ({ ...c, type: effectiveContractType(c) as ContractType }))),
     )
+    fetchContractShares().then((rows) => setShareMap(buildShareMap(rows)))
     supabase
       .from('banners')
       .select('*')
@@ -691,9 +694,11 @@ export default function Dashboard() {
   // 수수료 현황: 본인 명세서(확정 소득/실지급) + 이번달 계약 기준 예상치.
   // 단, 본사관리자는 본인 명의 계약이 없는 게 정상이라 회사 전체(전 담당자) 당월 실적 기준으로 보여준다.
   const isHqAdmin = profile?.role === 'hq_admin'
+  // 비례공동 분배가 걸린 계약은 담당자별 몫으로 나눠 본인·조직별·TOP5 실적에 반영한다(회사 전체 합계는 같다).
+  const sharedContracts = useMemo(() => expandShares(contracts, shareMap), [contracts, shareMap])
   const myContractsThisMonth = useMemo(
-    () => contracts.filter((c) => c.month === thisMonth && (isHqAdmin || c.agent_id === profile?.id)),
-    [contracts, thisMonth, profile, isHqAdmin],
+    () => sharedContracts.filter((c) => c.month === thisMonth && (isHqAdmin || c.agent_id === profile?.id)),
+    [sharedContracts, thisMonth, profile, isHqAdmin],
   )
   // 예상수수료: 아직 보험사 확정 전이라 수수료가 0원인 이번 달 예비계약(신규)에 대해, 같은 종목의 기존
   // 확정계약(신규) 전체에서 나온 "수수료/보험료" 평균 비율을 참고해 예상치를 계산한다.
@@ -741,17 +746,23 @@ export default function Dashboard() {
   )
   const scopedPrelimCount = scopedPrelimRows.length
   const scopedPrelimPremium = sum(scopedPrelimRows, (r) => r.premium)
-  const expectedClawback = sum(
-    scopedContractsThisMonth.filter((c) => c.type === '환수'),
-    (c) => Math.abs(c.commission),
+  const expectedClawback = Math.round(
+    sum(
+      scopedContractsThisMonth.filter((c) => c.type === '환수'),
+      (c) => Math.abs(c.commission),
+    ),
   )
-  const newCommissionThisMonth = sum(
-    scopedContractsThisMonth.filter((c) => c.type === '신규'),
-    (c) => c.commission,
+  const newCommissionThisMonth = Math.round(
+    sum(
+      scopedContractsThisMonth.filter((c) => c.type === '신규'),
+      (c) => c.commission,
+    ),
   )
-  const renewCommissionThisMonth = sum(
-    scopedContractsThisMonth.filter((c) => c.type === '계속'),
-    (c) => c.commission,
+  const renewCommissionThisMonth = Math.round(
+    sum(
+      scopedContractsThisMonth.filter((c) => c.type === '계속'),
+      (c) => c.commission,
+    ),
   )
   // 조직별 현황: 관리조직(본사직영, 각 지점 등)별로 신규/예상/갱신/환수를 한눈에 비교한다.
   interface OrgCommissionRow {
@@ -798,7 +809,13 @@ export default function Dashboard() {
       row.prelimPremium += r.premium
     }
     return [...map.values()]
-      .map((row) => ({ ...row, estimated: Math.round(row.estimated) }))
+      .map((row) => ({
+        ...row,
+        estimated: Math.round(row.estimated),
+        newCommission: Math.round(row.newCommission),
+        renewCommission: Math.round(row.renewCommission),
+        clawback: Math.round(row.clawback),
+      }))
       .sort((a, b) => b.newCommission + b.estimated - (a.newCommission + a.estimated))
   }, [isHqAdmin, myContractsThisMonth, myPrelimNewRowsThisMonth, agentTopOrgId, orgsById, commissionRateByCategory])
 
@@ -806,7 +823,7 @@ export default function Dashboard() {
   // 계약관리 목록과 동일한 기준으로, 수수료 0원 건(매핑 실패 등으로 아직 확정 안 된 트래킹용 행)은 실적에서 제외한다.
   const topAgents = useMemo(() => {
     const byAgent = new Map<string, { key: string; premium: number; count: number; sample: Contract }>()
-    for (const c of contracts.filter((c) => c.month === thisMonth && c.commission !== 0)) {
+    for (const c of sharedContracts.filter((c) => c.month === thisMonth && c.commission !== 0)) {
       const key = c.agent_id ?? c.agent_email ?? 'unknown'
       const cur = byAgent.get(key) ?? { key, premium: 0, count: 0, sample: c }
       cur.premium += c.premium
@@ -831,7 +848,7 @@ export default function Dashboard() {
       }
     }
     return [...byAgent.values()].sort((a, b) => b.premium - a.premium).slice(0, 5)
-  }, [contracts, thisMonth, prelimNewRows])
+  }, [sharedContracts, thisMonth, prelimNewRows])
 
   const displayedEdu = showAllEdu ? eduEvents : eduEvents.filter((e) => e.event_date >= today).slice(0, 3)
 
@@ -1179,8 +1196,8 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td className="py-2 font-medium text-slate-700">{agentName(a.sample)}</td>
-                      <td className="py-2 text-right">{a.premium.toLocaleString('ko-KR')}</td>
-                      <td className="py-2 text-right">{a.count}</td>
+                      <td className="py-2 text-right">{Math.round(a.premium).toLocaleString('ko-KR')}</td>
+                      <td className="py-2 text-right">{Math.round(a.count * 10) / 10}</td>
                     </tr>
                   ))}
                 </tbody>

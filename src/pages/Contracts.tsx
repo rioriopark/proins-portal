@@ -1,5 +1,6 @@
 import { Fragment, useDeferredValue, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase, fetchAllRows } from '../lib/supabase'
+import { buildShareMap, deleteContractShare, fetchContractShares, findShare, saveContractShare, type ShareMap } from '../lib/contractShares'
 import { useAuth } from '../lib/auth'
 import type { Contract, ContractCategory, ContractType, CoInsurerShare, Insurer, Organization, Profile } from '../lib/types'
 import { agentCode, compareAgentCode, compareByOrgGradeCode, ORG_TYPE_PRIORITY, topLevelOrgId } from '../lib/agentSort'
@@ -111,6 +112,64 @@ export default function Contracts() {
   const [coInsurers, setCoInsurers] = useState<CoInsurerShare[]>([])
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [shareDraft, setShareDraft] = useState<CoInsurerShare[]>([])
+  // 증권번호 단위 분배(contract_shares). shareTarget이 있으면 창이 확정 계약의 분배를 편집 중이라는 뜻이다.
+  const [shareMap, setShareMap] = useState<ShareMap>(new Map())
+  const [shareTarget, setShareTarget] = useState<Contract | null>(null)
+  const [shareSaving, setShareSaving] = useState(false)
+  const targetShare = shareTarget ? findShare(shareMap, shareTarget) : undefined
+  function openShareModalFor(c: Contract) {
+    const existing = findShare(shareMap, c)
+    setShareTarget(c)
+    setShareDraft(
+      existing?.shares ?? [
+        { agent_id: c.agent_id ?? '', name: agents.find((a) => a.id === c.agent_id)?.name ?? '', ratio: 100 },
+      ],
+    )
+    setShareModalOpen(true)
+  }
+  function closeShareModal() {
+    setShareModalOpen(false)
+    if (shareTarget) setShareTarget(null)
+    else if (coInsurers.length === 0) setForm((f) => ({ ...f, type: '신규' }))
+  }
+  async function reloadShares() {
+    setShareMap(buildShareMap(await fetchContractShares()))
+  }
+  async function submitShareModal() {
+    if (!shareTarget) {
+      setCoInsurers(shareDraft)
+      setShareModalOpen(false)
+      return
+    }
+    if (!shareTarget.policy_no?.trim()) {
+      alert('증권번호가 없는 계약은 분배를 설정할 수 없습니다.')
+      return
+    }
+    setShareSaving(true)
+    const { error } = await saveContractShare(shareTarget.company, shareTarget.policy_no, shareDraft)
+    setShareSaving(false)
+    if (error) {
+      alert('분배 저장 실패: ' + error.message)
+      return
+    }
+    await reloadShares()
+    setShareModalOpen(false)
+    setShareTarget(null)
+  }
+  async function removeShare() {
+    if (!targetShare) return
+    if (!confirm('이 증권번호의 비례공동 분배를 해제할까요? 수수료가 다시 계약 담당자에게 100% 잡힙니다.')) return
+    setShareSaving(true)
+    const { error } = await deleteContractShare(targetShare.id)
+    setShareSaving(false)
+    if (error) {
+      alert('분배 해제 실패: ' + error.message)
+      return
+    }
+    await reloadShares()
+    setShareModalOpen(false)
+    setShareTarget(null)
+  }
   const shareTotal = shareDraft.reduce((s, r) => s + (Number(r.ratio) || 0), 0)
   function openShareModal() {
     setShareDraft(
@@ -354,6 +413,7 @@ export default function Contracts() {
         .range(from, to),
     )
     setContracts(c)
+    await reloadShares()
     // 담당자 이름 표시(agentInfo)에 필요해서 canManage 여부와 무관하게 항상 가져온다.
     // RLS가 실제 조회 범위를 이미 제한한다(본사는 전체, 지사/지점 관리자는 하위 조직, 일반 담당자는 본인만).
     const { data: p } = await supabase.from('profiles').select('*').order('name')
@@ -451,6 +511,12 @@ export default function Contracts() {
       co_insurers: form.type === '비례공동' ? coInsurers : null,
     })
     if (!error) {
+      // 비례공동 분배는 증권번호 단위로도 저장해 둔다 — 예비계약은 보험사 파일이 올라오면 자동확정되며
+      // 지워지지만, 분배는 남아서 이후 매월 들어오는 확정 계약 행(신규·분급·환수)에 계속 적용된다.
+      if (form.type === '비례공동' && form.policy_no.trim()) {
+        const { error: shareError } = await saveContractShare(form.company, form.policy_no, coInsurers)
+        if (shareError) alert('계약은 등록됐지만 분배 저장에 실패했습니다: ' + shareError.message)
+      }
       setForm((f) => ({
         ...f,
         company: '',
@@ -2299,7 +2365,22 @@ export default function Contracts() {
                                             ) : (
                                               <>
                                                 {c.customer_name}
-                                                {c.type === '비례공동' && c.co_insurers && c.co_insurers.length > 0 && (
+                                                {(() => {
+                                                  const share = findShare(shareMap, c)
+                                                  if (!share) return null
+                                                  return (
+                                                    <button
+                                                      type="button"
+                                                      disabled={!canUseCoInsurance}
+                                                      onClick={() => openShareModalFor(c)}
+                                                      className="ml-1 inline-block text-[10px] font-semibold text-purple-600 bg-purple-50 px-1 py-0.5 rounded enabled:hover:bg-purple-100 disabled:cursor-help"
+                                                      title={share.shares.map((s) => `${s.name} ${s.ratio}%`).join(' / ')}
+                                                    >
+                                                      분배 {share.shares.length}
+                                                    </button>
+                                                  )
+                                                })()}
+                                                {c.type === '비례공동' && !findShare(shareMap, c) && c.co_insurers && c.co_insurers.length > 0 && (
                                                   <span
                                                     className="ml-1 inline-block text-[10px] font-semibold text-purple-600 bg-purple-50 px-1 py-0.5 rounded cursor-help"
                                                     title={c.co_insurers.map((s) => `${s.name} ${s.ratio}%`).join(' / ')}
@@ -2543,6 +2624,19 @@ export default function Contracts() {
                                                   >
                                                     수정
                                                   </button>
+                                                  {c.policy_no?.trim() && c.type !== '변경' && (
+                                                    <>
+                                                      <span className="text-slate-300 mx-1">/</span>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => openShareModalFor(c)}
+                                                        className="text-purple-600 hover:underline"
+                                                        title="비례공동 수수료 분배"
+                                                      >
+                                                        분배
+                                                      </button>
+                                                    </>
+                                                  )}
                                                   <span className="text-slate-300 mx-1">/</span>
                                                   <button
                                                     type="button"
@@ -2648,6 +2742,13 @@ export default function Contracts() {
               <p className="text-xs text-slate-500 mt-1">
                 이 계약의 수수료를 나눠 가질 담당자와 비율(%)을 설정하세요. 비율 합계는 100%여야 합니다.
               </p>
+              {shareTarget && (
+                <p className="text-xs text-indigo-600 mt-1">
+                  {shareTarget.company} · 증권번호 {shareTarget.policy_no} · {shareTarget.customer_name}
+                  <br />
+                  같은 증권번호로 들어오는 모든 지급월 계약(신규·분급·환수 등)에 적용되고, 매월 재업로드해도 유지됩니다.
+                </p>
+              )}
             </div>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {shareDraft.map((row, idx) => (
@@ -2710,23 +2811,29 @@ export default function Contracts() {
                 합계: {shareTotal}%{shareTotal !== 100 && ' (100%가 되어야 합니다)'}
               </span>
               <div className="flex gap-2">
+                {targetShare && (
+                  <button
+                    type="button"
+                    disabled={shareSaving}
+                    onClick={removeShare}
+                    className="border border-rose-200 text-rose-600 rounded-md px-3 py-1.5 text-sm hover:bg-rose-50 disabled:opacity-40"
+                  >
+                    분배 해제
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => {
-                    setShareModalOpen(false)
-                    if (coInsurers.length === 0) setForm((f) => ({ ...f, type: '신규' }))
-                  }}
+                  onClick={closeShareModal}
                   className="border border-slate-300 text-slate-600 rounded-md px-3 py-1.5 text-sm hover:bg-slate-50"
                 >
                   취소
                 </button>
                 <button
                   type="button"
-                  disabled={shareTotal !== 100 || shareDraft.length === 0 || shareDraft.some((r) => !r.agent_id)}
-                  onClick={() => {
-                    setCoInsurers(shareDraft)
-                    setShareModalOpen(false)
-                  }}
+                  disabled={
+                    shareSaving || shareTotal !== 100 || shareDraft.length === 0 || shareDraft.some((r) => !r.agent_id)
+                  }
+                  onClick={submitShareModal}
                   className="bg-slate-800 text-white rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-40"
                 >
                   저장

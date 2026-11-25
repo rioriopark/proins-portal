@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { GENERAL_PERFORMANCE_VIEW_KEY, type Contract, type ContractCategory, type ContractType, type Profile } from '../lib/types'
 import { effectiveContractType } from '../lib/contractType'
+import { buildShareMap, expandShares, fetchContractShares, type SharedContract } from '../lib/contractShares'
 
 function thisMonth() {
   const d = new Date()
@@ -138,7 +139,8 @@ export default function Statement() {
   const [month, setMonth] = useState(thisMonth())
   const [agentId, setAgentId] = useState(profile?.id ?? '')
   const [agents, setAgents] = useState<Profile[]>([])
-  const [contracts, setContracts] = useState<Contract[]>([])
+  // 비례공동 분배가 걸린 계약은 이 담당자 몫(비율)만큼으로 나눈 값이 들어 있다(original에 원본).
+  const [contracts, setContracts] = useState<SharedContract[]>([])
   const [target, setTarget] = useState<Profile | null>(profile)
   const [stmt, setStmt] = useState<StmtFields>(ZERO_STMT)
   const [saving, setSaving] = useState(false)
@@ -193,8 +195,20 @@ export default function Statement() {
   // 다시 불러올 때도 이 함수를 그대로 쓴다.
   async function reloadContracts() {
     if (!agentId) return
-    const { data } = await supabase.from('contracts').select('*').eq('agent_id', agentId)
-    setContracts(data ?? [])
+    // 비례공동 분배(contract_shares)가 걸린 계약은 원 모집자 명의라도 이 담당자 몫이 있으면 같이
+    // 가져와, 담당자별 비율로 나눈 뒤 이 담당자 몫만 남긴다(원 모집자도 자기 비율만큼만 잡힌다).
+    const shareRows = await fetchContractShares()
+    const sharePolicyNos = [
+      ...new Set(shareRows.filter((r) => r.agent_ids?.includes(agentId)).map((r) => r.policy_no.trim())),
+    ]
+    const [{ data: own }, shared] = await Promise.all([
+      supabase.from('contracts').select('*').eq('agent_id', agentId),
+      sharePolicyNos.length > 0
+        ? supabase.from('contracts').select('*').in('policy_no', sharePolicyNos).neq('agent_id', agentId)
+        : Promise.resolve({ data: [] as Contract[] }),
+    ])
+    const all = [...(own ?? []), ...((shared.data as Contract[] | null) ?? [])]
+    setContracts(expandShares(all, buildShareMap(shareRows)).filter((c) => c.agent_id === agentId))
   }
 
   useEffect(() => {
@@ -227,7 +241,9 @@ export default function Statement() {
     performance_commission: 0,
   })
 
-  function startEditContract(c: Contract) {
+  function startEditContract(row: SharedContract) {
+    // 분배로 나눈 값이 아니라 원본 값을 수정한다.
+    const c = row.original ?? row
     setEditingContractId(c.id)
     setContractEditForm({
       policy_no: c.policy_no ?? '',
@@ -337,7 +353,7 @@ export default function Statement() {
         c.category,
         c.type,
         c.receipt_date ?? '',
-        c.premium,
+        Math.round(c.premium),
         Math.round(c.commission * (c.category === '장기' ? target.rate_long : target.rate_general)),
       ]
       if (canSeeGeneralPerformance) {
@@ -368,7 +384,8 @@ export default function Statement() {
       cur.premium += c.premium
       byKey.set(key, cur)
     }
-    return [...byKey.values()]
+    // 비례공동 분배 계약은 건수·보험료가 비율만큼(예: 0.5건) 잡히므로 표시용으로 반올림한다.
+    return [...byKey.values()].map((r) => ({ ...r, count: Math.round(r.count * 10) / 10, premium: Math.round(r.premium) }))
   }
 
   // "자동차/일반 실적"은 "적용된 계약 내역"과 동일하게 지급월(contracts.month, 정산년월) 기준으로
@@ -377,9 +394,9 @@ export default function Statement() {
   const longRows = useMemo(() => group(scopedContracts, ['장기']), [scopedContracts])
   const generalAutoRows = useMemo(() => group(settlementContracts, ['일반', '자동차']), [settlementContracts])
   const longTotal = longRows.reduce((s, r) => s + r.premium, 0)
-  const longCount = longRows.reduce((s, r) => s + r.count, 0)
+  const longCount = Math.round(longRows.reduce((s, r) => s + r.count, 0) * 10) / 10
   const gaTotal = generalAutoRows.reduce((s, r) => s + r.premium, 0)
-  const gaCount = generalAutoRows.reduce((s, r) => s + r.count, 0)
+  const gaCount = Math.round(generalAutoRows.reduce((s, r) => s + r.count, 0) * 10) / 10
 
   // 지급률 자동계산: 건별수수료(contracts.commission) × 담당자 지급률(장기/일반)을 계약 유형별로 나눠 합산한다.
   // - 모집초회수수료: 장기·신규(비례공동 포함) 중 지급월이 계약월 기준 1개월 이내
@@ -822,7 +839,17 @@ export default function Statement() {
                               c.category
                             )}
                           </td>
-                          <td className="px-3 py-1.5">{c.type}</td>
+                          <td className="px-3 py-1.5">
+                            {c.type}
+                            {c.share_ratio !== undefined && (
+                              <span
+                                className="ml-1 text-[10px] text-indigo-600"
+                                title="비례공동 분배: 보험료·수수료는 이 담당자 몫(비율)만큼 표시됩니다"
+                              >
+                                분배 {Math.round(c.share_ratio * 100)}%
+                              </span>
+                            )}
+                          </td>
                           <td className="px-3 py-1.5">
                             {isEditingContract ? (
                               <input
@@ -846,7 +873,7 @@ export default function Statement() {
                                 className="border border-slate-200 rounded px-1.5 py-1 w-24 text-right"
                               />
                             ) : (
-                              c.premium.toLocaleString('ko-KR')
+                              Math.round(c.premium).toLocaleString('ko-KR')
                             )}
                           </td>
                           <td className="px-3 py-1.5 text-right">
