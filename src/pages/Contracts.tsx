@@ -1133,6 +1133,50 @@ export default function Contracts() {
     else load()
   }
 
+  // 담당자 일괄 변경(본사관리자 전용): 담당자 그룹 하나의 계약을 한 번에 다른 담당자 앞으로 옮긴다.
+  // 범위는 "지금 화면에 보이는 건"(검색·구분·월 필터 적용)과 "이 담당자의 전체 계약"(목록에서 숨긴
+  // 수수료 0원 행·지난 장기신규·예비계약 포함) 중에서 고른다.
+  const [bulkReassign, setBulkReassign] = useState<{ key: string; name: string } | null>(null)
+  const [bulkReassignTarget, setBulkReassignTarget] = useState('')
+  const [bulkReassignScope, setBulkReassignScope] = useState<'visible' | 'all'>('visible')
+  const [bulkReassignBusy, setBulkReassignBusy] = useState(false)
+
+  function openBulkReassign(key: string, name: string) {
+    setBulkReassign({ key, name })
+    setBulkReassignTarget('')
+    setBulkReassignScope('visible')
+  }
+
+  async function submitBulkReassign(ids: string[]) {
+    if (!bulkReassign || !bulkReassignTarget || ids.length === 0) return
+    const targetLabel = agentOptions.find((o) => o.value === bulkReassignTarget)?.label ?? ''
+    if (!confirm(`${bulkReassign.name} 담당 계약 ${ids.length}건을 ${targetLabel} 앞으로 변경할까요?`)) return
+    const [kind, key] = bulkReassignTarget.split(/:(.+)/)
+    const patch =
+      kind === 'p'
+        ? { agent_id: key, agent_email: agents.find((a) => a.id === key)?.email ?? null }
+        : { agent_id: null, agent_email: key }
+    setBulkReassignBusy(true)
+    let updated = 0
+    let failMsg = ''
+    // URL 길이 제한을 피하려고 나눠서 보낸다. RLS로 막힌 행은 에러 없이 빠지므로 돌려받은 행 수로 확인한다.
+    for (let i = 0; i < ids.length; i += 200) {
+      const chunk = ids.slice(i, i + 200)
+      const { data, error } = await supabase.from('contracts').update(patch).in('id', chunk).select('id')
+      if (error) {
+        failMsg = error.message
+        break
+      }
+      updated += data?.length ?? 0
+    }
+    setBulkReassignBusy(false)
+    if (failMsg) alert(`담당자 일괄 변경 중 오류: ${failMsg}\n(${updated}건은 변경됨)`)
+    else if (updated < ids.length) alert(`${ids.length}건 중 ${updated}건만 변경됐습니다. 나머지는 권한이 없습니다.`)
+    else alert(`${updated}건의 담당자를 ${targetLabel}(으)로 변경했습니다.`)
+    setBulkReassign(null)
+    load()
+  }
+
   // 확정 계약 건별 수정(본사관리자 전용): 보험사 파일 업로드 과정에서 잘못 들어온 값을
   // 증권번호·상품명·계약자명 등 개별 항목 단위로 바로잡을 수 있게 한다. 건별수수료는
   // 지급률 적용 전 원본 값을 그대로 수정한다(표시는 지급률이 곱해진 값).
@@ -2240,21 +2284,31 @@ export default function Contracts() {
           const totalCount = g.companies.reduce((s, cg) => s + cg.rows.length, 0)
           return (
             <div key={g.key} className="bg-white rounded-xl shadow overflow-hidden">
-              <button
-                onClick={() => toggleAgent(g.key)}
-                className="w-full flex items-center justify-between bg-slate-100 px-4 py-2.5 text-left hover:bg-slate-200"
-              >
-                <p className="font-semibold text-sm text-slate-700 flex items-center gap-1.5">
-                  <span className="inline-block w-3 text-slate-400">{agentOpen ? '▾' : '▸'}</span>
-                  {g.name}
-                  {g.pending && <span className="text-amber-600 font-normal"> (미가입)</span>}
-                  <span className="text-xs text-slate-400 font-normal">({g.companies.length}개 보험사)</span>
-                </p>
-                <p className="text-xs text-slate-500">
-                  {totalCount}건 · 보험료 {g.premium.toLocaleString('ko-KR')}원 · 수수료(지급률 적용){' '}
-                  {Math.round(g.commission).toLocaleString('ko-KR')}원
-                </p>
-              </button>
+              <div className="flex items-stretch bg-slate-100 hover:bg-slate-200">
+                <button
+                  onClick={() => toggleAgent(g.key)}
+                  className="flex-1 flex items-center justify-between px-4 py-2.5 text-left"
+                >
+                  <p className="font-semibold text-sm text-slate-700 flex items-center gap-1.5">
+                    <span className="inline-block w-3 text-slate-400">{agentOpen ? '▾' : '▸'}</span>
+                    {g.name}
+                    {g.pending && <span className="text-amber-600 font-normal"> (미가입)</span>}
+                    <span className="text-xs text-slate-400 font-normal">({g.companies.length}개 보험사)</span>
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {totalCount}건 · 보험료 {g.premium.toLocaleString('ko-KR')}원 · 수수료(지급률 적용){' '}
+                    {Math.round(g.commission).toLocaleString('ko-KR')}원
+                  </p>
+                </button>
+                {canReassign && g.key !== 'unknown' && (
+                  <button
+                    onClick={() => openBulkReassign(g.key, g.name)}
+                    className="shrink-0 px-3 my-1.5 mr-2 text-xs text-blue-600 border border-blue-200 bg-white rounded-md hover:bg-blue-50"
+                  >
+                    담당자 일괄변경
+                  </button>
+                )}
+              </div>
 
               {agentOpen && (
                 <table className="w-full text-sm">
@@ -2685,6 +2739,90 @@ export default function Contracts() {
           )
         })}
       </div>
+
+      {bulkReassign &&
+        (() => {
+          const sameAgent = (c: Contract) => (c.agent_id ?? c.agent_email ?? 'unknown') === bulkReassign.key
+          const visibleIds = filtered.filter(sameAgent).map((c) => c.id)
+          const allIds = contracts.filter(sameAgent).map((c) => c.id)
+          const ids = bulkReassignScope === 'visible' ? visibleIds : allIds
+          const currentValue = bulkReassign.key.includes('@') ? `e:${bulkReassign.key}` : `p:${bulkReassign.key}`
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+                <h3 className="font-semibold text-slate-800">담당자 일괄 변경</h3>
+                <p className="text-sm text-slate-600">
+                  <b>{bulkReassign.name}</b> 담당 계약을 아래 담당자 앞으로 한 번에 옮깁니다.
+                </p>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">새 담당자</label>
+                  <select
+                    value={bulkReassignTarget}
+                    onChange={(e) => setBulkReassignTarget(e.target.value)}
+                    className="w-full border border-slate-300 rounded-md px-2 py-1.5 text-sm"
+                  >
+                    <option value="">담당자 선택</option>
+                    {agentOptions
+                      .filter((o) => o.value !== currentValue)
+                      .map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="radio"
+                      checked={bulkReassignScope === 'visible'}
+                      onChange={() => setBulkReassignScope('visible')}
+                      className="mt-1"
+                    />
+                    <span>
+                      지금 화면에 보이는 계약 <b>{visibleIds.length}건</b>
+                      <span className="block text-xs text-slate-400">검색어·구분·월 필터가 적용된 목록 그대로</span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="radio"
+                      checked={bulkReassignScope === 'all'}
+                      onChange={() => setBulkReassignScope('all')}
+                      className="mt-1"
+                    />
+                    <span>
+                      이 담당자의 전체 계약 <b>{allIds.length}건</b>
+                      <span className="block text-xs text-slate-400">
+                        목록에서 숨긴 수수료 0원 건·지난 장기신규·예비계약까지 포함
+                      </span>
+                    </span>
+                  </label>
+                </div>
+                <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-3 py-2">
+                  옮긴 계약의 수수료·업적은 지난 정산월분까지 새 담당자 쪽으로 계산됩니다. 이미 저장된 수수료명세는
+                  그대로이니 필요하면 다시 계산해 주세요. 비례공동 분배가 걸린 증권은 분배 설정이 우선합니다.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setBulkReassign(null)}
+                    disabled={bulkReassignBusy}
+                    className="px-3 py-1.5 text-sm rounded-md border border-slate-300 hover:bg-slate-50"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={() => submitBulkReassign(ids)}
+                    disabled={bulkReassignBusy || !bulkReassignTarget || ids.length === 0}
+                    className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {bulkReassignBusy ? '변경 중…' : `${ids.length}건 변경`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
       {durationModalOpen &&
         (() => {
