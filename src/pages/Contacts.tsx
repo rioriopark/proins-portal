@@ -2,6 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type F
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import type { Contact } from '../lib/types'
+import { formatPhone } from '../lib/phone'
 
 // 업무 연락처 상단의 보험사담당자 필터 버튼 순서를 메인화면 "보험사 업무포털 바로가기"와 맞춘다.
 // 목록에 없는 회사(생명보험사 등)는 뒤로 밀려나되 서로간의 기존 순서는 그대로 유지된다.
@@ -178,14 +179,21 @@ export default function Contacts() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    // 저장 전에 전화·팩스·휴대폰 번호를 표준 형식(070-4652-3096 등)으로 정규화한다.
+    const payload = {
+      ...form,
+      office_phone: formatPhone(form.office_phone),
+      fax: formatPhone(form.fax),
+      phone: formatPhone(form.phone),
+    }
     if (editingId) {
       const { error } = await supabase
         .from('contacts')
-        .update({ ...form, updated_at: new Date().toISOString() })
+        .update({ ...payload, updated_at: new Date().toISOString() })
         .eq('id', editingId)
       if (error) return alert('수정 실패: ' + error.message)
     } else {
-      const { error } = await supabase.from('contacts').insert({ ...form, sort_order: items.length })
+      const { error } = await supabase.from('contacts').insert({ ...payload, sort_order: items.length })
       if (error) return alert('등록 실패: ' + error.message)
     }
     setShowForm(false)
@@ -257,9 +265,10 @@ export default function Contacts() {
         />
         <input
           placeholder="전화번호"
-          maxLength={12}
+          maxLength={13}
           value={form.office_phone}
           onChange={(e) => setForm((f) => ({ ...f, office_phone: e.target.value }))}
+          onBlur={(e) => setForm((f) => ({ ...f, office_phone: formatPhone(e.target.value) }))}
           className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
         />
         <input
@@ -267,6 +276,7 @@ export default function Contacts() {
           maxLength={15}
           value={form.fax}
           onChange={(e) => setForm((f) => ({ ...f, fax: e.target.value }))}
+          onBlur={(e) => setForm((f) => ({ ...f, fax: formatPhone(e.target.value) }))}
           className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
         />
         <input
@@ -274,6 +284,7 @@ export default function Contacts() {
           maxLength={13}
           value={form.phone}
           onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+          onBlur={(e) => setForm((f) => ({ ...f, phone: formatPhone(e.target.value) }))}
           className="border border-slate-300 rounded-md px-2 py-1.5 text-sm"
         />
         <input
@@ -488,13 +499,13 @@ export default function Contacts() {
                       <ExpandableCell value={c.business} />
                     </td>
                     <td className="text-center px-3 py-2 break-words">
-                      <ExpandableCell value={c.office_phone} />
+                      <ExpandableCell value={formatPhone(c.office_phone)} />
                     </td>
                     <td className="text-center px-3 py-2 break-words">
-                      <ExpandableCell value={c.fax} />
+                      <ExpandableCell value={formatPhone(c.fax)} />
                     </td>
                     <td className="text-center px-3 py-2 break-words">
-                      <ExpandableCell value={c.phone} />
+                      <ExpandableCell value={formatPhone(c.phone)} />
                     </td>
                     <td className="text-center px-3 py-2 text-slate-500 break-words">
                       <ExpandableCell value={c.email} />
